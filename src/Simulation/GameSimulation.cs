@@ -15,16 +15,48 @@ namespace HexTactics.Simulation;
 public sealed class GameSimulation
 {
     private readonly List<SimulationEvent> _events = new();
-    private readonly MovementSystem _movement;
+    private readonly List<ISimulationSystem> _systems = new();
     private readonly SimulationClock _clock;
+    private readonly SimulationContext _context;
 
     public GameSimulation(MapDefinition map, SimulationSettings? settings = null)
     {
         State = new GameState(map);
         Settings = settings ?? SimulationSettings.Default;
-        _movement = new MovementSystem(State, _events);
         _clock = new SimulationClock(Settings.TickDuration);
+        _context = new SimulationContext(State, _events);
+        AddSystem(new MovementSystem(State, _events));
     }
+
+    /// <summary>Systems executed every tick, in order.</summary>
+    public IReadOnlyList<ISimulationSystem> Systems => _systems;
+
+    /// <summary>True while the tactical pause is active: no ticks run, game time stands still.</summary>
+    public bool IsPaused { get; private set; }
+
+    /// <summary>Registers a per-tick rule system (future abilities, attacks, waves…).</summary>
+    public void AddSystem(ISimulationSystem system)
+    {
+        ArgumentNullException.ThrowIfNull(system);
+        _systems.Add(system);
+    }
+
+    /// <summary>
+    /// Tactical pause. While paused, <see cref="Advance"/> does not accumulate time, so resuming continues
+    /// exactly from the saved state without a jump. Commands (orders, spawns) are still accepted.
+    /// </summary>
+    public void SetPaused(bool paused)
+    {
+        if (IsPaused == paused)
+        {
+            return;
+        }
+
+        IsPaused = paused;
+        _events.Add(new PauseChanged(Tick, paused));
+    }
+
+    public void TogglePause() => SetPaused(!IsPaused);
 
     public GameState State { get; }
 
@@ -41,10 +73,15 @@ public sealed class GameSimulation
 
     /// <summary>
     /// Feeds real elapsed time (e.g. a render frame's delta) and runs the due fixed ticks.
-    /// Returns the number of ticks executed.
+    /// Returns the number of ticks executed. Does nothing while paused (time is not accumulated).
     /// </summary>
     public int Advance(double realSeconds)
     {
+        if (IsPaused)
+        {
+            return 0;
+        }
+
         var ticks = _clock.Accumulate(realSeconds);
         for (var i = 0; i < ticks; i++)
         {
@@ -54,11 +91,19 @@ public sealed class GameSimulation
         return ticks;
     }
 
-    /// <summary>Runs exactly one fixed simulation tick.</summary>
+    /// <summary>
+    /// Runs exactly one fixed simulation tick (all systems). Low-level: used by <see cref="Advance"/> and
+    /// tests; it ignores the pause flag on purpose.
+    /// </summary>
     public void Step()
     {
         Tick++;
-        _movement.Tick(Tick, Settings.TickDuration);
+        _context.Tick = Tick;
+        _context.DeltaSeconds = Settings.TickDuration;
+        foreach (var system in _systems)
+        {
+            system.Tick(_context);
+        }
     }
 
     /// <summary>Creates a unit using one of the three spawn methods. Never relocates or removes existing units.</summary>

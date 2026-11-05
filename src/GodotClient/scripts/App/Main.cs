@@ -45,6 +45,10 @@ public partial class Main : Node3D
     private Label _messageLabel = null!;
     private Button _placementButton = null!;
     private Button _obstacleButton = null!;
+    private Button _pauseButton = null!;
+    private Label _timeLabel = null!;
+    private long _markedTick;
+    private readonly System.Collections.Generic.Dictionary<string, int> _pollCounts = new();
 
     private HexCoord? _hovered;
     private string _fillStamp = string.Empty;
@@ -57,6 +61,7 @@ public partial class Main : Node3D
             GD.PushWarning($"project.godot version {BuildInfo.ProjectVersion} differs from assembly version {BuildInfo.Version}");
         }
 
+        InputBindings.Register();
         _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
         _layout = new HexLayout(VisualConfig.HexSize);
         _sim = new GameSimulation(_map);
@@ -99,6 +104,7 @@ public partial class Main : Node3D
         AddChild(_input);
         _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _orders, _hud.IsOverUi);
         _input.DebugKey += OnDebugKey;
+        _input.PauseToggled += () => _sim.TogglePause();
 
         _automation = new AutomationRunner { Name = "Automation" };
         _automation.StepRequested = RunAutomationStep;
@@ -215,8 +221,11 @@ public partial class Main : Node3D
         var size = GetViewport().GetVisibleRect().Size;
         _statusLabel.Text = $"Окно {size.X:0}×{size.Y:0} · {Engine.GetFramesPerSecond():0} FPS · юнитов: {_sim.State.UnitCount}";
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
-        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId);
+        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId, _sim.IsPaused);
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement);
+        _pauseButton.SetPressedNoSignal(_sim.IsPaused);
+        _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
+        _timeLabel.Text = $"Игровое время {_sim.GameTime:0.0} с · тик {_sim.Tick} · {(_sim.IsPaused ? "пауза" : "идёт")}";
         _obstacleButton.SetPressedNoSignal(_fsm.Mode == InputMode.ObstacleEdit);
     }
 
@@ -332,6 +341,12 @@ public partial class Main : Node3D
                 case MovementFinished f:
                     ShowMessage($"Юнит {f.Unit} выполнил все ТД и стоит на {UiText.Cell(f.Cell)}.", false);
                     break;
+                case PauseChanged p:
+                    _hud.SetPaused(p.Paused);
+                    ShowMessage(p.Paused
+                        ? "Пауза: время остановлено. Можно выбирать юнитов и строить цепочки ТД."
+                        : "Игра продолжается.", false);
+                    break;
             }
         }
     }
@@ -392,6 +407,12 @@ public partial class Main : Node3D
         AddChild(_hud);
         _hud.AddTitle(BuildInfo.Title);
         _hud.AddLabel($"{BuildInfo.Commit} · Godot {BuildInfo.EngineVersion}\n{BuildInfo.DotNetVersion}", dim: true, fontSize: 12);
+        _hud.AddSeparator();
+
+        _hud.AddHeader("Время");
+        _timeLabel = _hud.AddLabel(string.Empty, fontSize: 13);
+        _pauseButton = _hud.AddButton("⏸ Пауза (пробел)", () => _sim.TogglePause());
+        _pauseButton.ToggleMode = true;
         _hud.AddSeparator();
 
         _hud.AddHeader("Выбранный юнит");
@@ -560,9 +581,12 @@ public partial class Main : Node3D
                     return 2;
                 }
             case "key":
-                Godot.Input.ParseInputEvent(new InputEventKey { Keycode = Enum.Parse<Key>(arg), Pressed = true });
-                Godot.Input.ParseInputEvent(new InputEventKey { Keycode = Enum.Parse<Key>(arg), Pressed = false });
-                return 2;
+                {
+                    var key = Enum.Parse<Key>(arg);
+                    Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = true });
+                    Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+                    return 2;
+                }
             case "face":
                 if (_fsm.SelectedUnit is { } id)
                 {
@@ -570,6 +594,46 @@ public partial class Main : Node3D
                 }
 
                 return 2;
+            case "pause":
+                _sim.SetPaused(arg switch { "on" => true, "off" => false, _ => !_sim.IsPaused });
+                return 2;
+            case "mark":
+                _markedTick = _sim.Tick;
+                return 1;
+            case "ticks":
+                {
+                    // Feeds game time in tick-sized chunks (respects the pause like real frames do).
+                    var n = int.Parse(arg, CultureInfo.InvariantCulture);
+                    for (var i = 0; i < n; i++)
+                    {
+                        _sim.Advance(_sim.Settings.TickDuration);
+                    }
+
+                    return 1;
+                }
+
+            case "waitidle":
+                {
+                    // waitidle:<unit>[:<maxFrames>] — polls until the unit has finished its orders.
+                    var a = arg.Split(':');
+                    var unit = _sim.State.FindUnit(new HexTactics.Core.Units.UnitId(int.Parse(a[0], CultureInfo.InvariantCulture)));
+                    var max = a.Length > 1 ? int.Parse(a[1], CultureInfo.InvariantCulture) : 1200;
+                    var count = _pollCounts.TryGetValue(step, out var c) ? c + 1 : 1;
+                    _pollCounts[step] = count;
+                    var idle = unit is not null && unit.Orders.IsEmpty && !unit.Motion.IsStepping;
+                    if (!idle && count < max)
+                    {
+                        return AutomationRunner.Repeat;
+                    }
+
+                    _pollCounts.Remove(step);
+                    _automation.ReportCheck(idle, $"{step} (after {count} frames)");
+                    return 1;
+                }
+
+            case "expect":
+                RunExpectation(arg);
+                return 1;
             case "select":
                 _fsm.Select(new HexTactics.Core.Units.UnitId(int.Parse(arg, CultureInfo.InvariantCulture)));
                 return 1;
@@ -599,6 +663,59 @@ public partial class Main : Node3D
         var dist = dd.Length > 1 ? double.Parse(dd[1], CultureInfo.InvariantCulture) : 0.5;
         var p = _layout.HexToPlane(hex) + (HexLayout.DirectionVector(dir) * dist);
         return _cameraRig.Camera.UnprojectPosition(p.ToWorld(0f));
+    }
+
+    /// <summary>
+    /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
+    /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked
+    /// </summary>
+    private void RunExpectation(string arg)
+    {
+        var a = arg.Split(':');
+        HexTactics.Core.Units.UnitState? Unit(int i) => _sim.State.FindUnit(new HexTactics.Core.Units.UnitId(int.Parse(a[i], CultureInfo.InvariantCulture)));
+        bool ok;
+        string actual;
+        switch (a[0])
+        {
+            case "units":
+                actual = _sim.State.UnitCount.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "cell":
+                {
+                    var u = Unit(1);
+                    actual = u is null ? "none" : $"{u.Cell.ToOffset().Col},{u.Cell.ToOffset().Row}";
+                    ok = actual == a[2];
+                    break;
+                }
+
+            case "waypoints":
+                actual = Unit(1)?.Orders.Count.ToString(CultureInfo.InvariantCulture) ?? "none";
+                ok = actual == a[2];
+                break;
+            case "facing":
+                actual = Unit(1)?.Facing.ToString() ?? "none";
+                ok = actual == a[2];
+                break;
+            case "status":
+                actual = Unit(1)?.Motion.Status.ToString() ?? "none";
+                ok = actual == a[2];
+                break;
+            case "paused":
+                actual = _sim.IsPaused ? "true" : "false";
+                ok = actual == a[1];
+                break;
+            case "same-tick":
+                actual = $"{_markedTick} -> {_sim.Tick}";
+                ok = _markedTick == _sim.Tick;
+                break;
+            default:
+                actual = "unknown expectation";
+                ok = false;
+                break;
+        }
+
+        _automation.ReportCheck(ok, $"expect:{arg} (actual {actual})");
     }
 
     private Vector2 HexScreen(HexCoord hex)

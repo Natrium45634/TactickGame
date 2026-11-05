@@ -15,8 +15,8 @@
 | Слой | Где | Правило |
 |---|---|---|
 | Core (домен) | `src/Core` → `HexTactics.Core` | Чистый C#, **без Godot**. Правда о состоянии игры. |
-| Simulation | `src/Simulation` → `HexTactics.Simulation` (с v0.2) | Фиксированный тик, приказы, пауза, события. Без Godot. |
-| Interaction | `src/Interaction` → `HexTactics.Interaction` (с v0.3) | Конечный автомат ввода в мировых координатах. Без Godot. |
+| Simulation | `src/Simulation` → `HexTactics.Simulation` | Фиксированный тик 1/30 с, приказы, движение, пауза, события; новые правила — через `ISimulationSystem`. Без Godot. |
+| Interaction | `src/Interaction` → `HexTactics.Interaction` | Конечный автомат ввода в координатах карты. Без Godot. |
 | Presentation / Input glue / UI | `src/GodotClient` (Godot-проект, сборка `HexTactics`) | Только отображение, перевод экран → карта, HUD. **Никаких игровых правил.** |
 
 - Шестисоседняя гекс-система (pointy-top, odd-r offset, вычисления в axial/cube). Не использовать TileMap/прямоугольный pathfinding.
@@ -34,6 +34,8 @@ godot --headless --path src/GodotClient --import
 godot --path src/GodotClient                # запуск из исходников
 # скриншот / сценарий (аргументы после --):
 godot --path src/GodotClient --windowed --resolution 1920x1080 -- --hx-script="hover:5,5" --hx-screenshot=shot.png
+# сценарий с проверками (код выхода 1 при провале), шаги — docs/ARCHITECTURE.md «Автоматизация»:
+godot --path src/GodotClient -- --hx-script="spawn:base;drag:0,4>3,2;key:Space;expect:paused:true" --hx-quit
 ```
 
 Godot: **4.7.2 stable .NET** (не переходить на beta/dev). .NET SDK 8, `TargetFramework net8.0`.
@@ -46,7 +48,8 @@ Godot: **4.7.2 stable .NET** (не переходить на beta/dev). .NET SDK
   1. Обновить версию, `CHANGELOG.md`, `README.md`, `docs/ARCHITECTURE.md`, создать `docs/releases/vX.Y.Z/README.md`.
   2. Коммит, затем аннотированный тег: `git tag -a vX.Y.Z -m "HexTactics vX.Y.Z"`. Теги неизменяемы — не удалять и не переносить.
   3. `pwsh tools/build_release.ps1` (тесты + экспорт + ZIP + SHA-256 + BUILD_INFO) → `release_archives/vX.Y.Z/`.
-  4. `pwsh tools/verify_release.ps1 -Version X.Y.Z [-Run]`.
+  4. `pwsh tools/verify_release.ps1 -Version X.Y.Z -Run` (на Linux: `-Launcher wine64` под `xvfb-run`,
+     `WINEDLLOVERRIDES="dinput8=d"`) — сквозной регрессионный сценарий в самой сборке.
   5. Отдельным коммитом добавить архив (`release_archives/**`, обычные файлы Git, без LFS — см. D-010), скриншот
      `docs/releases/vX.Y.Z/screenshot.png`; push ветки и тега. Если push тега запрещён средой (облачная сессия),
      тег восстанавливается позже `tools/create_release_tags.ps1` по `BUILD_INFO.txt` (D-012).

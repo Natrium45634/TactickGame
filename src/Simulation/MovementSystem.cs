@@ -18,7 +18,7 @@ namespace HexTactics.Simulation;
 /// whenever the topology changes. Units are never teleported and waypoints are never skipped.</item>
 /// </list>
 /// </summary>
-internal sealed class MovementSystem
+internal sealed class MovementSystem : ISimulationSystem
 {
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
@@ -29,11 +29,14 @@ internal sealed class MovementSystem
         _events = events;
     }
 
-    public void Tick(long tick, double dt)
+    public string Name => "Movement";
+
+    public void Tick(SimulationContext context)
     {
+        // Units are processed in id order: the outcome of conflicts is deterministic.
         foreach (var unit in new List<UnitState>(_state.Units))
         {
-            TickUnit(unit, tick, dt);
+            TickUnit(unit, context.Tick, context.DeltaSeconds);
         }
     }
 

@@ -21,6 +21,20 @@ param(
 
 . "$PSScriptRoot/common.ps1"
 
+# End-to-end scenario on the prototype map (see docs/ARCHITECTURE.md, "Автоматизация").
+$script:RegressionScenario = @(
+    'spawn:base', 'expect:units:1',
+    'drag:0,4>3,2', 'expect:waypoints:1:1',
+    'key:Space', 'expect:paused:true', 'mark', 'wait:20', 'expect:same-tick',
+    'drag:3,2>6,1', 'expect:waypoints:1:2',
+    'key:Space', 'expect:paused:false',
+    'waitidle:1:3000', 'expect:cell:1:6,1', 'expect:waypoints:1:0', 'expect:status:1:Idle',
+    'drag:6,1>6,1@SouthWest:0.6', 'expect:facing:1:SouthWest',
+    'place', 'click:9,8', 'expect:units:2',
+    'drag:9,8>8,3', 'expect:waypoints:2:0',
+    'key:Escape'
+) -join ';'
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -74,14 +88,26 @@ if ($Run -and $errors.Count -eq 0) {
         $exe = Join-Path $tmp "$($archive.BaseName)/HexTactics.console.exe"
         if (-not (Test-Path $exe)) { $exe = Join-Path $tmp "$($archive.BaseName)/HexTactics.exe" }
         $log = Join-Path $tmp 'smoke.log'
-        $smokeArgs = @('--', '--hx-frames=30', '--hx-quit')
-        Write-Step "Smoke run: $exe"
+        # From v0.5.0 the build understands expect:/waitidle: steps: run the end-to-end regression scenario
+        # (spawn, drag orders, pause freezes time, chain built during pause, movement, rotate gesture,
+        # unreachable target). Older builds get a plain smoke run.
+        $regression = [version]$Version -ge [version]'0.5.0'
+        $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
+        if ($regression) { $smokeArgs += "--hx-script=$script:RegressionScenario" }
+        Write-Step ("{0}: {1}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $exe))
         if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }
         else { & $exe @smokeArgs *> $log }
+        $exitCode = $LASTEXITCODE
         $text = Get-Content -Raw $log
-        if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Smoke run did not report HexTactics v$Version. Log: $log") }
-        elseif ($text -notmatch '\[automation\] done') { $errors.Add("Smoke run did not finish. Log: $log") }
-        else { Write-Host 'Smoke run OK' }
+        if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Run did not report HexTactics v$Version. Log: $log") }
+        elseif ($text -notmatch '\[automation\] done') { $errors.Add("Run did not finish. Log: $log") }
+        elseif ($regression -and ($exitCode -ne 0 -or $text -notmatch '\[automation\] checks passed: \d+' -or $text -match 'CHECK FAILED')) {
+            $errors.Add("Regression scenario failed (exit $exitCode). Log: $log")
+        }
+        else {
+            if ($regression) { ($text -split "`n" | Where-Object { $_ -match '\[automation\] checks passed' }) | ForEach-Object { Write-Host $_.Trim() } }
+            Write-Host 'Run OK'
+        }
     }
     finally {
         if ($errors.Count -eq 0) { Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue }

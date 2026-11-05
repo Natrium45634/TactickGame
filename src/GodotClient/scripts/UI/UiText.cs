@@ -60,12 +60,12 @@ public static class UiText
         };
     }
 
-    public static string UnitInfo(UnitState u, int? selectedWaypoint = null)
+    public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false)
     {
         var text = $"Юнит {u.Id} · {SideName(u.Side)}\n" +
                    $"клетка {Cell(u.Cell)} · взгляд: {Direction(u.Facing)} ({u.Facing.ShortName()})\n" +
                    $"скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД в очереди: {u.Orders.Count}\n" +
-                   $"движение: {Motion(u)}";
+                   $"движение: {Motion(u)}{(paused && u.Motion.Status != MovementStatus.Idle ? " (пауза)" : string.Empty)}";
         if (!u.Orders.IsEmpty)
         {
             var parts = new System.Collections.Generic.List<string>();

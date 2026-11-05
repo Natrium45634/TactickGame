@@ -25,6 +25,9 @@ public partial class PointerInput : Node
     /// <summary>Raised for keys that are not part of the state machine (debug shortcuts).</summary>
     public event Action<Key>? DebugKey;
 
+    /// <summary>Space: tactical pause (handled by the simulation, not by the order state machine).</summary>
+    public event Action? PauseToggled;
+
     public Vector2 MousePosition { get; private set; } = new(-1, -1);
 
     public bool MouseInside { get; private set; }
@@ -88,9 +91,15 @@ public partial class PointerInput : Node
                 break;
 
             case InputEventKey { Pressed: true, Echo: false } key:
-                if (key.Keycode == Key.Escape)
+                if (key.IsActionPressed(InputBindings.CancelOrder))
                 {
+                    // Esc cancels only the unfinished arrow (or leaves a debug mode).
                     _fsm.Cancel();
+                    GetViewport().SetInputAsHandled();
+                }
+                else if (key.IsActionPressed(InputBindings.TogglePause))
+                {
+                    PauseToggled?.Invoke();
                     GetViewport().SetInputAsHandled();
                 }
                 else

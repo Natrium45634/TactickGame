@@ -14,6 +14,7 @@ public partial class DebugHud : CanvasLayer
     public const float Margin = 12f;
 
     private PanelContainer _panel = null!;
+    private PanelContainer _pauseBanner = null!;
     private ScrollContainer _scroll = null!;
     private VBoxContainer _root = null!;
     private Theme _theme = null!;
@@ -78,8 +79,47 @@ public partial class DebugHud : CanvasLayer
         _scroll.AddChild(_root);
         _panel.Resized += () => LayoutChanged?.Invoke();
 
+        // Pause banner: centred at the top of the board area, does not capture the mouse.
+        _pauseBanner = new PanelContainer { Name = "PauseBanner", Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _pauseBanner.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+        {
+            BgColor = new Color(0.10f, 0.11f, 0.14f, 0.86f),
+            BorderColor = new Color(1f, 0.82f, 0.40f, 0.9f),
+            BorderWidthBottom = 2,
+            BorderWidthTop = 2,
+            BorderWidthLeft = 2,
+            BorderWidthRight = 2,
+            CornerRadiusBottomLeft = 6,
+            CornerRadiusBottomRight = 6,
+            CornerRadiusTopLeft = 6,
+            CornerRadiusTopRight = 6,
+            ContentMarginLeft = 18,
+            ContentMarginRight = 18,
+            ContentMarginTop = 6,
+            ContentMarginBottom = 6,
+        });
+        var bannerLabel = new Label { Text = "⏸  ПАУЗА  ·  пробел — продолжить", MouseFilter = Control.MouseFilterEnum.Ignore };
+        bannerLabel.AddThemeFontSizeOverride("font_size", 18);
+        bannerLabel.AddThemeColorOverride("font_color", new Color(1f, 0.88f, 0.55f));
+        _pauseBanner.AddChild(bannerLabel);
+        AddChild(_pauseBanner);
+
         GetViewport().SizeChanged += UpdateScale;
         UpdateScale();
+    }
+
+    /// <summary>Shows or hides the pause banner (centred above the board area right of the panel).</summary>
+    public void SetPaused(bool paused)
+    {
+        _pauseBanner.Visible = paused;
+        if (paused)
+        {
+            _pauseBanner.ResetSize();
+            var viewportWidth = GetViewport().GetVisibleRect().Size.X / UiScale;
+            var left = _panel.GetGlobalRect().End.X + Margin;
+            var size = _pauseBanner.GetCombinedMinimumSize();
+            _pauseBanner.Position = new Vector2(left + ((viewportWidth - left - size.X) * 0.5f), Margin);
+        }
     }
 
     public Label AddTitle(string text)
@@ -152,6 +192,11 @@ public partial class DebugHud : CanvasLayer
 
     public override void _Process(double delta)
     {
+        if (_pauseBanner.Visible)
+        {
+            SetPaused(true); // keeps the banner centred if the window or panel changes
+        }
+
         // Content-margins of the panel style (12 + 12) and the outer margins.
         var maxHeight = (GetViewport().GetVisibleRect().Size.Y / UiScale) - (2 * Margin) - 24f;
         var height = Mathf.Max(40f, Mathf.Min(_root.GetCombinedMinimumSize().Y, maxHeight));

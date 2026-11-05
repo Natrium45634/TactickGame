@@ -36,3 +36,5 @@ public sealed record UnitUnblocked(long Tick, UnitId Unit) : SimulationEvent(Tic
 public sealed record MovementFinished(long Tick, UnitId Unit, HexCoord Cell) : SimulationEvent(Tick);
 
 public sealed record TerrainChanged(long Tick, HexCoord Cell, TileType Type) : SimulationEvent(Tick);
+
+public sealed record PauseChanged(long Tick, bool Paused) : SimulationEvent(Tick);

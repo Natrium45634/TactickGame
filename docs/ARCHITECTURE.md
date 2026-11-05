@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.4.0**.
+Документ описывает фактическое устройство кода. Актуален для версии **v0.5.0** (этап 1 завершён).
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -29,14 +29,16 @@ TactickGame/                     корень репозитория (логич
       Pathfinding/               Pathfinder (A*, DistanceField, Reachable)
       Orders/                    Waypoint, OrderQueue, WaypointRules, OrderMode
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError
-    Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, MovementSystem, события (без Godot)
+    Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
+                                 MovementSystem, события (без Godot)
     Interaction/                 HexTactics.Interaction — InputStateMachine, DragPreview (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
       scripts/App/               Main (композиционный корень), BuildInfo
       scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView,
                                  OrdersView (стрелки и ТД), VisualConfig
-      scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат)
+      scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат),
+                                 InputBindings (действия InputMap: пробел — пауза, Esc — отмена)
       scripts/UI/                DebugHud, UiText (русские тексты сообщений)
       scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки)
       shaders/                   tile.gdshader (границы клеток), overlay.gdshader (подсветки)
@@ -46,7 +48,7 @@ TactickGame/                     корень репозитория (логич
     Shared/                      общие хелперы тестов (TestMaps, TestPaths), подключаются ссылкой
     Core.Tests/                  координаты, раскладка, карта, гекс-линия, поиск пути
     Simulation.Tests/            появление, направления, занятость, приказы, движение
-    Interaction.Tests/           автомат ввода
+    Interaction.Tests/           автомат ввода, приёмочные тесты §8 (AcceptanceTests A01–A12)
   tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1,
                                  create_release_tags.ps1, common.ps1
   release_archives/vX.Y.Z/       ZIP Windows-сборки + .sha256 + BUILD_INFO.txt (вне папки игры)
@@ -65,7 +67,8 @@ tests/*  ──► соответствующие сборки
 ```
 
 - **Core** хранит правду о состоянии: карта, юниты, занятость, очереди приказов, правила появления. Ничего не знает о камере, цветах и мыши.
-- **Simulation** — единственная точка изменения состояния (`GameSimulation`): команды, фиксированный тик, движение, события.
+- **Simulation** — единственная точка изменения состояния (`GameSimulation`): команды, фиксированный тик, пауза,
+  системы правил (`ISimulationSystem`, сейчас — движение), события.
 - **Interaction** — конечный автомат ввода в координатах карты: получает «образцы указателя» (`PointerSample`), отдаёт команды симуляции и структурированную обратную связь.
 - **Presentation** строит визуальные слои по данным модели и никогда не принимает игровых решений.
 - **Input glue** (`PointerInput`, `BoardPicker`) переводит события и курсор в `PointerSample`.
@@ -175,6 +178,16 @@ tests/*  ──► соответствующие сборки
 - События: `StepStarted`, `UnitEnteredCell`, `WaypointReached`, `UnitBlocked`, `UnitUnblocked`, `MovementFinished`,
   `FacingChanged`, `TerrainChanged`.
 
+## 7.3. Тактическая пауза и игровой цикл
+
+- Кадр Godot: `GameSimulation.Advance(delta)` → 0…8 фиксированных тиков → события → ввод/представление.
+  Игровое время = `Tick × 1/30 с` и меняется только тиками; время отрисовки/интерфейса от него не зависит.
+- Пауза: `SetPaused(true)` — `Advance` ничего не делает и **не накапливает** время; снятие паузы продолжает с того же
+  `Progress` шага (без скачка). Пробел — действие `hx_toggle_pause` (`InputBindings`), обрабатывается вне автомата
+  приказов. На паузе работают выбор, протягивание, подсветка, построение и замена цепочек (D-030).
+- Системы правил: `ISimulationSystem.Tick(SimulationContext)` для каждой зарегистрированной системы по порядку;
+  контекст даёт `State`, `Tick`, `DeltaSeconds`, `Emit(event)` (D-031).
+
 ## 8. Визуальные слои
 
 | Порядок | Слой | Реализация |
@@ -222,17 +235,23 @@ tests/*  ──► соответствующие сборки
 | `--hx-script="a;b;c"` | последовательность шагов (см. ниже) |
 | `--hx-frames=N` | минимальное число кадров до завершения |
 | `--hx-screenshot=path.png` | сохранить кадр и выйти (если нет `--hx-stay`) |
-| `--hx-quit` | выйти после шагов (смоук-тест) |
+| `--hx-quit` | выйти после шагов (смоук-тест); код выхода 1, если провалилась хоть одна проверка `expect:` |
 
 Шаги: `hover:c,r`, `mouse:x,y`, `click:c,r`, `rclick:c,r`, `press:P`, `move:P`, `release:P`, `drag:P1>P2>…`
 (события мыши через `Input.ParseInputEvent` — тот же путь, что у реальной мыши), `spawn:base`, `spawn:zone:N`,
-`spawn:cell:c,r`, `place`, `obstacle:c,r` (переключить препятствие), `select:id`, `key:Escape`, `face:NorthEast`, `wait:N`. Точка `P` — `c,r` (центр гекса) или
+`spawn:cell:c,r`, `place`, `obstacle:c,r` (переключить препятствие), `select:id`, `key:Escape`, `key:Space`,
+`face:NorthEast`, `wait:N`, `pause[:on|off]`, `mark`, `ticks:N`, `waitidle:ID[:maxFrames]` (ждать, пока юнит выполнит ТД).
+
+Проверки: `expect:units:N`, `expect:cell:ID:c,r`, `expect:waypoints:ID:N`, `expect:facing:ID:Dir`,
+`expect:status:ID:Idle|Moving|Waiting|Blocked`, `expect:paused:true|false`, `expect:same-tick` (тик не изменился
+после `mark`). Итог печатается как `[automation] checks passed: N` или `FAILED k of N`.
+Регрессионный сценарий релиза — `tools/verify_release.ps1` (`$RegressionScenario`). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.4.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.5.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,
