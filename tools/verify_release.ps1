@@ -43,8 +43,12 @@ else { Write-Host "SHA-256 OK  $actual" }
 $info = Read-BuildInfo $archive.BuildInfo
 if ($info['version'] -ne $Version) { $errors.Add("BUILD_INFO version '$($info['version'])' != $Version") }
 if ($info['sha256'] -and $info['sha256'] -ne $actual) { $errors.Add('BUILD_INFO sha256 differs from the ZIP') }
-$tagCommit = Get-GitOutput @('rev-list', '-n', '1', $tag)
-if (-not $tagCommit) { $errors.Add("Git tag $tag not found (fetch tags: git fetch --tags)") }
+$tagCommit = Get-GitOutput @('rev-list', '-n', '1', "refs/tags/$tag")
+if (-not $tagCommit) {
+    & git -C $script:RepoRoot cat-file -e "$($info['commit'])^{commit}" 2>$null
+    if ($LASTEXITCODE -ne 0) { $errors.Add("Neither tag $tag nor commit $($info['commit']) exist in this clone (git fetch --tags)") }
+    else { Write-Warning "Tag $tag is missing; the build commit $($info['commit']) exists. Recreate tags: pwsh tools/create_release_tags.ps1" }
+}
 elseif ($tagCommit -ne $info['commit']) { $errors.Add("Tag $tag -> $tagCommit, but archive was built from $($info['commit'])") }
 else { Write-Host "Commit OK   $tagCommit ($tag)" }
 

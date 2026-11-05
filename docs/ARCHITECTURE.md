@@ -35,7 +35,8 @@ TactickGame/                     корень репозитория (логич
       maps/prototype.hexmap      данные карты 12×10
       export_presets.cfg         пресеты "Windows Desktop" и "Linux"
   tests/Core.Tests/              HexTactics.Core.Tests (xUnit)
-  tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1, common.ps1
+  tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1,
+                                 create_release_tags.ps1, common.ps1
   release_archives/vX.Y.Z/       ZIP Windows-сборки + .sha256 + BUILD_INFO.txt (вне папки игры)
 ```
 

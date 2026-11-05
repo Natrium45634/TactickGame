@@ -42,7 +42,7 @@ function Confirm-Destination([string]$Path) {
 if ($Mode -eq 'Build') {
     $archive = Get-ArchiveInfo -Version $Version -ArchiveRoot $ArchiveRoot
     if (-not (Test-Path $archive.Zip)) {
-        Fail "No archive for $tag at $($archive.Zip). If the repository uses Git LFS, run: git lfs pull"
+        Fail "No archive for $tag at $($archive.Zip). With a partial clone run: git checkout -- release_archives"
     }
     $expected = ((Get-Content $archive.Sha256 -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
     $actual = Get-Sha256 $archive.Zip

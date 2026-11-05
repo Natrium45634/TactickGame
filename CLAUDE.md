@@ -47,7 +47,9 @@ Godot: **4.7.2 stable .NET** (не переходить на beta/dev). .NET SDK
   2. Коммит, затем аннотированный тег: `git tag -a vX.Y.Z -m "HexTactics vX.Y.Z"`. Теги неизменяемы — не удалять и не переносить.
   3. `pwsh tools/build_release.ps1` (тесты + экспорт + ZIP + SHA-256 + BUILD_INFO) → `release_archives/vX.Y.Z/`.
   4. `pwsh tools/verify_release.ps1 -Version X.Y.Z [-Run]`.
-  5. Отдельным коммитом добавить архив (`release_archives/**` хранится через Git LFS), push ветки и тега.
+  5. Отдельным коммитом добавить архив (`release_archives/**`, обычные файлы Git, без LFS — см. D-010), скриншот
+     `docs/releases/vX.Y.Z/screenshot.png`; push ветки и тега. Если push тега запрещён средой (облачная сессия),
+     тег восстанавливается позже `tools/create_release_tags.ps1` по `BUILD_INFO.txt` (D-012).
 - Никогда не перезаписывать существующие архивы и не переписывать опубликованную историю.
 - В Git не коммитить `.godot/`, `bin/`, `obj/`, `build/`, `staging/`.
 

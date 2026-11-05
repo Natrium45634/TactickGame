@@ -28,7 +28,7 @@
 
 ## Сборка из исходников
 
-Нужно: [Godot 4.7.2 stable .NET](https://godotengine.org/download/archive/4.7.2-stable/), .NET SDK 8, Git (+ Git LFS для архивов).
+Нужно: [Godot 4.7.2 stable .NET](https://godotengine.org/download/archive/4.7.2-stable/), .NET SDK 8, Git, PowerShell 7 (для скриптов релиза).
 
 ```bash
 git clone https://github.com/Natrium45634/TactickGame.git
@@ -55,11 +55,20 @@ pwsh tools/restore_version.ps1 -Version 0.1.0 -Mode Source
 Каждая версия имеет неизменяемый Git-тег `vX.Y.Z`. Откат исходников вручную: `git checkout v0.1.0`
 (или `git worktree add ../HexTactics_v0.1.0 v0.1.0`).
 
-## Хранилище архивов
+## Хранилище архивов и теги
 
-<!-- archive-storage -->
-Архивы `release_archives/**` хранятся в Git LFS. Если после клонирования ZIP весит ~130 байт
-(указатель LFS), выполните `git lfs install` и `git lfs pull`.
+- ZIP-архивы хранятся как обычные файлы Git в `release_archives/vX.Y.Z/` (каждый < 100 МБ — лимит GitHub).
+  Git LFS не используется: среда, где собираются релизы, не может загружать объекты в LFS.
+  Чтобы склонировать только исходники и скачивать архивы по требованию, используйте частичный клон:
+  `git clone --filter=blob:limit=1m https://github.com/Natrium45634/TactickGame.git`.
+- Релизные теги `vX.Y.Z` создаются при сборке, но облачная среда может публиковать только рабочую ветку.
+  Точный коммит каждой версии записан в `release_archives/vX.Y.Z/BUILD_INFO.txt`; один раз выполните
+  на своей машине, чтобы создать и опубликовать недостающие аннотированные теги (существующие теги не изменяются):
+
+```powershell
+pwsh tools/create_release_tags.ps1
+git push origin --tags
+```
 
 ## Документация
 

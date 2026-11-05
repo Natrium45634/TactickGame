@@ -19,5 +19,5 @@
 - HUD: версия, коммит, версии движка и .NET, клетка под курсором, легенда.
 - Автоматизация `--hx-*` для скриншотов и смоук-тестов.
 - 38 автотестов Core (offset ↔ cube, соседи и симметрия, расстояние, раскладка, проходимость, парсер карты).
-- Скрипты `tools/build_release.ps1`, `verify_release.ps1`, `restore_version.ps1`.
+- Скрипты `tools/build_release.ps1`, `verify_release.ps1`, `restore_version.ps1`, `create_release_tags.ps1`.
 - Документация: README, CLAUDE.md, ARCHITECTURE, DECISIONS, CONTROLS, GAME_SPEC, release notes.
