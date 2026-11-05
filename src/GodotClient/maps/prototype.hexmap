@@ -1,0 +1,20 @@
+// HexTactics prototype map, stage 1.
+// Format: see docs/ARCHITECTURE.md ("Формат карты").
+// 12 columns x 10 rows, pointy-top hexes, odd-r offset (odd rows are shifted right by half a hex).
+// Tokens: .  walkable    #  blocked    B  player base    1..9  spawn zone id (must lie on the map edge)
+@name Прототип 12×10
+@size 12 10
+@base База игрока
+@zone 1 Северный край
+@zone 2 Восточный край
+
+. . . . . . . 1 1 1 . .
+ . . . . . . . . . . . .
+. . . . # . . . # # . .
+ . . . . # . . # . # . .
+B B . . # . . . # # . 2
+ B B . . # . . . . . . 2
+B . . . # . . . . . . 2
+ . . . . . . . . . . . .
+. . . . . . . # # . . .
+ . . . . . . . . . . . .

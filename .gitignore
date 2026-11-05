@@ -1,0 +1,27 @@
+# Godot engine caches / generated data (never commit)
+.godot/
+*.import
+export_credentials.cfg
+*.translation
+mono_crash.*.json
+
+# .NET build output
+bin/
+obj/
+TestResults/
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# Local build and staging output of tools/build_release.*
+/build/
+/staging/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.tmp
+*~

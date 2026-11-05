@@ -1,0 +1,15 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+  <!--
+    Godot client: presentation, input glue and UI. Game rules live in the referenced
+    pure C# projects and must not be re-implemented here.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>HexTactics.Client</RootNamespace>
+    <AssemblyName>HexTactics</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+  </ItemGroup>
+</Project>

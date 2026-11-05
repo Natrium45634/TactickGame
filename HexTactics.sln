@@ -1,0 +1,50 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{611CF2E3-2504-5C6C-BFAD-BE1ACDEFF2D2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{78DF2018-ED09-5DCB-A77E-89F5F8107005}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Core", "src\Core\HexTactics.Core.csproj", "{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics", "src\GodotClient\HexTactics.csproj", "{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Core.Tests", "tests\Core.Tests\HexTactics.Core.Tests.csproj", "{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		ExportDebug|Any CPU = ExportDebug|Any CPU
+		ExportRelease|Any CPU = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.ExportDebug|Any CPU.ActiveCfg = ExportDebug|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BCE8F1B0-8B11-51A8-9BAF-E289590B1CC2} = {611CF2E3-2504-5C6C-BFAD-BE1ACDEFF2D2}
+		{6F3C7DE0-ED84-5EC7-BF50-B584136F7011} = {611CF2E3-2504-5C6C-BFAD-BE1ACDEFF2D2}
+		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
+	EndGlobalSection
+EndGlobal

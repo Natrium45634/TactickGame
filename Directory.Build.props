@@ -1,0 +1,19 @@
+<Project>
+  <!--
+    Single source of truth for the product version of every .NET project in the
+    repository (Core, Simulation, Godot client, tests). tools/build_release.* checks
+    that this value matches project.godot and the Git tag before building a release.
+  -->
+  <PropertyGroup>
+    <HexTacticsVersion>0.1.0</HexTacticsVersion>
+    <Version>$(HexTacticsVersion)</Version>
+    <Product>HexTactics</Product>
+    <Company>HexTactics prototype</Company>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <!-- Appends "+<git commit>" to AssemblyInformationalVersion (shown in the HUD). -->
+    <IncludeSourceRevisionInInformationalVersion>true</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+</Project>
