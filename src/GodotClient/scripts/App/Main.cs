@@ -7,6 +7,7 @@ using HexTactics.Client.Presentation;
 using HexTactics.Client.UI;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
+using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Interaction;
 using HexTactics.Simulation;
@@ -32,6 +33,7 @@ public partial class Main : Node3D
     private HexFillLayer _fillLayer = null!;
     private HexFillLayer _hoverLayer = null!;
     private UnitsView _units = null!;
+    private OrdersView _orders = null!;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
     private AutomationRunner _automation = null!;
@@ -43,7 +45,7 @@ public partial class Main : Node3D
     private Button _placementButton = null!;
 
     private HexCoord? _hovered;
-    private long _fillStamp = -1;
+    private string _fillStamp = string.Empty;
 
     public override void _Ready()
     {
@@ -56,7 +58,7 @@ public partial class Main : Node3D
         _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
         _layout = new HexLayout(VisualConfig.HexSize);
         _sim = new GameSimulation(_map);
-        _fsm = new InputStateMachine(_sim);
+        _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
 
@@ -74,6 +76,10 @@ public partial class Main : Node3D
         AddChild(_hoverLayer);
         _hoverLayer.Build(_map.Grid, _layout);
 
+        _orders = new OrdersView { Name = "Orders" };
+        AddChild(_orders);
+        _orders.Initialize(_layout);
+
         _units = new UnitsView { Name = "Units" };
         _units.Initialize(_layout);
         AddChild(_units);
@@ -89,7 +95,7 @@ public partial class Main : Node3D
 
         _input = new PointerInput { Name = "PointerInput" };
         AddChild(_input);
-        _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _hud.IsOverUi);
+        _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _orders, _hud.IsOverUi);
         _input.DebugKey += OnDebugKey;
 
         _automation = new AutomationRunner { Name = "Automation" };
@@ -102,9 +108,12 @@ public partial class Main : Node3D
 
     public override void _Process(double delta)
     {
-        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta);
+        _fsm.Validate();
+        var drag = _fsm.Drag;
+        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, drag?.Unit, drag?.FacingPreview);
+        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, drag);
         UpdateHover();
-        UpdateFills();
+        UpdateFills(drag);
         UpdateHud();
     }
 
@@ -136,26 +145,48 @@ public partial class Main : Node3D
         _cellLabel.Text = hex is { } h ? DescribeCell(h) : "Клетка: — (курсор вне поля)";
     }
 
-    /// <summary>Passability layer: in placement mode every cell shows whether a unit can be placed there.</summary>
-    private void UpdateFills()
+    /// <summary>
+    /// Passability layer. Placement mode: every cell shows whether a unit can be placed there.
+    /// Order drag: the source hex gets a neutral marker and the hex under the cursor green/red.
+    /// </summary>
+    private void UpdateFills(DragPreview? drag)
     {
-        var stamp = _fsm.Mode == InputMode.Placement ? _sim.State.TopologyVersion : -1;
+        string stamp;
+        if (drag is not null)
+        {
+            stamp = $"drag:{drag.SourceCell}:{drag.TargetHex}:{drag.Status}:{_sim.State.TopologyVersion}";
+        }
+        else if (_fsm.Mode == InputMode.Placement)
+        {
+            stamp = $"place:{_sim.State.TopologyVersion}";
+        }
+        else
+        {
+            stamp = "none";
+        }
+
         if (stamp == _fillStamp)
         {
             return;
         }
 
         _fillStamp = stamp;
-        if (_fsm.Mode != InputMode.Placement)
+        _fillLayer.ClearAll();
+        if (drag is not null)
         {
-            _fillLayer.ClearAll();
-            return;
+            _fillLayer.SetFill(drag.SourceCell, VisualConfig.FillNeutral);
+            if (drag.TargetHex is { } target && target != drag.SourceCell && _map.Grid.Contains(target))
+            {
+                _fillLayer.SetFill(target, drag.Status == DragTargetStatus.Valid ? VisualConfig.FillValid : VisualConfig.FillInvalid);
+            }
         }
-
-        foreach (var cell in _map.Grid.Coords)
+        else if (_fsm.Mode == InputMode.Placement)
         {
-            var ok = SpawnRules.ValidateCell(_sim.State, cell) == SpawnError.None;
-            _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
+            foreach (var cell in _map.Grid.Coords)
+            {
+                var ok = SpawnRules.ValidateCell(_sim.State, cell) == SpawnError.None;
+                _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
+            }
         }
     }
 
@@ -164,7 +195,7 @@ public partial class Main : Node3D
         var size = GetViewport().GetVisibleRect().Size;
         _statusLabel.Text = $"Окно {size.X:0}×{size.Y:0} · {Engine.GetFramesPerSecond():0} FPS · юнитов: {_sim.State.UnitCount}";
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
-        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected);
+        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId);
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement);
     }
 
@@ -212,6 +243,24 @@ public partial class Main : Node3D
                 break;
             case PlacementModeChanged { Active: true }:
                 ShowMessage("Режим выставления: щёлкните по зелёной клетке. Esc / ПКМ — выход.", false);
+                break;
+            case OrderCommitted c:
+                ShowMessage(UiText.Order(c), !c.Result.Success);
+                break;
+            case OrderNotCreated n:
+                ShowMessage(UiText.NotCreated(n), true);
+                break;
+            case RotatedInPlace r:
+                ShowMessage($"Юнит {r.Unit} повернулся на месте: {UiText.Direction(r.Facing)} ({r.Facing.ShortName()}).", false);
+                break;
+            case DragCancelled d:
+                ShowMessage(d.ByUser ? "Стрелка отменена — очередь ТД не изменена." : "Отпущено на исходной клетке — без изменений.", false);
+                break;
+            case ChainContinueRefused refused:
+                ShowMessage($"Продолжить цепочку можно только из последней ТД (ТД{refused.Last.Sequence}).", true);
+                break;
+            case WaypointSelected w:
+                ShowMessage($"Выбрана ТД{w.Waypoint.Sequence} юнита {w.Unit}: клетка {UiText.Cell(w.Waypoint.Cell)}.", false);
                 break;
         }
     }
@@ -292,7 +341,16 @@ public partial class Main : Node3D
 
         _hud.AddHeader("Выбранный юнит");
         _selectionLabel = _hud.AddLabel(string.Empty, fontSize: 13);
-        _hud.AddLabel("Q / E — повернуть выбранного юнита (отладка)", dim: true, fontSize: 12);
+        _hud.AddSeparator();
+
+        _hud.AddHeader("Приказы");
+        _hud.AddLabel(
+            "ЛКМ на юните + тянуть → ТД1 (заменяет очередь)\n" +
+            "ЛКМ на последней ТД + тянуть → следующая ТД\n" +
+            "короткий жест внутри клетки юнита → поворот\n" +
+            "Esc / ПКМ → отменить текущую стрелку",
+            dim: true,
+            fontSize: 12);
         _hud.AddSeparator();
 
         _hud.AddHeader("Появление юнита");
@@ -363,6 +421,48 @@ public partial class Main : Node3D
             case "mouse":
                 InjectMotion(ParseVector(arg));
                 return 2;
+            case "press":
+                {
+                    var p = PointScreen(arg);
+                    InjectMotion(p);
+                    InjectButton(p, MouseButton.Left, true);
+                    return 2;
+                }
+
+            case "move":
+                InjectMotion(PointScreen(arg));
+                return 2;
+            case "release":
+                {
+                    var p = PointScreen(arg);
+                    InjectMotion(p);
+                    InjectButton(p, MouseButton.Left, false);
+                    return 2;
+                }
+
+            case "drag":
+                {
+                    // drag:A>B>C — press on A, move through the points, release on the last one.
+                    var points = arg.Split('>');
+                    var first = PointScreen(points[0]);
+                    InjectMotion(first);
+                    InjectButton(first, MouseButton.Left, true);
+                    var last = first;
+                    for (var i = 1; i < points.Length; i++)
+                    {
+                        var next = PointScreen(points[i]);
+                        for (var k = 1; k <= 4; k++)
+                        {
+                            InjectMotion(last.Lerp(next, k / 4f));
+                        }
+
+                        last = next;
+                    }
+
+                    InjectButton(last, MouseButton.Left, false);
+                    return 2;
+                }
+
             case "click":
                 {
                     var p = HexScreen(ParseHex(arg));
@@ -413,6 +513,26 @@ public partial class Main : Node3D
                 GD.PushWarning($"[automation] unknown step '{step}'");
                 return 1;
         }
+    }
+
+    /// <summary>
+    /// Screen position of an automation point: <c>c,r</c> (hex centre) or <c>c,r@Direction:distance</c>
+    /// (offset from the hex centre on the map plane, in hex sizes).
+    /// </summary>
+    private Vector2 PointScreen(string text)
+    {
+        var at = text.Split('@');
+        var hex = ParseHex(at[0]);
+        if (at.Length == 1)
+        {
+            return HexScreen(hex);
+        }
+
+        var dd = at[1].Split(':');
+        var dir = Enum.Parse<HexDirection>(dd[0]);
+        var dist = dd.Length > 1 ? double.Parse(dd[1], CultureInfo.InvariantCulture) : 0.5;
+        var p = _layout.HexToPlane(hex) + (HexLayout.DirectionVector(dir) * dist);
+        return _cameraRig.Camera.UnprojectPosition(p.ToWorld(0f));
     }
 
     private Vector2 HexScreen(HexCoord hex)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
+using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
 
@@ -68,6 +69,62 @@ public sealed class GameSimulation
         }
 
         return CommandResult.Ok;
+    }
+
+    /// <summary>
+    /// The hex from which new orders of the unit are planned: its logical cell while standing.
+    /// (From v0.4.0 a moving unit uses the hex it is entering — the nearest safe hex centre.)
+    /// </summary>
+    public HexCoord CommandAnchor(UnitId id) => State.GetUnit(id).Cell;
+
+    /// <summary>
+    /// Adds a waypoint. <see cref="OrderMode.Replace"/> (drag from the unit) replaces the pending
+    /// queue; <see cref="OrderMode.Append"/> (drag from the last waypoint) extends it. Invalid targets
+    /// are rejected and the queue stays as it was.
+    /// </summary>
+    public OrderResult IssueMoveOrder(UnitId id, HexCoord target, OrderMode mode)
+    {
+        var unit = State.FindUnit(id);
+        if (unit is null)
+        {
+            return new OrderResult(null, WaypointError.UnknownUnit);
+        }
+
+        var source = WaypointRules.SegmentSource(unit, mode, CommandAnchor(id));
+        var error = WaypointRules.ValidateTarget(State, id, source, target);
+        if (error != WaypointError.None)
+        {
+            _events.Add(new OrderRejected(Tick, id, target, error));
+            return new OrderResult(null, error);
+        }
+
+        if (mode == OrderMode.Replace)
+        {
+            State.ClearWaypoints(id);
+        }
+
+        var waypoint = State.AppendWaypoint(id, target);
+        _events.Add(new OrderIssued(Tick, id, waypoint, mode));
+        return new OrderResult(waypoint, WaypointError.None);
+    }
+
+    /// <summary>
+    /// Turns a unit that has no pending movement orders, without moving it (rotate-only gesture).
+    /// </summary>
+    public CommandResult RotateInPlace(UnitId id, HexDirection facing)
+    {
+        var unit = State.FindUnit(id);
+        if (unit is null)
+        {
+            return CommandResult.Fail($"Unit {id} does not exist.");
+        }
+
+        if (!unit.Orders.IsEmpty)
+        {
+            return CommandResult.Fail($"Unit {id} has pending waypoints; rotate-only is not applied.");
+        }
+
+        return SetFacing(id, facing);
     }
 
     /// <summary>Returns and clears the events produced since the previous call.</summary>

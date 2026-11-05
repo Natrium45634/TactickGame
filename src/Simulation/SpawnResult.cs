@@ -1,4 +1,5 @@
 using HexTactics.Core.Hex;
+using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
 
@@ -20,4 +21,10 @@ public readonly record struct CommandResult(bool Success, string? Reason = null)
     public static CommandResult Ok { get; } = new(true);
 
     public static CommandResult Fail(string reason) => new(false, reason);
+}
+
+/// <summary>Result of a movement order. On failure the order queue is unchanged.</summary>
+public readonly record struct OrderResult(Waypoint? Waypoint, WaypointError Error)
+{
+    public bool Success => Error == WaypointError.None && Waypoint is not null;
 }

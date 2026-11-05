@@ -1,7 +1,9 @@
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
+using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
+using HexTactics.Interaction;
 using HexTactics.Simulation;
 
 namespace HexTactics.Client.UI;
@@ -58,10 +60,59 @@ public static class UiText
         };
     }
 
-    public static string UnitInfo(UnitState u)
+    public static string UnitInfo(UnitState u, int? selectedWaypoint = null)
     {
-        return $"Юнит {u.Id} · {SideName(u.Side)}\n" +
-               $"клетка {Cell(u.Cell)} · взгляд: {Direction(u.Facing)} ({u.Facing.ShortName()})\n" +
-               $"скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД в очереди: {u.Orders.Count}";
+        var text = $"Юнит {u.Id} · {SideName(u.Side)}\n" +
+                   $"клетка {Cell(u.Cell)} · взгляд: {Direction(u.Facing)} ({u.Facing.ShortName()})\n" +
+                   $"скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД в очереди: {u.Orders.Count}";
+        if (!u.Orders.IsEmpty)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            foreach (var wp in u.Orders.Items)
+            {
+                var mark = wp.Id == selectedWaypoint ? "▸" : string.Empty;
+                parts.Add($"{mark}{wp.Sequence}{Cell(wp.Cell)}");
+            }
+
+            text += "\nмаршрут: " + string.Join(" → ", parts);
+        }
+
+        return text;
     }
+
+    public static string Order(OrderCommitted c)
+    {
+        if (!c.Result.Success)
+        {
+            return $"ТД не создана: {Error(c.Result.Error, null)}.";
+        }
+
+        var wp = c.Result.Waypoint!;
+        return c.Mode == OrderMode.Replace
+            ? $"Юнит {c.Unit}: новый маршрут — ТД{wp.Sequence} → {Cell(wp.Cell)}."
+            : $"Юнит {c.Unit}: добавлена ТД{wp.Sequence} → {Cell(wp.Cell)}.";
+    }
+
+    public static string NotCreated(OrderNotCreated n)
+    {
+        var cell = n.Target is { } t ? Cell(t) : string.Empty;
+        return n.Status switch
+        {
+            DragTargetStatus.OutOfBounds or DragTargetStatus.NoTarget => "ТД не создана: точка вне поля.",
+            DragTargetStatus.NotWalkable => $"ТД не создана: клетка {cell} непроходима.",
+            DragTargetStatus.Occupied => $"ТД не создана: клетка {cell} занята.",
+            DragTargetStatus.Unreachable => $"ТД не создана: до клетки {cell} нет пути.",
+            _ => "ТД не создана.",
+        };
+    }
+
+    private static string Error(WaypointError error, HexCoord? cell) => error switch
+    {
+        WaypointError.OutOfBounds => "точка вне поля",
+        WaypointError.NotWalkable => $"клетка {(cell is { } c ? Cell(c) : string.Empty)} непроходима",
+        WaypointError.Occupied => "клетка занята",
+        WaypointError.Unreachable => "нет пути",
+        WaypointError.SameAsSource => "совпадает с исходной клеткой",
+        _ => error.ToString(),
+    };
 }

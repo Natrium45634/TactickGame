@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.2.0**.
+Документ описывает фактическое устройство кода. Актуален для версии **v0.3.0**.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -23,17 +23,18 @@ TactickGame/                     корень репозитория (логич
   docs/                          GAME_SPEC, ARCHITECTURE, CONTROLS, DECISIONS, releases/vX.Y.Z/
   src/
     Core/                        HexTactics.Core — чистая модель (без Godot)
-      Hex/                       HexCoord, OffsetCoord, HexDirection, HexLayout, PlaneVector
+      Hex/                       HexCoord, OffsetCoord, HexDirection, HexLayout, PlaneVector, HexLine
       Map/                       TileType, TileState, HexGrid, MapDefinition, MapParser
       Units/                     UnitId, Side, UnitState, GameState
-      Orders/                    Waypoint, OrderQueue
+      Orders/                    Waypoint, OrderQueue, WaypointRules, OrderMode
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError
     Simulation/                  HexTactics.Simulation — GameSimulation, события, настройки (без Godot)
-    Interaction/                 HexTactics.Interaction — InputStateMachine (без Godot)
+    Interaction/                 HexTactics.Interaction — InputStateMachine, DragPreview (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
       scripts/App/               Main (композиционный корень), BuildInfo
-      scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView, VisualConfig
+      scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView,
+                                 OrdersView (стрелки и ТД), VisualConfig
       scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат)
       scripts/UI/                DebugHud, UiText (русские тексты сообщений)
       scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки)
@@ -119,25 +120,47 @@ tests/*  ──► соответствующие сборки
 
 ## 7. Автомат ввода (`InputStateMachine`)
 
+`Idle → UnitSelected → DraggingFromUnit / DraggingFromWaypoint → (ТД / поворот / отмена) → UnitSelected`, плюс отладочный `Placement`.
+
 | Состояние | Событие | Результат |
 |---|---|---|
 | `Idle` / `UnitSelected` | щелчок ЛКМ по юниту (корпус или клетка) | `UnitSelected(юнит)` |
+| `Idle` / `UnitSelected` | щелчок ЛКМ по маркеру ТД | `UnitSelected(владелец)`, `SelectedWaypointId` |
 | `Idle` / `UnitSelected` | щелчок ЛКМ по пустой клетке / вне поля | `Idle` |
-| любое | `EnterPlacementMode` (кнопка, P) | `Placement` |
-| `Placement` | щелчок ЛКМ по клетке | `GameSimulation.Spawn(AtCell)`; успех → `UnitSelected(новый)`, отказ → остаётся `Placement` + сообщение |
-| `Placement` | Esc / щелчок ПКМ | прежнее выделение (`UnitSelected`) или `Idle` |
+| `Idle` / `UnitSelected` | ЛКМ нажата на юните, смещение > 8 px | выбрать юнита → `DraggingFromUnit` (источник — `CommandAnchor`, режим Replace) |
+| `Idle` / `UnitSelected` | ЛКМ нажата на **последней** ТД, смещение > 8 px | `DraggingFromWaypoint` (источник — клетка ТД, режим Append) |
+| то же | ЛКМ нажата на непоследней ТД, смещение > 8 px | отказ `ChainContinueRefused`, остаётся `UnitSelected` |
+| `Dragging*` | движение | пересчёт `DragPreview` (цель, статус, предпросмотр направления) |
+| `Dragging*` | отпускание ЛКМ: статус `Valid` | `GameSimulation.IssueMoveOrder(Replace/Append)` → `UnitSelected` |
+| `DraggingFromUnit` | отпускание в исходной клетке, ≥ 0,25 от центра, у юнита нет ТД | `RotateInPlace(направление в плоскости)` → `UnitSelected` |
+| `Dragging*` | отпускание в мёртвой зоне / вне поля / на запрещённой клетке | ничего не создаётся, сообщение → `UnitSelected` |
+| `Dragging*` | Esc или нажатие ПКМ | отмена стрелки, очередь не меняется → `UnitSelected` |
+| любое | `EnterPlacementMode` (кнопка, P) | `Placement` (щелчок по клетке → `Spawn(AtCell)`; Esc/ПКМ — выход) |
 
-- Щелчок = отпускание той же кнопки при смещении ≤ `DragThresholdPixels` (8 px); большее смещение — жест перетаскивания (v0.3).
+- Приоритет попадания при нажатии: ТД выбранного юнита → юнит (корпус или клетка) → ТД другого юнита → земля.
+- `DragPreview`: `SourceCell`, `SourceCenter`, `Pointer` (конец стрелки — точка курсора на плоскости), `TargetHex`,
+  `Status` (`Valid`, `RotateOnly`, `SourceDeadZone`, `SourceHasOrders`, `OutOfBounds`, `NotWalkable`, `Occupied`, `NoTarget`),
+  `FacingPreview` (только для Replace: первый шаг к цели; в v0.3.0 — по прямой гекс-линии, см. D-021).
+- Валидность цели = `WaypointRules.ValidateTarget` — та же функция, что в команде симуляции.
 - Нажатия над HUD не попадают в автомат; отпускания передаются всегда, чтобы жест не «зависал».
-- Обратная связь: `SelectionChanged`, `PlacementModeChanged`, `SpawnAttempted` → тексты формирует `UiText` в клиенте.
+- Обратная связь (`OrderCommitted`, `OrderNotCreated`, `RotatedInPlace`, `DragCancelled`, `ChainContinueRefused`,
+  `WaypointSelected`, `SpawnAttempted`, …) → тексты формирует `UiText` в клиенте.
+
+## 7.1. Приказы движения в модели
+
+- `OrderQueue` юнита: `Waypoint(Id, Sequence, Cell)` в порядке исполнения. Изменяется только через `GameState`
+  (`AppendWaypoint`, `ClearWaypoints`, `CompleteCurrentWaypoint`), версия очереди растёт при каждом изменении.
+- `GameSimulation.IssueMoveOrder(unit, target, mode)`: источник сегмента — `CommandAnchor` (Replace) или последняя ТД
+  (Append); при ошибке очередь не меняется (`OrderRejected`), при успехе `OrderIssued`.
+- `RotateInPlace` разрешён только без ТД. Исполнение движения — v0.4.0.
 
 ## 8. Визуальные слои
 
 | Порядок | Слой | Реализация |
 |---|---|---|
 | 0 | Поле | `BoardView`: один `ArrayMesh` — шестигранные призмы без зазоров; препятствия — поднятые колонны |
-| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): в режиме выставления зелёный/красный |
-| 2 | Маршрут/стрелки/ТД (с v0.3) | — |
+| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): в режиме выставления все клетки зелёные/красные; при протягивании — исходная клетка жёлтая, курсорная зелёная/красная |
+| 2 | Маршрут/стрелки/ТД | `OrdersView`: стрелка протягивания (ImmediateMesh, каждый кадр), цепочки «юнит → ТД1 → ТД2…» толстыми прямыми стрелками, шестигранные маркеры ТД с номерами (`Label3D` поверх всего) |
 | 3 | Юниты | `UnitsView` → `UnitView`: цилиндр, «дротик» на крышке и стрелка на земле (взгляд), тор выделения |
 | 3+ | Курсорный гекс | `HexFillLayer` с белой заливкой α = 0.22, `render_priority = 3` |
 | UI | HUD | `CanvasLayer` слева, масштабируется по высоте окна |
@@ -180,13 +203,15 @@ tests/*  ──► соответствующие сборки
 | `--hx-screenshot=path.png` | сохранить кадр и выйти (если нет `--hx-stay`) |
 | `--hx-quit` | выйти после шагов (смоук-тест) |
 
-Шаги: `hover:c,r`, `mouse:x,y`, `click:c,r`, `rclick:c,r` (события мыши через `Input.ParseInputEvent` — тот же путь,
-что у реальной мыши), `spawn:base`, `spawn:zone:N`, `spawn:cell:c,r`, `place`, `key:Escape`, `face:NorthEast`, `wait:N`.
+Шаги: `hover:c,r`, `mouse:x,y`, `click:c,r`, `rclick:c,r`, `press:P`, `move:P`, `release:P`, `drag:P1>P2>…`
+(события мыши через `Input.ParseInputEvent` — тот же путь, что у реальной мыши), `spawn:base`, `spawn:zone:N`,
+`spawn:cell:c,r`, `place`, `key:Escape`, `face:NorthEast`, `wait:N`. Точка `P` — `c,r` (центр гекса) или
+`c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.2.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.3.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

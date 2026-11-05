@@ -14,6 +14,7 @@ public partial class DebugHud : CanvasLayer
     public const float Margin = 12f;
 
     private PanelContainer _panel = null!;
+    private ScrollContainer _scroll = null!;
     private VBoxContainer _root = null!;
     private Theme _theme = null!;
 
@@ -63,9 +64,18 @@ public partial class DebugHud : CanvasLayer
         });
         AddChild(_panel);
 
-        _root = new VBoxContainer { Name = "Root" };
+        // The panel never grows beyond the window: long content scrolls instead.
+        _scroll = new ScrollContainer
+        {
+            Name = "Scroll",
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
+        };
+        _panel.AddChild(_scroll);
+
+        _root = new VBoxContainer { Name = "Root", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _root.AddThemeConstantOverride("separation", 6);
-        _panel.AddChild(_root);
+        _scroll.AddChild(_root);
         _panel.Resized += () => LayoutChanged?.Invoke();
 
         GetViewport().SizeChanged += UpdateScale;
@@ -138,6 +148,18 @@ public partial class DebugHud : CanvasLayer
         row.AddThemeConstantOverride("separation", 6);
         _root.AddChild(row);
         return row;
+    }
+
+    public override void _Process(double delta)
+    {
+        // Content-margins of the panel style (12 + 12) and the outer margins.
+        var maxHeight = (GetViewport().GetVisibleRect().Size.Y / UiScale) - (2 * Margin) - 24f;
+        var height = Mathf.Max(40f, Mathf.Min(_root.GetCombinedMinimumSize().Y, maxHeight));
+        if (Mathf.Abs(_scroll.CustomMinimumSize.Y - height) > 0.5f)
+        {
+            _scroll.CustomMinimumSize = new Vector2(PanelWidth - 28f, height);
+            _panel.ResetSize();
+        }
     }
 
     /// <summary>True if the viewport position lies over the HUD panel (board input must ignore it).</summary>

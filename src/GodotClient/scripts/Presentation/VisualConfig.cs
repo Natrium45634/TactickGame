@@ -47,6 +47,18 @@ public static class VisualConfig
     /// <summary>Neutral marker for the source hex of an order drag (rotate-in-place area).</summary>
     public static readonly Color FillNeutral = new(0.95f, 0.85f, 0.35f, 0.24f);
 
+    /// <summary>Drag arrow colours: valid target, rotate-only gesture, no-op, invalid target.</summary>
+    public static readonly Color ArrowValid = new(0.98f, 0.97f, 0.92f, 0.82f);
+    public static readonly Color ArrowRotate = new(1.0f, 0.86f, 0.38f, 0.85f);
+    public static readonly Color ArrowIdle = new(0.75f, 0.77f, 0.80f, 0.55f);
+    public static readonly Color ArrowInvalid = new(0.95f, 0.36f, 0.30f, 0.80f);
+
+    /// <summary>Committed order chains (straight thick arrows between order points).</summary>
+    public static readonly Color ChainSelected = new(1.0f, 0.80f, 0.36f, 0.55f);
+    public static readonly Color ChainOther = new(0.85f, 0.87f, 0.92f, 0.30f);
+    public static readonly Color WaypointSelectedUnit = new(0.98f, 0.70f, 0.22f);
+    public static readonly Color WaypointOtherUnit = new(0.62f, 0.65f, 0.70f);
+
     public static readonly Color UnitPlayer = new(0.30f, 0.50f, 0.80f);
     public static readonly Color UnitEnemy = new(0.78f, 0.34f, 0.30f);
     public static readonly Color UnitFacingPointer = new(0.97f, 0.97f, 0.98f);

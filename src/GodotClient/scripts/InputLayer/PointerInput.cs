@@ -17,6 +17,7 @@ public partial class PointerInput : Node
     private Func<Camera3D> _camera = null!;
     private BoardPicker _picker = null!;
     private UnitsView _units = null!;
+    private OrdersView _orders = null!;
     private Func<Vector2, bool> _isOverUi = null!;
     private bool _primaryDown;
     private bool _secondaryDown;
@@ -28,8 +29,9 @@ public partial class PointerInput : Node
 
     public bool MouseInside { get; private set; }
 
-    public void Initialize(InputStateMachine fsm, Func<Camera3D> camera, BoardPicker picker, UnitsView units, Func<Vector2, bool> isOverUi)
+    public void Initialize(InputStateMachine fsm, Func<Camera3D> camera, BoardPicker picker, UnitsView units, OrdersView orders, Func<Vector2, bool> isOverUi)
     {
+        _orders = orders;
         _fsm = fsm;
         _camera = camera;
         _picker = picker;
@@ -60,7 +62,13 @@ public partial class PointerInput : Node
         }
 
         var unit = _units.PickUnit(camera.ProjectRayOrigin(screen), camera.ProjectRayNormal(screen));
-        return new PointerSample(new ScreenPoint(screen.X, screen.Y), plane, hex, unit);
+        int? waypoint = null;
+        if (BoardPicker.GroundPoint(camera, screen, out var ground))
+        {
+            waypoint = _orders.PickWaypoint(ground, _fsm.SelectedUnit);
+        }
+
+        return new PointerSample(new ScreenPoint(screen.X, screen.Y), plane, hex, unit, waypoint);
     }
 
     public override void _Input(InputEvent @event)

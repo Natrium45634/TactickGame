@@ -112,12 +112,6 @@ public partial class UnitView : Node3D
         _facingPivot.Rotation = new Vector3(0, _visualAngle, 0);
     }
 
-    /// <summary>Shows a preview facing (e.g. while dragging an order) without changing the model.</summary>
-    public void PreviewFacing(HexDirection facing)
-    {
-        _targetAngle = Mathf.DegToRad((float)facing.AngleDegrees());
-    }
-
     /// <summary>
     /// Flat arrowhead ("dart") in the XZ plane pointing along local +X. The notch at the back makes the
     /// direction unambiguous, unlike a plain triangle.

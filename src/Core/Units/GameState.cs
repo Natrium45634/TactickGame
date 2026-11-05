@@ -116,6 +116,21 @@ public sealed class GameState
         GetUnit(id).Facing = facing;
     }
 
+    /// <summary>Finds the unit that owns a waypoint and the waypoint's index in its queue.</summary>
+    public (UnitState Unit, int Index)? FindWaypoint(int waypointId)
+    {
+        foreach (var unit in _units.Values)
+        {
+            var index = unit.Orders.IndexOf(waypointId);
+            if (index >= 0)
+            {
+                return (unit, index);
+            }
+        }
+
+        return null;
+    }
+
     // ----- Order queue mutation (all queue changes go through here) -----
 
     public Waypoint AppendWaypoint(UnitId id, HexCoord cell) => GetUnit(id).Orders.Append(_nextWaypointId++, cell);

@@ -17,7 +17,7 @@ public class SelectionAndPlacementTests
 
     public SelectionAndPlacementTests()
     {
-        _fsm = new InputStateMachine(_sim);
+        _fsm = new InputStateMachine(_sim, new HexLayout(1.0));
         _fsm.Feedback += f => _feedback.Add(f);
     }
 

@@ -16,7 +16,7 @@ public partial class UnitsView : Node3D
     public IReadOnlyDictionary<UnitId, UnitView> Views => _views;
 
     /// <summary>Creates/removes views to match the state and updates positions and facing.</summary>
-    public void Sync(GameState state, UnitId? selected, float delta)
+    public void Sync(GameState state, UnitId? selected, float delta, UnitId? previewUnit = null, HexDirection? previewFacing = null)
     {
         var alive = new HashSet<UnitId>();
         foreach (var unit in state.Units)
@@ -30,7 +30,8 @@ public partial class UnitsView : Node3D
                 _views.Add(unit.Id, view);
             }
 
-            view.Sync(PositionOf(unit), unit.Facing, delta);
+            var facing = previewUnit == unit.Id && previewFacing is { } pf ? pf : unit.Facing;
+            view.Sync(PositionOf(unit), facing, delta);
             view.Selected = selected == unit.Id;
         }
 
