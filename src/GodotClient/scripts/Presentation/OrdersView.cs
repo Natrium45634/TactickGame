@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Godot;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Orders;
+using HexTactics.Core.Pathfinding;
 using HexTactics.Core.Units;
 using HexTactics.Interaction;
 
@@ -21,6 +22,8 @@ public partial class OrdersView : Node3D
     public const float WaypointPickRadius = 0.42f;
 
     private const float ArrowLift = 0.035f;
+    private const float PathLift = 0.05f;
+    private const float PathWidth = 0.085f;
     private const float MarkerRadius = 0.24f;
 
     private readonly List<(int Id, UnitId Unit, int Sequence, Vector3 Position)> _markers = new();
@@ -30,6 +33,11 @@ public partial class OrdersView : Node3D
     private ImmediateMesh _dragMesh = null!;
     private StandardMaterial3D _dragMaterial = null!;
     private long _signature = long.MinValue;
+    private ImmediateMesh _pathMesh = null!;
+    private MeshInstance3D _pathLines = null!;
+    private readonly Dictionary<(int From, int To), IReadOnlyList<HexCoord>?> _segmentCache = new();
+    private readonly List<(Vector3 Vertex, Color Color)> _pathVertices = new();
+    private long _segmentCacheVersion = -1;
 
     public void Initialize(HexLayout layout)
     {
@@ -47,6 +55,157 @@ public partial class OrdersView : Node3D
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         };
         AddChild(_dragArrow);
+
+        // Thin lines of the computed routes (around obstacles), separate from the straight order arrows.
+        _pathMesh = new ImmediateMesh();
+        _pathLines = new MeshInstance3D
+        {
+            Name = "PathLines",
+            Mesh = _pathMesh,
+            MaterialOverride = new StandardMaterial3D
+            {
+                VertexColorUseAsAlbedo = true,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled,
+                RenderPriority = 6,
+            },
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        };
+        AddChild(_pathLines);
+    }
+
+    /// <summary>
+    /// Draws the computed routes every frame: the remaining path of each unit from its current visual position
+    /// through all its waypoints, and the preview path of an active drag. Routes come from the model
+    /// (<see cref="UnitMotion.Path"/>) or from the path finder, never from the straight arrows.
+    /// </summary>
+    public void SyncPaths(GameState state, UnitId? selected, DragPreview? drag, System.Func<UnitId, PlaneVector?> visualPosition)
+    {
+        if (_segmentCacheVersion != state.TopologyVersion)
+        {
+            _segmentCache.Clear();
+            _segmentCacheVersion = state.TopologyVersion;
+        }
+
+        _pathMesh.ClearSurfaces();
+        _pathVertices.Clear();
+        foreach (var unit in state.Units)
+        {
+            if (unit.Orders.IsEmpty)
+            {
+                continue;
+            }
+
+            var color = unit.Id == selected ? VisualConfig.PathSelected : VisualConfig.PathOther;
+            var points = new List<PlaneVector> { visualPosition(unit.Id) ?? _layout.HexToPlane(unit.Cell) };
+            var m = unit.Motion;
+            var first = unit.Orders.Items[0];
+            if (m.PathWaypointId == first.Id && m.Path.Count > 0)
+            {
+                foreach (var c in m.Path)
+                {
+                    points.Add(_layout.HexToPlane(c));
+                }
+            }
+            else if (m.Status != MovementStatus.Blocked)
+            {
+                AppendSegment(points, state, unit.Id, unit.Motion.StepTo ?? unit.Cell, first.Cell, -unit.Id.Value, first.Id);
+            }
+
+            for (var i = 1; i < unit.Orders.Count; i++)
+            {
+                var a = unit.Orders.Items[i - 1];
+                var b = unit.Orders.Items[i];
+                if (points.Count == 0 || !AppendSegment(points, state, unit.Id, a.Cell, b.Cell, a.Id, b.Id))
+                {
+                    AddPolyline(_pathVertices, points, PathWidth, color);
+                    points = new List<PlaneVector> { _layout.HexToPlane(b.Cell) };
+                }
+            }
+
+            AddPolyline(_pathVertices, points, PathWidth, color);
+        }
+
+        if (drag?.Path is { Count: > 1 } preview)
+        {
+            var pts = new List<PlaneVector>();
+            foreach (var c in preview)
+            {
+                pts.Add(_layout.HexToPlane(c));
+            }
+
+            AddPolyline(_pathVertices, pts, PathWidth * 1.25f, VisualConfig.PathPreview);
+        }
+
+        if (_pathVertices.Count == 0)
+        {
+            return;
+        }
+
+        _pathMesh.SurfaceBegin(Mesh.PrimitiveType.Triangles);
+        foreach (var (vertex, color) in _pathVertices)
+        {
+            _pathMesh.SurfaceSetColor(color);
+            _pathMesh.SurfaceAddVertex(vertex);
+        }
+
+        _pathMesh.SurfaceEnd();
+    }
+
+    /// <summary>Appends the cached shortest path a → b (without a) to <paramref name="points"/>.</summary>
+    private bool AppendSegment(List<PlaneVector> points, GameState state, UnitId unit, HexCoord a, HexCoord b, int fromKey, int toKey)
+    {
+        if (!_segmentCache.TryGetValue((fromKey, toKey), out var path))
+        {
+            path = Pathfinder.FindPath(state.Grid, a, b, state.ObstaclesFor(unit));
+            _segmentCache[(fromKey, toKey)] = path;
+        }
+
+        if (path is null)
+        {
+            return false;
+        }
+
+        if (points.Count == 0 || points[^1].DistanceTo(_layout.HexToPlane(a)) > 1e-6)
+        {
+            points.Add(_layout.HexToPlane(a));
+        }
+
+        for (var i = 1; i < path.Count; i++)
+        {
+            points.Add(_layout.HexToPlane(path[i]));
+        }
+
+        return true;
+    }
+
+    private static void AddPolyline(List<(Vector3, Color)> output, List<PlaneVector> points, float width, Color color)
+    {
+        var half = width * 0.5f;
+        for (var i = 1; i < points.Count; i++)
+        {
+            var a = points[i - 1];
+            var b = points[i];
+            var d = b - a;
+            var len = (float)d.Length;
+            if (len < 1e-4f)
+            {
+                continue;
+            }
+
+            var px = (float)(-d.Z / len) * half;
+            var pz = (float)(d.X / len) * half;
+            var a0 = new Vector3((float)a.X + px, PathLift, (float)a.Z + pz);
+            var a1 = new Vector3((float)a.X - px, PathLift, (float)a.Z - pz);
+            var b0 = new Vector3((float)b.X + px, PathLift, (float)b.Z + pz);
+            var b1 = new Vector3((float)b.X - px, PathLift, (float)b.Z - pz);
+            foreach (var v in new[] { a0, b0, b1, a0, b1, a1 })
+            {
+                output.Add((v, VisualConfig.ToRenderColor(color)));
+            }
+        }
     }
 
     /// <summary>Rebuilds committed chains when any queue or the selection changed; redraws the drag arrow every frame.</summary>
@@ -94,6 +253,7 @@ public partial class OrdersView : Node3D
             h = (h * 31) + unit.Id.Value;
             h = (h * 31) + unit.Orders.Version;
             h = (h * 31) + unit.Cell.GetHashCode();
+            h = (h * 31) + (unit.Motion.StepTo?.GetHashCode() ?? 0);
         }
 
         h = (h * 31) + (selected?.Value ?? -1);
@@ -119,16 +279,16 @@ public partial class OrdersView : Node3D
             var isSelected = unit.Id == selected;
             var color = isSelected ? VisualConfig.ChainSelected : VisualConfig.ChainOther;
             var mesh = new ImmediateMesh();
-            mesh.SurfaceBegin(Mesh.PrimitiveType.Triangles);
-            var from = _layout.HexToPlane(unit.Cell);
+            var tris = new List<Vector3>();
+            var from = _layout.HexToPlane(unit.Motion.StepTo ?? unit.Cell);
             foreach (var wp in unit.Orders.Items)
             {
                 var to = _layout.HexToPlane(wp.Cell);
-                AddArrow(mesh, from, to, startInset: 0.36f, endInset: MarkerRadius + 0.04f);
+                AddArrow(tris, from, to, startInset: 0.36f, endInset: MarkerRadius + 0.04f);
                 from = to;
             }
 
-            mesh.SurfaceEnd();
+            CommitTriangles(mesh, tris);
             _committed.AddChild(new MeshInstance3D
             {
                 Name = $"Chain{unit.Id.Value}",
@@ -214,16 +374,16 @@ public partial class OrdersView : Node3D
             return;
         }
 
-        _dragMesh.SurfaceBegin(Mesh.PrimitiveType.Triangles);
-        AddArrow(_dragMesh, drag.SourceCenter, pointer, startInset: drag.Mode == OrderMode.Replace ? 0.36f : MarkerRadius, endInset: 0f);
-        _dragMesh.SurfaceEnd();
+        var tris = new List<Vector3>();
+        AddArrow(tris, drag.SourceCenter, pointer, startInset: drag.Mode == OrderMode.Replace ? 0.36f : MarkerRadius, endInset: 0f);
+        CommitTriangles(_dragMesh, tris);
     }
 
     /// <summary>
     /// Appends a flat straight arrow from <paramref name="a"/> to <paramref name="b"/> on the plane:
     /// body of <see cref="ArrowBodyWidth"/> and a head; the head shrinks for very short arrows.
     /// </summary>
-    private static void AddArrow(ImmediateMesh mesh, PlaneVector a, PlaneVector b, float startInset, float endInset)
+    private static void AddArrow(List<Vector3> mesh, PlaneVector a, PlaneVector b, float startInset, float endInset)
     {
         var dir = b - a;
         var len = (float)dir.Length;
@@ -256,21 +416,37 @@ public partial class OrdersView : Node3D
             Quad(mesh, P(start, -bodyHalf), P(neck, -bodyHalf), P(neck, bodyHalf), P(start, bodyHalf));
         }
 
-        mesh.SurfaceSetNormal(Vector3.Up);
-        mesh.SurfaceAddVertex(P(neck, -headHalf));
-        mesh.SurfaceAddVertex(P(end, 0));
-        mesh.SurfaceAddVertex(P(neck, headHalf));
+        mesh.Add(P(neck, -headHalf));
+        mesh.Add(P(end, 0));
+        mesh.Add(P(neck, headHalf));
     }
 
-    private static void Quad(ImmediateMesh mesh, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+    private static void Quad(List<Vector3> mesh, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
     {
-        mesh.SurfaceSetNormal(Vector3.Up);
-        mesh.SurfaceAddVertex(a);
-        mesh.SurfaceAddVertex(b);
-        mesh.SurfaceAddVertex(c);
-        mesh.SurfaceAddVertex(a);
-        mesh.SurfaceAddVertex(c);
-        mesh.SurfaceAddVertex(d);
+        mesh.Add(a);
+        mesh.Add(b);
+        mesh.Add(c);
+        mesh.Add(a);
+        mesh.Add(c);
+        mesh.Add(d);
+    }
+
+    /// <summary>Writes triangles into an ImmediateMesh (skips empty surfaces, which Godot rejects).</summary>
+    private static void CommitTriangles(ImmediateMesh mesh, List<Vector3> triangles)
+    {
+        if (triangles.Count == 0)
+        {
+            return;
+        }
+
+        mesh.SurfaceBegin(Mesh.PrimitiveType.Triangles);
+        foreach (var v in triangles)
+        {
+            mesh.SurfaceSetNormal(Vector3.Up);
+            mesh.SurfaceAddVertex(v);
+        }
+
+        mesh.SurfaceEnd();
     }
 
     private static StandardMaterial3D NewArrowMaterial(Color color, int priority) => new()

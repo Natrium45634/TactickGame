@@ -59,6 +59,11 @@ public static class VisualConfig
     public static readonly Color WaypointSelectedUnit = new(0.98f, 0.70f, 0.22f);
     public static readonly Color WaypointOtherUnit = new(0.62f, 0.65f, 0.70f);
 
+    /// <summary>Thin lines of computed routes (around obstacles).</summary>
+    public static readonly Color PathSelected = new(1.0f, 1.0f, 1.0f, 0.92f);
+    public static readonly Color PathOther = new(0.88f, 0.90f, 0.94f, 0.45f);
+    public static readonly Color PathPreview = new(0.30f, 0.95f, 0.50f, 0.95f);
+
     public static readonly Color UnitPlayer = new(0.30f, 0.50f, 0.80f);
     public static readonly Color UnitEnemy = new(0.78f, 0.34f, 0.30f);
     public static readonly Color UnitFacingPointer = new(0.97f, 0.97f, 0.98f);

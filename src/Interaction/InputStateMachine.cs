@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using HexTactics.Core.Hex;
+using HexTactics.Core.Pathfinding;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
@@ -15,6 +17,9 @@ public enum InputMode
 
     /// <summary>Debug placement mode: the next click on a hex places a unit (spawn method 3).</summary>
     Placement = 2,
+
+    /// <summary>Debug mode: clicking a hex toggles an obstacle (to test re-planning).</summary>
+    ObstacleEdit = 5,
 
     /// <summary>LMB held on a unit and moved: drawing an order arrow from the unit.</summary>
     DraggingFromUnit = 3,
@@ -51,6 +56,9 @@ public sealed class InputStateMachine
     private readonly HexLayout _layout;
     private PressInfo? _press;
     private DragState? _drag;
+    private IReadOnlySet<HexCoord> _reachable = new HashSet<HexCoord>();
+    private HexCoord _reachableSource;
+    private long _reachableVersion = -1;
 
     public InputStateMachine(GameSimulation simulation, HexLayout layout, InteractionSettings? settings = null)
     {
@@ -110,7 +118,7 @@ public sealed class InputStateMachine
             return;
         }
 
-        if (_press is not { Button: PointerButton.Primary } press || Mode == InputMode.Placement)
+        if (_press is not { Button: PointerButton.Primary } press || Mode is InputMode.Placement or InputMode.ObstacleEdit)
         {
             return;
         }
@@ -190,11 +198,27 @@ public sealed class InputStateMachine
             {
                 ExitPlacementMode();
             }
+            else if (Mode == InputMode.ObstacleEdit)
+            {
+                ToggleObstacleEditMode();
+            }
 
             return;
         }
 
         OnPrimaryClick(press.Value, sample);
+    }
+
+    /// <summary>
+    /// Re-evaluates the active drag against the current game state (call once per frame): units move,
+    /// so reachability, the source of a drag from a moving unit and the preview path may change.
+    /// </summary>
+    public void Refresh()
+    {
+        if (IsDragging && Pointer is { } pointer)
+        {
+            UpdateDrag(pointer);
+        }
     }
 
     /// <summary>
@@ -209,6 +233,10 @@ public sealed class InputStateMachine
         else if (Mode == InputMode.Placement)
         {
             ExitPlacementMode();
+        }
+        else if (Mode == InputMode.ObstacleEdit)
+        {
+            ToggleObstacleEditMode();
         }
 
         _press = null;
@@ -228,6 +256,11 @@ public sealed class InputStateMachine
             CancelDrag(byUser: true);
         }
 
+        if (Mode == InputMode.ObstacleEdit)
+        {
+            ToggleObstacleEditMode();
+        }
+
         Mode = InputMode.Placement;
         Feedback?.Invoke(new PlacementModeChanged(true));
     }
@@ -241,6 +274,30 @@ public sealed class InputStateMachine
 
         Mode = SelectedUnit is not null ? InputMode.UnitSelected : InputMode.Idle;
         Feedback?.Invoke(new PlacementModeChanged(false));
+    }
+
+    public void ToggleObstacleEditMode()
+    {
+        if (IsDragging)
+        {
+            CancelDrag(byUser: true);
+        }
+
+        if (Mode == InputMode.ObstacleEdit)
+        {
+            Mode = SelectedUnit is not null ? InputMode.UnitSelected : InputMode.Idle;
+            Feedback?.Invoke(new ObstacleEditModeChanged(false));
+        }
+        else
+        {
+            if (Mode == InputMode.Placement)
+            {
+                ExitPlacementMode();
+            }
+
+            Mode = InputMode.ObstacleEdit;
+            Feedback?.Invoke(new ObstacleEditModeChanged(true));
+        }
     }
 
     public void TogglePlacementMode()
@@ -296,6 +353,17 @@ public sealed class InputStateMachine
         if (Mode == InputMode.Placement)
         {
             PlaceAt(sample.Hex);
+            return;
+        }
+
+        if (Mode == InputMode.ObstacleEdit)
+        {
+            if (sample.Hex is { } cell && _sim.State.Grid.Contains(cell))
+            {
+                var blocked = _sim.State.Grid[cell].IsWalkable;
+                Feedback?.Invoke(new ObstacleToggled(cell, blocked, _sim.SetObstacle(cell, blocked)));
+            }
+
             return;
         }
 
@@ -378,6 +446,7 @@ public sealed class InputStateMachine
     private void BeginDrag(UnitId unit, OrderMode mode, HexCoord source)
     {
         _drag = new DragState(unit, mode, source);
+        _reachableVersion = -1; // compute the reachable set for this drag
         Mode = mode == OrderMode.Replace ? InputMode.DraggingFromUnit : InputMode.DraggingFromWaypoint;
         Feedback?.Invoke(new DragStarted(unit, mode, source));
     }
@@ -389,9 +458,26 @@ public sealed class InputStateMachine
             return;
         }
 
+        if (_sim.State.FindUnit(drag.Unit) is not { } unitState)
+        {
+            CancelDrag(byUser: false);
+            return;
+        }
+
+        // The source follows the game: a drag from a moving unit starts at its current command anchor;
+        // a drag from the last waypoint falls back to the anchor if that waypoint was reached meanwhile.
+        var source = WaypointRules.SegmentSource(unitState, drag.Mode, _sim.CommandAnchor(drag.Unit));
+        if (source != drag.Source)
+        {
+            drag = drag with { Source = source };
+            _drag = drag;
+        }
+
+        var reachable = ReachableFrom(drag.Unit, drag.Source);
         var sourceCenter = _layout.HexToPlane(drag.Source);
         DragTargetStatus status;
         HexDirection? facing = null;
+        IReadOnlyList<HexCoord>? path = null;
 
         if (sample.Plane is not { } plane || sample.Hex is not { } hex)
         {
@@ -403,14 +489,19 @@ public sealed class InputStateMachine
         }
         else
         {
-            status = Map(WaypointRules.ValidateTarget(_sim.State, drag.Unit, drag.Source, hex));
-            if (status == DragTargetStatus.Valid && drag.Mode == OrderMode.Replace)
+            status = Map(WaypointRules.ValidateTarget(_sim.State, drag.Unit, drag.Source, hex, reachable));
+            if (status == DragTargetStatus.Valid)
             {
-                facing = PreviewFirstStep(drag.Source, hex);
+                path = Pathfinder.FindPath(_sim.State.Grid, drag.Source, hex, _sim.State.ObstaclesFor(drag.Unit));
+                if (drag.Mode == OrderMode.Replace && path is { Count: > 1 })
+                {
+                    // Preview facing = first step of the shortest path, not the straight line (spec §5.2).
+                    facing = drag.Source.DirectionTo(path[1]);
+                }
             }
         }
 
-        Drag = new DragPreview(drag.Unit, drag.Mode, drag.Source, sourceCenter, sample.Plane, sample.Hex, status, facing);
+        Drag = new DragPreview(drag.Unit, drag.Mode, drag.Source, sourceCenter, sample.Plane, sample.Hex, status, facing, reachable, path);
     }
 
     private DragTargetStatus SourceStatus(DragState drag, PlaneVector offset, out HexDirection? facing)
@@ -422,7 +513,7 @@ public sealed class InputStateMachine
         }
 
         var unit = _sim.State.GetUnit(drag.Unit);
-        if (!unit.Orders.IsEmpty)
+        if (!unit.Orders.IsEmpty || unit.Motion.IsStepping)
         {
             return DragTargetStatus.SourceHasOrders;
         }
@@ -437,8 +528,22 @@ public sealed class InputStateMachine
         return facing is null ? DragTargetStatus.SourceDeadZone : DragTargetStatus.RotateOnly;
     }
 
-    /// <summary>Facing preview: direction of the first step towards the target (straight hex line until v0.4.0).</summary>
-    private static HexDirection? PreviewFirstStep(HexCoord source, HexCoord target) => HexLine.FirstStepDirection(source, target);
+    /// <summary>
+    /// Hexes reachable from the drag source, computed once when the drag starts and recomputed whenever the
+    /// game topology (terrain or unit positions) or the source changes.
+    /// </summary>
+    private IReadOnlySet<HexCoord> ReachableFrom(UnitId unit, HexCoord source)
+    {
+        var version = _sim.State.TopologyVersion;
+        if (version != _reachableVersion || source != _reachableSource)
+        {
+            _reachable = WaypointRules.ReachableTargets(_sim.State, unit, source);
+            _reachableVersion = version;
+            _reachableSource = source;
+        }
+
+        return _reachable;
+    }
 
     private void FinishDrag(PointerSample sample)
     {

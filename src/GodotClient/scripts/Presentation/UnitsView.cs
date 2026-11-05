@@ -16,7 +16,8 @@ public partial class UnitsView : Node3D
     public IReadOnlyDictionary<UnitId, UnitView> Views => _views;
 
     /// <summary>Creates/removes views to match the state and updates positions and facing.</summary>
-    public void Sync(GameState state, UnitId? selected, float delta, UnitId? previewUnit = null, HexDirection? previewFacing = null)
+    /// <param name="interpolationSeconds">Simulation time elapsed since the last tick (smooth rendering only).</param>
+    public void Sync(GameState state, UnitId? selected, float delta, double interpolationSeconds, UnitId? previewUnit = null, HexDirection? previewFacing = null)
     {
         var alive = new HashSet<UnitId>();
         foreach (var unit in state.Units)
@@ -31,8 +32,9 @@ public partial class UnitsView : Node3D
             }
 
             var facing = previewUnit == unit.Id && previewFacing is { } pf ? pf : unit.Facing;
-            view.Sync(PositionOf(unit), facing, delta);
+            view.Sync(PositionOf(unit, interpolationSeconds), facing, delta);
             view.Selected = selected == unit.Id;
+            view.Blocked = unit.Motion.Status == MovementStatus.Blocked;
         }
 
         foreach (var id in new List<UnitId>(_views.Keys))
@@ -45,8 +47,24 @@ public partial class UnitsView : Node3D
         }
     }
 
-    /// <summary>World position of a unit (cell centre on the ground). Movement interpolation hooks in here.</summary>
-    public virtual Vector3 PositionOf(UnitState unit) => _layout.HexToPlane(unit.Cell).ToWorld(0f);
+    /// <summary>
+    /// World position of a unit: the hex centre, or — during a step — the point between the two centres.
+    /// The model advances in fixed ticks; the view extrapolates within the current tick for smoothness.
+    /// </summary>
+    public Vector3 PositionOf(UnitState unit, double interpolationSeconds = 0)
+    {
+        var m = unit.Motion;
+        if (m.StepFrom is not { } from || m.StepTo is not { } to)
+        {
+            return _layout.HexToPlane(unit.Cell).ToWorld(0f);
+        }
+
+        var t = System.Math.Clamp(m.Progress + (unit.SpeedHexesPerSecond * interpolationSeconds), 0.0, 1.0);
+        return PlaneVector.Lerp(_layout.HexToPlane(from), _layout.HexToPlane(to), t).ToWorld(0f);
+    }
+
+    /// <summary>Current visual positions of all units on the plane (for path lines).</summary>
+    public PlaneVector? VisualPlanePosition(UnitId id) => _views.TryGetValue(id, out var v) ? v.Position.ToPlane() : null;
 
     /// <summary>
     /// Returns the unit whose body (vertical cylinder) is hit by the camera ray, nearest to the camera.

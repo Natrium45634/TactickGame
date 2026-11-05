@@ -14,6 +14,7 @@ public sealed class GameState
 {
     private readonly SortedDictionary<UnitId, UnitState> _units = new();
     private readonly Dictionary<HexCoord, UnitId> _occupancy = new();
+    private readonly Dictionary<HexCoord, UnitId> _reservations = new();
     private int _nextUnitId = 1;
     private int _nextWaypointId = 1;
 
@@ -45,6 +46,22 @@ public sealed class GameState
 
     public bool IsOccupied(HexCoord cell) => _occupancy.ContainsKey(cell);
 
+    /// <summary>
+    /// True if a stepping unit holds <paramref name="cell"/> as the hex it is entering (before the midpoint)
+    /// or leaving (after the midpoint). Reserved hexes cannot be entered or spawned on.
+    /// </summary>
+    public bool IsReserved(HexCoord cell) => _reservations.ContainsKey(cell);
+
+    public UnitId? ReservedBy(HexCoord cell) => _reservations.TryGetValue(cell, out var id) ? id : null;
+
+    public bool IsReservedByOther(HexCoord cell, UnitId except) => _reservations.TryGetValue(cell, out var id) && id != except;
+
+    /// <summary>Occupied by another unit or reserved by another stepping unit.</summary>
+    public bool IsTakenByOther(HexCoord cell, UnitId except) => IsOccupiedByOther(cell, except) || IsReservedByOther(cell, except);
+
+    /// <summary>Path-finding obstacle predicate for <paramref name="unit"/>: hexes of all other units.</summary>
+    public Func<HexCoord, bool> ObstaclesFor(UnitId unit) => cell => IsOccupiedByOther(cell, unit);
+
     /// <summary>True if <paramref name="cell"/> is occupied by a unit other than <paramref name="except"/>.</summary>
     public bool IsOccupiedByOther(HexCoord cell, UnitId except) => _occupancy.TryGetValue(cell, out var id) && id != except;
 
@@ -61,9 +78,9 @@ public sealed class GameState
             throw new InvalidOperationException($"Cannot create a unit on a blocked tile {cell}.");
         }
 
-        if (IsOccupied(cell))
+        if (IsOccupied(cell) || IsReserved(cell))
         {
-            throw new InvalidOperationException($"Cannot create a unit on occupied tile {cell}.");
+            throw new InvalidOperationException($"Cannot create a unit on occupied or reserved tile {cell}.");
         }
 
         if (speedHexesPerSecond <= 0)
@@ -104,6 +121,24 @@ public sealed class GameState
         unit.Cell = to;
         _occupancy[to] = id;
         OccupancyVersion++;
+    }
+
+    public void Reserve(HexCoord cell, UnitId id)
+    {
+        if (IsReservedByOther(cell, id))
+        {
+            throw new InvalidOperationException($"{cell} is already reserved by {_reservations[cell]}.");
+        }
+
+        _reservations[cell] = id;
+    }
+
+    public void ReleaseReservation(HexCoord cell, UnitId id)
+    {
+        if (_reservations.TryGetValue(cell, out var holder) && holder == id)
+        {
+            _reservations.Remove(cell);
+        }
     }
 
     public void SetFacing(UnitId id, HexDirection facing)

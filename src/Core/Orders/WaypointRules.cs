@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using HexTactics.Core.Hex;
+using HexTactics.Core.Pathfinding;
 using HexTactics.Core.Units;
 
 namespace HexTactics.Core.Orders;
@@ -70,5 +72,39 @@ public static class WaypointRules
         }
 
         return target == source ? WaypointError.SameAsSource : WaypointError.None;
+    }
+
+    /// <summary>
+    /// Validates a target against a precomputed set of reachable hexes (see <see cref="ReachableTargets"/>).
+    /// A statically valid hex that is not in <paramref name="reachable"/> is <see cref="WaypointError.Unreachable"/>.
+    /// </summary>
+    public static WaypointError ValidateTarget(GameState state, UnitId unit, HexCoord source, HexCoord target, IReadOnlySet<HexCoord> reachable)
+    {
+        var error = ValidateTarget(state, unit, source, target);
+        if (error != WaypointError.None)
+        {
+            return error;
+        }
+
+        return reachable.Contains(target) ? WaypointError.None : WaypointError.Unreachable;
+    }
+
+    /// <summary>
+    /// All hexes the unit could path to from <paramref name="source"/> right now: terrain obstacles and
+    /// the hexes of other units block; the unit's own hex does not.
+    /// </summary>
+    public static IReadOnlySet<HexCoord> ReachableTargets(GameState state, UnitId unit, HexCoord source) =>
+        Pathfinder.Reachable(state.Grid, source, state.ObstaclesFor(unit));
+
+    /// <summary>Static checks plus existence of a path (single A* query).</summary>
+    public static WaypointError ValidateTargetWithPath(GameState state, UnitId unit, HexCoord source, HexCoord target)
+    {
+        var error = ValidateTarget(state, unit, source, target);
+        if (error != WaypointError.None)
+        {
+            return error;
+        }
+
+        return Pathfinder.FindPath(state.Grid, source, target, state.ObstaclesFor(unit)) is null ? WaypointError.Unreachable : WaypointError.None;
     }
 }

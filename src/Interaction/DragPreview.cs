@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Units;
@@ -36,7 +37,9 @@ public enum DragTargetStatus
 /// <param name="Pointer">Plane position of the cursor (arrow end), if any.</param>
 /// <param name="TargetHex">Hex under the cursor (may be outside the map).</param>
 /// <param name="Status">Result of releasing now.</param>
-/// <param name="FacingPreview">Facing the unit would show (first step of the route, or the rotate direction).</param>
+/// <param name="FacingPreview">Facing the unit would show (first step of the shortest path, or the rotate direction).</param>
+/// <param name="Reachable">All hexes reachable from the source right now (green candidates).</param>
+/// <param name="Path">Shortest path source → target (both included) when the target is valid.</param>
 public sealed record DragPreview(
     UnitId Unit,
     OrderMode Mode,
@@ -45,7 +48,9 @@ public sealed record DragPreview(
     PlaneVector? Pointer,
     HexCoord? TargetHex,
     DragTargetStatus Status,
-    HexDirection? FacingPreview)
+    HexDirection? FacingPreview,
+    IReadOnlySet<HexCoord> Reachable,
+    IReadOnlyList<HexCoord>? Path)
 {
     public bool CanCommit => Status is DragTargetStatus.Valid or DragTargetStatus.RotateOnly;
 }

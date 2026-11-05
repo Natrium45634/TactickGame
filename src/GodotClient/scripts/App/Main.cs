@@ -30,6 +30,7 @@ public partial class Main : Node3D
 
     private CameraRig _cameraRig = null!;
     private BoardPicker _picker = null!;
+    private BoardView _board = null!;
     private HexFillLayer _fillLayer = null!;
     private HexFillLayer _hoverLayer = null!;
     private UnitsView _units = null!;
@@ -43,6 +44,7 @@ public partial class Main : Node3D
     private Label _selectionLabel = null!;
     private Label _messageLabel = null!;
     private Button _placementButton = null!;
+    private Button _obstacleButton = null!;
 
     private HexCoord? _hovered;
     private string _fillStamp = string.Empty;
@@ -64,9 +66,9 @@ public partial class Main : Node3D
 
         BuildEnvironment();
 
-        var board = new BoardView { Name = "Board" };
-        AddChild(board);
-        board.Build(_map.Grid, _layout);
+        _board = new BoardView { Name = "Board" };
+        AddChild(_board);
+        _board.Build(_map.Grid, _layout);
 
         _fillLayer = new HexFillLayer { Name = "PassabilityLayer", RenderPriority = 1 };
         AddChild(_fillLayer);
@@ -108,10 +110,20 @@ public partial class Main : Node3D
 
     public override void _Process(double delta)
     {
+        // Fixed-step simulation: rules advance in whole ticks of 1/30 s regardless of the frame rate.
+        _sim.Advance(delta);
+        HandleSimulationEvents(_sim.DrainEvents());
+        _board.SyncTerrain(_map.Grid, _layout);
+        _fillLayer.SyncTerrain();
+        _hoverLayer.SyncTerrain();
+
         _fsm.Validate();
+        _fsm.Refresh();
         var drag = _fsm.Drag;
-        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, drag?.Unit, drag?.FacingPreview);
+        var interpolation = _sim.InterpolationAlpha * _sim.Settings.TickDuration;
+        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, drag?.Unit, drag?.FacingPreview);
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, drag);
+        _orders.SyncPaths(_sim.State, _fsm.SelectedUnit, drag, _units.VisualPlanePosition);
         UpdateHover();
         UpdateFills(drag);
         UpdateHud();
@@ -154,7 +166,7 @@ public partial class Main : Node3D
         string stamp;
         if (drag is not null)
         {
-            stamp = $"drag:{drag.SourceCell}:{drag.TargetHex}:{drag.Status}:{_sim.State.TopologyVersion}";
+            stamp = $"drag:{drag.Unit}:{drag.Mode}:{drag.SourceCell}:{_sim.State.TopologyVersion}";
         }
         else if (_fsm.Mode == InputMode.Placement)
         {
@@ -174,10 +186,18 @@ public partial class Main : Node3D
         _fillLayer.ClearAll();
         if (drag is not null)
         {
-            _fillLayer.SetFill(drag.SourceCell, VisualConfig.FillNeutral);
-            if (drag.TargetHex is { } target && target != drag.SourceCell && _map.Grid.Contains(target))
+            // All 120 cells: green = a waypoint can be placed (reachable and free), red = blocked, occupied
+            // or isolated, neutral = the source hex (rotate-in-place area).
+            foreach (var cell in _map.Grid.Coords)
             {
-                _fillLayer.SetFill(target, drag.Status == DragTargetStatus.Valid ? VisualConfig.FillValid : VisualConfig.FillInvalid);
+                if (cell == drag.SourceCell)
+                {
+                    _fillLayer.SetFill(cell, VisualConfig.FillNeutral);
+                    continue;
+                }
+
+                var ok = WaypointRules.ValidateTarget(_sim.State, drag.Unit, drag.SourceCell, cell, drag.Reachable) == WaypointError.None;
+                _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
             }
         }
         else if (_fsm.Mode == InputMode.Placement)
@@ -197,6 +217,7 @@ public partial class Main : Node3D
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
         _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId);
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement);
+        _obstacleButton.SetPressedNoSignal(_fsm.Mode == InputMode.ObstacleEdit);
     }
 
     private string DescribeCell(HexCoord h)
@@ -259,6 +280,14 @@ public partial class Main : Node3D
             case ChainContinueRefused refused:
                 ShowMessage($"Продолжить цепочку можно только из последней ТД (ТД{refused.Last.Sequence}).", true);
                 break;
+            case ObstacleEditModeChanged { Active: true }:
+                ShowMessage("Отладка: щелчок по клетке ставит/убирает препятствие. Esc / ПКМ — выход.", false);
+                break;
+            case ObstacleToggled o:
+                ShowMessage(o.Result.Success
+                    ? $"Клетка {UiText.Cell(o.Cell)}: препятствие {(o.Blocked ? "поставлено" : "убрано")}. Маршруты перестраиваются."
+                    : $"Клетка {UiText.Cell(o.Cell)}: нельзя изменить ({(o.Result.Reason == "occupied" ? "на клетке юнит" : "база / зона появления")}).", !o.Result.Success);
+                break;
             case WaypointSelected w:
                 ShowMessage($"Выбрана ТД{w.Waypoint.Sequence} юнита {w.Unit}: клетка {UiText.Cell(w.Waypoint.Cell)}.", false);
                 break;
@@ -278,6 +307,32 @@ public partial class Main : Node3D
             case Key.P:
                 _fsm.TogglePlacementMode();
                 break;
+            case Key.O:
+                _fsm.ToggleObstacleEditMode();
+                break;
+        }
+    }
+
+    /// <summary>Movement events of the simulation become HUD messages (spawn/order messages come from the FSM).</summary>
+    private void HandleSimulationEvents(System.Collections.Generic.IReadOnlyList<SimulationEvent> events)
+    {
+        foreach (var e in events)
+        {
+            switch (e)
+            {
+                case WaypointReached r:
+                    ShowMessage($"Юнит {r.Unit} достиг ТД{r.Waypoint.Sequence} {UiText.Cell(r.Waypoint.Cell)}.", false);
+                    break;
+                case UnitBlocked b:
+                    ShowMessage(UiText.Blocked(b, _sim.State), true);
+                    break;
+                case UnitUnblocked u:
+                    ShowMessage($"Юнит {u.Unit}: путь найден, движение продолжается.", false);
+                    break;
+                case MovementFinished f:
+                    ShowMessage($"Юнит {f.Unit} выполнил все ТД и стоит на {UiText.Cell(f.Cell)}.", false);
+                    break;
+            }
         }
     }
 
@@ -364,6 +419,8 @@ public partial class Main : Node3D
 
         _placementButton = _hud.AddButton("Выставить на клетку (P)", () => _fsm.TogglePlacementMode());
         _placementButton.ToggleMode = true;
+        _obstacleButton = _hud.AddButton("Препятствие: поставить/убрать (O)", () => _fsm.ToggleObstacleEditMode());
+        _obstacleButton.ToggleMode = true;
         _messageLabel = _hud.AddLabel("—", fontSize: 13);
         _hud.AddSeparator();
 
@@ -496,6 +553,12 @@ public partial class Main : Node3D
             case "place":
                 _fsm.TogglePlacementMode();
                 return 2;
+            case "obstacle":
+                {
+                    var cell = ParseHex(arg);
+                    _sim.SetObstacle(cell, _map.Grid[cell].IsWalkable);
+                    return 2;
+                }
             case "key":
                 Godot.Input.ParseInputEvent(new InputEventKey { Keycode = Enum.Parse<Key>(arg), Pressed = true });
                 Godot.Input.ParseInputEvent(new InputEventKey { Keycode = Enum.Parse<Key>(arg), Pressed = false });
@@ -507,6 +570,9 @@ public partial class Main : Node3D
                 }
 
                 return 2;
+            case "select":
+                _fsm.Select(new HexTactics.Core.Units.UnitId(int.Parse(arg, CultureInfo.InvariantCulture)));
+                return 1;
             case "wait":
                 return int.Parse(arg, CultureInfo.InvariantCulture);
             default:

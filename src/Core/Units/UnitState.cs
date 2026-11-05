@@ -34,5 +34,8 @@ public sealed class UnitState
     /// <summary>Pending waypoints (ТД) in execution order.</summary>
     public OrderQueue Orders { get; } = new();
 
+    /// <summary>Current movement between hex centres (driven by the simulation).</summary>
+    public UnitMotion Motion { get; } = new();
+
     public override string ToString() => $"Unit {Id} {Side} at {Cell} facing {Facing.ShortName()}";
 }

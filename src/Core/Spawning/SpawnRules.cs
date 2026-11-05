@@ -74,7 +74,8 @@ public static class SpawnRules
             return SpawnError.NotWalkable;
         }
 
-        return state.IsOccupied(cell) ? SpawnError.Occupied : SpawnError.None;
+        // A hex a moving unit is stepping into/out of counts as occupied.
+        return state.IsOccupied(cell) || state.IsReserved(cell) ? SpawnError.Occupied : SpawnError.None;
     }
 
     public static SpawnResolution Resolve(GameState state, SpawnRequest request)

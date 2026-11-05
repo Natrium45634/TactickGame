@@ -17,6 +17,7 @@ public partial class UnitView : Node3D
 
     private Node3D _facingPivot = null!;
     private MeshInstance3D _selectionRing = null!;
+    private Label3D _blockedMarker = null!;
     private StandardMaterial3D _bodyMaterial = null!;
     private float _visualAngle;
     private float _targetAngle;
@@ -89,6 +90,31 @@ public partial class UnitView : Node3D
             Visible = false,
         };
         AddChild(_selectionRing);
+
+        _blockedMarker = new Label3D
+        {
+            Name = "Blocked",
+            Text = "!",
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            NoDepthTest = true,
+            FontSize = 64,
+            OutlineSize = 14,
+            PixelSize = 0.006f,
+            Modulate = new Color(1f, 0.38f, 0.32f),
+            OutlineModulate = new Color(0.12f, 0.1f, 0.1f),
+            Position = new Vector3(0, BodyHeight + 0.42f, 0),
+            Visible = false,
+            RenderPriority = 10,
+            OutlineRenderPriority = 9,
+        };
+        AddChild(_blockedMarker);
+    }
+
+    /// <summary>Shows a red "!" above a unit that stopped because no path exists.</summary>
+    public bool Blocked
+    {
+        get => _blockedMarker.Visible;
+        set => _blockedMarker.Visible = value;
     }
 
     public bool Selected

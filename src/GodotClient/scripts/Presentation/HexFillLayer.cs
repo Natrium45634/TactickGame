@@ -14,6 +14,9 @@ public partial class HexFillLayer : Node3D
 {
     private readonly Dictionary<HexCoord, int> _index = new();
     private MultiMesh? _multiMesh;
+    private HexGrid? _grid;
+    private HexLayout? _layout;
+    private int _heightsVersion = -1;
 
     /// <summary>Render priority among transparent objects; higher layers draw later.</summary>
     public int RenderPriority { get; set; }
@@ -28,6 +31,9 @@ public partial class HexFillLayer : Node3D
         }
 
         _index.Clear();
+        _grid = grid;
+        _layout = layout;
+        _heightsVersion = grid.Version;
         var material = new ShaderMaterial
         {
             Shader = GD.Load<Shader>("res://shaders/overlay.gdshader"),
@@ -58,6 +64,22 @@ public partial class HexFillLayer : Node3D
             MaterialOverride = material,
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
+    }
+
+    /// <summary>Re-lifts fills when tiles changed height (an obstacle was added or removed).</summary>
+    public void SyncTerrain()
+    {
+        if (_multiMesh is null || _grid is null || _layout is null || _grid.Version == _heightsVersion)
+        {
+            return;
+        }
+
+        _heightsVersion = _grid.Version;
+        foreach (var (coord, i) in _index)
+        {
+            var y = VisualConfig.TileTopHeight(_grid[coord].Type) + VisualConfig.OverlayLift + ExtraLift;
+            _multiMesh.SetInstanceTransform(i, new Transform3D(Basis.Identity, _layout.HexToPlane(coord).ToWorld(y)));
+        }
     }
 
     /// <summary>Sets the fill colour of one cell (sRGB, alpha = opacity). Transparent hides it.</summary>

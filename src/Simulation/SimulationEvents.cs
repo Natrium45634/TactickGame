@@ -1,4 +1,5 @@
 using HexTactics.Core.Hex;
+using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
@@ -20,3 +21,18 @@ public sealed record FacingChanged(long Tick, UnitId Unit, HexDirection Facing) 
 public sealed record OrderIssued(long Tick, UnitId Unit, Waypoint Waypoint, OrderMode Mode) : SimulationEvent(Tick);
 
 public sealed record OrderRejected(long Tick, UnitId Unit, HexCoord Target, WaypointError Error) : SimulationEvent(Tick);
+
+public sealed record StepStarted(long Tick, UnitId Unit, HexCoord From, HexCoord To) : SimulationEvent(Tick);
+
+/// <summary>The unit's logical hex changed (at the midpoint of a step).</summary>
+public sealed record UnitEnteredCell(long Tick, UnitId Unit, HexCoord From, HexCoord To) : SimulationEvent(Tick);
+
+public sealed record WaypointReached(long Tick, UnitId Unit, Waypoint Waypoint) : SimulationEvent(Tick);
+
+public sealed record UnitBlocked(long Tick, UnitId Unit, Waypoint Waypoint, BlockReason Reason) : SimulationEvent(Tick);
+
+public sealed record UnitUnblocked(long Tick, UnitId Unit) : SimulationEvent(Tick);
+
+public sealed record MovementFinished(long Tick, UnitId Unit, HexCoord Cell) : SimulationEvent(Tick);
+
+public sealed record TerrainChanged(long Tick, HexCoord Cell, TileType Type) : SimulationEvent(Tick);

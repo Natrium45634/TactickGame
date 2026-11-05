@@ -32,3 +32,7 @@ public sealed record DragCancelled(UnitId Unit, bool ByUser) : InteractionFeedba
 
 /// <summary>Chains can only be continued from the last waypoint.</summary>
 public sealed record ChainContinueRefused(UnitId Unit, Waypoint Pressed, Waypoint Last) : InteractionFeedback;
+
+public sealed record ObstacleEditModeChanged(bool Active) : InteractionFeedback;
+
+public sealed record ObstacleToggled(HexCoord Cell, bool Blocked, CommandResult Result) : InteractionFeedback;

@@ -69,7 +69,7 @@ public class OrderDragTests
         Assert.Equal(1, wp.Sequence);
         Assert.Equal(InputMode.UnitSelected, _fsm.Mode);
         Assert.Null(_fsm.Drag);
-        Assert.Equal(C(3, 4), Unit.Cell); // no movement in v0.3.0
+        Assert.Equal(C(3, 4), Unit.Cell); // movement only happens when the simulation ticks
     }
 
     [Fact]
@@ -283,13 +283,79 @@ public class OrderDragTests
     }
 
     [Fact]
-    public void Facing_preview_follows_first_step_towards_target_without_changing_model()
+    public void Facing_preview_follows_first_step_of_shortest_path_without_changing_model()
     {
         _fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), _unit));
         _fsm.PointerMove(AtHex(C(3, 1)));
-        Assert.NotNull(_fsm.Drag!.FacingPreview);
-        Assert.Equal(HexLine.FirstStepDirection(C(3, 4), C(3, 1)), _fsm.Drag.FacingPreview);
+        var path = Core.Pathfinding.Pathfinder.FindPath(_sim.State.Grid, C(3, 4), C(3, 1))!;
+        Assert.Equal(C(3, 4).DirectionTo(path[1]), _fsm.Drag!.FacingPreview);
+        Assert.Equal(path, _fsm.Drag.Path);
         Assert.Equal(HexDirection.East, Unit.Facing);
         _fsm.Cancel();
+    }
+
+    [Fact]
+    public void Facing_preview_uses_path_around_wall_not_straight_line()
+    {
+        var sim = new GameSimulation(TestMaps.LoadPrototype());
+        var fsm = new InputStateMachine(sim, _layout);
+        var u = sim.Spawn(SpawnRequest.AtCell(C(3, 4), facing: HexDirection.West)).Unit!.Value;
+        fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), u));
+        fsm.PointerMove(AtHex(C(5, 4))); // directly behind the wall at column 4
+        var preview = fsm.Drag!;
+        Assert.Equal(DragTargetStatus.Valid, preview.Status);
+        var straight = HexLine.FirstStepDirection(C(3, 4), C(5, 4));
+        Assert.NotEqual(straight, preview.FacingPreview); // the straight line would walk into the wall
+        Assert.Equal(C(3, 4).DirectionTo(preview.Path![1]), preview.FacingPreview);
+        Assert.True(sim.State.Grid.IsWalkable(preview.Path[1]));
+    }
+
+    [Fact]
+    public void Free_but_isolated_hex_is_red_and_release_creates_no_waypoint()
+    {
+        var sim = new GameSimulation(TestMaps.LoadPrototype());
+        var fsm = new InputStateMachine(sim, _layout);
+        var u = sim.Spawn(SpawnRequest.AtCell(C(6, 6))).Unit!.Value;
+        fsm.PointerDown(PointerButton.Primary, AtHex(C(6, 6), u));
+        fsm.PointerMove(AtHex(C(8, 3)));
+        Assert.Equal(DragTargetStatus.Unreachable, fsm.Drag!.Status);
+        Assert.DoesNotContain(C(8, 3), fsm.Drag.Reachable);
+        fsm.PointerUp(PointerButton.Primary, AtHex(C(8, 3)));
+        Assert.True(sim.State.GetUnit(u).Orders.IsEmpty);
+    }
+
+    [Fact]
+    public void Reachable_set_covers_all_cells_and_is_recomputed_when_state_changes()
+    {
+        _fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), _unit));
+        _fsm.PointerMove(AtHex(C(9, 4)));
+        Assert.Equal(120, _fsm.Drag!.Reachable.Count); // empty map: everything incl. the source
+        Assert.Equal(DragTargetStatus.Valid, _fsm.Drag.Status);
+
+        // A unit appears on the target while dragging: after refresh the hex is no longer valid.
+        _sim.Spawn(SpawnRequest.AtCell(C(9, 4)));
+        _fsm.Refresh();
+        Assert.Equal(DragTargetStatus.Occupied, _fsm.Drag!.Status);
+        Assert.DoesNotContain(C(9, 4), _fsm.Drag.Reachable);
+        _fsm.Cancel();
+    }
+
+    [Fact]
+    public void Drag_from_moving_unit_starts_at_its_next_hex_centre()
+    {
+        Drag(AtHex(C(3, 4), _unit), AtHex(C(9, 4)));
+        for (var i = 0; i < 5; i++)
+        {
+            _sim.Step();
+        }
+
+        Assert.True(Unit.Motion.IsStepping);
+        var next = Unit.Motion.StepTo!.Value;
+        _fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), _unit));
+        _fsm.PointerMove(AtHex(C(3, 8)));
+        Assert.Equal(next, _fsm.Drag!.SourceCell);
+        Assert.Equal(DragTargetStatus.Valid, _fsm.Drag.Status);
+        _fsm.PointerUp(PointerButton.Primary, AtHex(C(3, 8)));
+        Assert.Equal(C(3, 8), Assert.Single(Unit.Orders.Items).Cell);
     }
 }

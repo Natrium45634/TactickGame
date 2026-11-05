@@ -15,11 +15,15 @@ namespace HexTactics.Simulation;
 public sealed class GameSimulation
 {
     private readonly List<SimulationEvent> _events = new();
+    private readonly MovementSystem _movement;
+    private readonly SimulationClock _clock;
 
     public GameSimulation(MapDefinition map, SimulationSettings? settings = null)
     {
         State = new GameState(map);
         Settings = settings ?? SimulationSettings.Default;
+        _movement = new MovementSystem(State, _events);
+        _clock = new SimulationClock(Settings.TickDuration);
     }
 
     public GameState State { get; }
@@ -29,6 +33,34 @@ public sealed class GameSimulation
     /// <summary>Number of fixed simulation steps executed so far.</summary>
     public long Tick { get; private set; }
 
+    /// <summary>Game time in seconds (Tick × tick duration).</summary>
+    public double GameTime => Tick * Settings.TickDuration;
+
+    /// <summary>Fraction of the next tick already elapsed (for smooth rendering between ticks only).</summary>
+    public double InterpolationAlpha => _clock.Alpha;
+
+    /// <summary>
+    /// Feeds real elapsed time (e.g. a render frame's delta) and runs the due fixed ticks.
+    /// Returns the number of ticks executed.
+    /// </summary>
+    public int Advance(double realSeconds)
+    {
+        var ticks = _clock.Accumulate(realSeconds);
+        for (var i = 0; i < ticks; i++)
+        {
+            Step();
+        }
+
+        return ticks;
+    }
+
+    /// <summary>Runs exactly one fixed simulation tick.</summary>
+    public void Step()
+    {
+        Tick++;
+        _movement.Tick(Tick, Settings.TickDuration);
+    }
+
     /// <summary>Creates a unit using one of the three spawn methods. Never relocates or removes existing units.</summary>
     public SpawnResult Spawn(SpawnRequest request)
     {
@@ -36,7 +68,7 @@ public sealed class GameSimulation
         if (!resolution.IsValid)
         {
             var offending = resolution.Cell ?? request.Cell;
-            var occupant = offending is { } c ? State.UnitAt(c)?.Id : null;
+            var occupant = offending is { } c ? State.UnitAt(c)?.Id ?? State.ReservedBy(c) : null;
             _events.Add(new SpawnRejected(Tick, request, resolution.Error, offending, occupant));
             return new SpawnResult(null, offending, resolution.Error, occupant);
         }
@@ -72,10 +104,15 @@ public sealed class GameSimulation
     }
 
     /// <summary>
-    /// The hex from which new orders of the unit are planned: its logical cell while standing.
-    /// (From v0.4.0 a moving unit uses the hex it is entering — the nearest safe hex centre.)
+    /// The hex from which new orders of the unit are planned: its logical cell while standing, or — while a
+    /// step is in progress — the hex it is stepping into (the nearest safe hex centre). The current step
+    /// is always completed first, so a new order never breaks the running interpolation.
     /// </summary>
-    public HexCoord CommandAnchor(UnitId id) => State.GetUnit(id).Cell;
+    public HexCoord CommandAnchor(UnitId id)
+    {
+        var unit = State.GetUnit(id);
+        return unit.Motion.StepTo ?? unit.Cell;
+    }
 
     /// <summary>
     /// Adds a waypoint. <see cref="OrderMode.Replace"/> (drag from the unit) replaces the pending
@@ -91,7 +128,7 @@ public sealed class GameSimulation
         }
 
         var source = WaypointRules.SegmentSource(unit, mode, CommandAnchor(id));
-        var error = WaypointRules.ValidateTarget(State, id, source, target);
+        var error = WaypointRules.ValidateTargetWithPath(State, id, source, target);
         if (error != WaypointError.None)
         {
             _events.Add(new OrderRejected(Tick, id, target, error));
@@ -119,12 +156,45 @@ public sealed class GameSimulation
             return CommandResult.Fail($"Unit {id} does not exist.");
         }
 
-        if (!unit.Orders.IsEmpty)
+        if (!unit.Orders.IsEmpty || unit.Motion.IsStepping)
         {
-            return CommandResult.Fail($"Unit {id} has pending waypoints; rotate-only is not applied.");
+            return CommandResult.Fail($"Unit {id} has pending waypoints or is moving; rotate-only is not applied.");
         }
 
         return SetFacing(id, facing);
+    }
+
+    /// <summary>
+    /// Debug/test command: turns a hex into an obstacle or back into walkable ground. Hexes with a unit
+    /// (or reserved by a stepping unit), the player base and spawn zones cannot be changed. Moving units
+    /// re-plan their remaining route at the next hex centre.
+    /// </summary>
+    public CommandResult SetObstacle(HexCoord cell, bool blocked)
+    {
+        if (!State.Grid.Contains(cell))
+        {
+            return CommandResult.Fail("outside");
+        }
+
+        var tile = State.Grid[cell];
+        if (tile.Type is TileType.PlayerBase or TileType.SpawnZone)
+        {
+            return CommandResult.Fail("zone");
+        }
+
+        if (blocked && (State.IsOccupied(cell) || State.IsReserved(cell)))
+        {
+            return CommandResult.Fail("occupied");
+        }
+
+        var type = blocked ? TileType.Blocked : TileType.Walkable;
+        if (tile.Type != type)
+        {
+            State.Grid.SetTile(cell, type);
+            _events.Add(new TerrainChanged(Tick, cell, type));
+        }
+
+        return CommandResult.Ok;
     }
 
     /// <summary>Returns and clears the events produced since the previous call.</summary>

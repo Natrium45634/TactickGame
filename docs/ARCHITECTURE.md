@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.3.0**.
+Документ описывает фактическое устройство кода. Актуален для версии **v0.4.0**.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -25,10 +25,11 @@ TactickGame/                     корень репозитория (логич
     Core/                        HexTactics.Core — чистая модель (без Godot)
       Hex/                       HexCoord, OffsetCoord, HexDirection, HexLayout, PlaneVector, HexLine
       Map/                       TileType, TileState, HexGrid, MapDefinition, MapParser
-      Units/                     UnitId, Side, UnitState, GameState
+      Units/                     UnitId, Side, UnitState, UnitMotion, GameState (занятость + резервы)
+      Pathfinding/               Pathfinder (A*, DistanceField, Reachable)
       Orders/                    Waypoint, OrderQueue, WaypointRules, OrderMode
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError
-    Simulation/                  HexTactics.Simulation — GameSimulation, события, настройки (без Godot)
+    Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, MovementSystem, события (без Godot)
     Interaction/                 HexTactics.Interaction — InputStateMachine, DragPreview (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
@@ -43,8 +44,8 @@ TactickGame/                     корень репозитория (логич
       export_presets.cfg         пресеты "Windows Desktop" и "Linux"
   tests/
     Shared/                      общие хелперы тестов (TestMaps, TestPaths), подключаются ссылкой
-    Core.Tests/                  координаты, раскладка, карта
-    Simulation.Tests/            появление, направления, занятость
+    Core.Tests/                  координаты, раскладка, карта, гекс-линия, поиск пути
+    Simulation.Tests/            появление, направления, занятость, приказы, движение
     Interaction.Tests/           автомат ввода
   tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1,
                                  create_release_tags.ps1, common.ps1
@@ -64,7 +65,7 @@ tests/*  ──► соответствующие сборки
 ```
 
 - **Core** хранит правду о состоянии: карта, юниты, занятость, очереди приказов, правила появления. Ничего не знает о камере, цветах и мыши.
-- **Simulation** — единственная точка изменения состояния (`GameSimulation`): команды, события. Игровой тик и движение — с v0.4.
+- **Simulation** — единственная точка изменения состояния (`GameSimulation`): команды, фиксированный тик, движение, события.
 - **Interaction** — конечный автомат ввода в координатах карты: получает «образцы указателя» (`PointerSample`), отдаёт команды симуляции и структурированную обратную связь.
 - **Presentation** строит визуальные слои по данным модели и никогда не принимает игровых решений.
 - **Input glue** (`PointerInput`, `BoardPicker`) переводит события и курсор в `PointerSample`.
@@ -140,8 +141,11 @@ tests/*  ──► соответствующие сборки
 - Приоритет попадания при нажатии: ТД выбранного юнита → юнит (корпус или клетка) → ТД другого юнита → земля.
 - `DragPreview`: `SourceCell`, `SourceCenter`, `Pointer` (конец стрелки — точка курсора на плоскости), `TargetHex`,
   `Status` (`Valid`, `RotateOnly`, `SourceDeadZone`, `SourceHasOrders`, `OutOfBounds`, `NotWalkable`, `Occupied`, `NoTarget`),
-  `FacingPreview` (только для Replace: первый шаг к цели; в v0.3.0 — по прямой гекс-линии, см. D-021).
-- Валидность цели = `WaypointRules.ValidateTarget` — та же функция, что в команде симуляции.
+  `FacingPreview` (только для Replace: первый шаг кратчайшего пути), `Reachable` (достижимые клетки), `Path` (кратчайший путь к цели).
+- Валидность цели = `WaypointRules.ValidateTarget(..., reachable)` — те же правила, что в команде симуляции
+  (`ValidateTargetWithPath`): вне поля, препятствие, занято, исходная клетка, **нет пути**.
+- Множество достижимых клеток считается при начале протягивания и пересчитывается, если изменилась
+  `TopologyVersion` или источник (юнит, из которого тянут, движется). `Refresh()` вызывается каждый кадр.
 - Нажатия над HUD не попадают в автомат; отпускания передаются всегда, чтобы жест не «зависал».
 - Обратная связь (`OrderCommitted`, `OrderNotCreated`, `RotatedInPlace`, `DragCancelled`, `ChainContinueRefused`,
   `WaypointSelected`, `SpawnAttempted`, …) → тексты формирует `UiText` в клиенте.
@@ -152,16 +156,33 @@ tests/*  ──► соответствующие сборки
   (`AppendWaypoint`, `ClearWaypoints`, `CompleteCurrentWaypoint`), версия очереди растёт при каждом изменении.
 - `GameSimulation.IssueMoveOrder(unit, target, mode)`: источник сегмента — `CommandAnchor` (Replace) или последняя ТД
   (Append); при ошибке очередь не меняется (`OrderRejected`), при успехе `OrderIssued`.
-- `RotateInPlace` разрешён только без ТД. Исполнение движения — v0.4.0.
+- `RotateInPlace` разрешён только без ТД и не во время шага. Исполнение — §7.2.
+
+## 7.2. Поиск пути и движение
+
+- **A\*** (`Pathfinder.FindPath`): шестисоседняя сетка, эвристика cube distance, стоимость входа в клетку `MoveCost`
+  (сейчас 1 → кратчайший = минимум шагов). Препятствия: непроходимые клетки + логические клетки других юнитов
+  (`GameState.ObstaclesFor(unit)`); стартовая клетка препятствием не считается. Детерминизм — D-024.
+- **Достижимость** (`Pathfinder.Reachable`, Дейкстра/BFS) — для подсветки всех клеток при протягивании.
+- **Тик**: `GameSimulation.Advance(realDelta)` → `SimulationClock` выдаёт целое число тиков по 1/30 с (максимум 8 за вызов),
+  `Step()` выполняет один тик: `MovementSystem.Tick`. `InterpolationAlpha` — доля следующего тика (только для отрисовки).
+- **Шаг** (`UnitMotion`): в центре гекса — завершение достигнутых ТД, при необходимости перепланирование пути до текущей ТД,
+  резерв следующей клетки, поворот взгляда по направлению шага. `Progress += speed × dt`; при 0,5 — `GameState.MoveUnit`
+  (единственный момент смены логической клетки), исходная клетка остаётся в резерве до конца шага (D-025).
+- **Нет пути** → `Blocked` + `UnitBlocked(reason)`, приказы сохраняются; при изменении топологии — новая попытка,
+  `UnitUnblocked` (D-026). Занятая следующая клетка → перепланирование, зарезервированная → `Waiting`.
+- **Команды на ходу**: `CommandAnchor` = `StepTo ?? Cell` (D-027).
+- События: `StepStarted`, `UnitEnteredCell`, `WaypointReached`, `UnitBlocked`, `UnitUnblocked`, `MovementFinished`,
+  `FacingChanged`, `TerrainChanged`.
 
 ## 8. Визуальные слои
 
 | Порядок | Слой | Реализация |
 |---|---|---|
 | 0 | Поле | `BoardView`: один `ArrayMesh` — шестигранные призмы без зазоров; препятствия — поднятые колонны |
-| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): в режиме выставления все клетки зелёные/красные; при протягивании — исходная клетка жёлтая, курсорная зелёная/красная |
-| 2 | Маршрут/стрелки/ТД | `OrdersView`: стрелка протягивания (ImmediateMesh, каждый кадр), цепочки «юнит → ТД1 → ТД2…» толстыми прямыми стрелками, шестигранные маркеры ТД с номерами (`Label3D` поверх всего) |
-| 3 | Юниты | `UnitsView` → `UnitView`: цилиндр, «дротик» на крышке и стрелка на земле (взгляд), тор выделения |
+| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): при протягивании все 120 клеток — зелёные (можно поставить ТД) / красные (препятствие, занято, изолировано), исходная — жёлтая; в режиме выставления — зелёные/красные по правилам появления |
+| 2 | Маршрут/стрелки/ТД | `OrdersView`: стрелка протягивания (ImmediateMesh, каждый кадр), цепочки «юнит → ТД1 → ТД2…» толстыми прямыми стрелками, шестигранные маркеры ТД с номерами (`Label3D` поверх всего); **тонкие линии рассчитанных путей** (белая — выбранный юнит, бледная — другие, зелёная — предпросмотр к курсору) |
+| 3 | Юниты | `UnitsView` → `UnitView`: цилиндр, «дротик» на крышке и стрелка на земле (взгляд), тор выделения, красный «!» при остановке; позиция интерполируется между центрами гексов |
 | 3+ | Курсорный гекс | `HexFillLayer` с белой заливкой α = 0.22, `render_priority = 3` |
 | UI | HUD | `CanvasLayer` слева, масштабируется по высоте окна |
 
@@ -205,13 +226,13 @@ tests/*  ──► соответствующие сборки
 
 Шаги: `hover:c,r`, `mouse:x,y`, `click:c,r`, `rclick:c,r`, `press:P`, `move:P`, `release:P`, `drag:P1>P2>…`
 (события мыши через `Input.ParseInputEvent` — тот же путь, что у реальной мыши), `spawn:base`, `spawn:zone:N`,
-`spawn:cell:c,r`, `place`, `key:Escape`, `face:NorthEast`, `wait:N`. Точка `P` — `c,r` (центр гекса) или
+`spawn:cell:c,r`, `place`, `obstacle:c,r` (переключить препятствие), `select:id`, `key:Escape`, `face:NorthEast`, `wait:N`. Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.3.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.4.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,
