@@ -11,5 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+    <ProjectReference Include="../Simulation/HexTactics.Simulation.csproj" />
+    <ProjectReference Include="../Interaction/HexTactics.Interaction.csproj" />
   </ItemGroup>
 </Project>

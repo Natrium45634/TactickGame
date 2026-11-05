@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace HexTactics.Core.Tests;
+namespace HexTactics.Tests.Shared;
 
 internal static class TestPaths
 {

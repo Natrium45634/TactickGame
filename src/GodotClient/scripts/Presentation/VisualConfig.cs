@@ -38,6 +38,20 @@ public static class VisualConfig
     /// <summary>Hover fill (soft white). Spec: overlays are always translucent.</summary>
     public static readonly Color HoverFill = new(1f, 1f, 1f, 0.22f);
 
+    /// <summary>Soft green: a valid target (placement / waypoint). Opacity 0.12–0.20 per spec.</summary>
+    public static readonly Color FillValid = new(0.20f, 0.78f, 0.36f, 0.15f);
+
+    /// <summary>Soft red: blocked, occupied or unreachable.</summary>
+    public static readonly Color FillInvalid = new(0.90f, 0.22f, 0.20f, 0.15f);
+
+    /// <summary>Neutral marker for the source hex of an order drag (rotate-in-place area).</summary>
+    public static readonly Color FillNeutral = new(0.95f, 0.85f, 0.35f, 0.24f);
+
+    public static readonly Color UnitPlayer = new(0.30f, 0.50f, 0.80f);
+    public static readonly Color UnitEnemy = new(0.78f, 0.34f, 0.30f);
+    public static readonly Color UnitFacingPointer = new(0.97f, 0.97f, 0.98f);
+    public static readonly Color SelectionRing = new(1.0f, 0.90f, 0.55f, 0.85f);
+
     public static Color TileColor(TileType type) => type switch
     {
         TileType.Blocked => TileBlocked,

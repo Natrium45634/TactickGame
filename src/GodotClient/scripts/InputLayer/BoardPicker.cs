@@ -52,6 +52,9 @@ public sealed class BoardPicker
         return new BoardPick(_grid.Contains(hex) ? hex : null, plane, true);
     }
 
+    /// <summary>Hex containing a plane point, even if it lies outside of the map.</summary>
+    public HexCoord HexAt(PlaneVector point) => _layout.PlaneToHex(point);
+
     /// <summary>Ground-plane point under the cursor regardless of raised tiles.</summary>
     public static bool GroundPoint(Camera3D camera, Vector2 screenPosition, out PlaneVector point)
     {

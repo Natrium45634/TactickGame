@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Game simulation: commands, fixed-step tick, order execution, events. Must never reference Godot. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>HexTactics.Simulation</RootNamespace>
+    <AssemblyName>HexTactics.Simulation</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+  </ItemGroup>
+</Project>

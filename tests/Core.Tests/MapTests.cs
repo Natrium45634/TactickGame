@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
+using HexTactics.Tests.Shared;
 using Xunit;
 
 namespace HexTactics.Core.Tests;

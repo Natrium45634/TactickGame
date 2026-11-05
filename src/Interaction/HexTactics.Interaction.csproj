@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Input state machine working in map coordinates. Must never reference Godot. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>HexTactics.Interaction</RootNamespace>
+    <AssemblyName>HexTactics.Interaction</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+    <ProjectReference Include="../Simulation/HexTactics.Simulation.csproj" />
+  </ItemGroup>
+</Project>

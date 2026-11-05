@@ -11,6 +11,9 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="../Shared/*.cs" LinkBase="Shared" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/Core/HexTactics.Core.csproj" />
   </ItemGroup>
 </Project>
