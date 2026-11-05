@@ -33,9 +33,15 @@ if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
 function Confirm-Destination([string]$Path) {
     if ((Test-Path $Path) -and (Get-ChildItem -Force $Path | Select-Object -First 1)) {
         if ($Force) { return }
-        if (-not $PSCmdlet.ShouldContinue("'$Path' is not empty. Files with the same names will be replaced. Continue?", 'Destination exists')) {
-            Fail 'Cancelled by user.'
+        $confirmed = $false
+        try {
+            $confirmed = $PSCmdlet.ShouldContinue("'$Path' is not empty. Files with the same names will be replaced. Continue?", 'Destination exists')
         }
+        catch {
+            # Non-interactive host (no console to ask): never overwrite silently.
+            Fail "'$Path' is not empty and confirmation is not possible here. Choose another -Destination or pass -Force."
+        }
+        if (-not $confirmed) { Fail 'Cancelled by user.' }
     }
 }
 
