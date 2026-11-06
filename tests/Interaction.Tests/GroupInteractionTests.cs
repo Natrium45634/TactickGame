@@ -142,6 +142,46 @@ public class GroupInteractionTests
     }
 
     [Fact]
+    public void P13_facing_preview_shows_exactly_the_companion_facings_that_get_stored()
+    {
+        Collect(_a, _b, _c);
+        Click(AtHex(C(3, 2)));
+        _fsm.PointerMove(Sector(C(3, 2), HexDirection.North));
+        var preview = _fsm.Group!.FacingPreview!;
+        Assert.Equal(HexDirection.North, preview[_a]);
+        _fsm.PointerMove(Sector(C(3, 2), HexDirection.South));
+        _fsm.PointerMove(Sector(C(3, 2), HexDirection.North));
+        Assert.Equal(preview, _fsm.Group!.FacingPreview); // hovering does not re-roll
+
+        Click(Sector(C(3, 2), HexDirection.North));
+        var committed = _feedback.OfType<GroupCommitted>().Single();
+        var stored = _sim.State.FindGroup(committed.GroupId)!.FinalFacings;
+        Assert.Equal(preview.OrderBy(p => p.Key.Value), stored.OrderBy(p => p.Key.Value));
+        Assert.All(new[] { _b, _c }, m => Assert.Contains(stored[m], new[] { HexDirection.NorthWest, HexDirection.North, HexDirection.NorthEast }));
+    }
+
+    [Fact]
+    public void Facing_sector_next_to_a_raised_wall_is_chosen_on_the_ground()
+    {
+        // (7,2) is a raised wall south of (7,1): on screen it covers the south edge of (7,1). The pick hits the wall top,
+        // the ground point lies in (7,1) — the click must choose the south facing, not cancel on the wall.
+        Collect(_a, _b);
+        Click(AtHex(C(3, 2)));
+        Click(AtHex(C(7, 1)));
+        var ground = _layout.HexToPlane(C(7, 1)) + (HexLayout.DirectionVector(HexDirection.South) * 0.6);
+        var wallTop = _layout.HexToPlane(C(7, 2));
+        var sample = new PointerSample(new ScreenPoint(1, 1), wallTop, C(7, 2), null, null, ground);
+
+        _fsm.PointerMove(sample);
+        Assert.Equal(GroupTargetStatus.FacingSector, _fsm.Group!.Status);
+        Assert.Equal(HexDirection.South, _fsm.Group.SectorFacing);
+        _fsm.PointerDown(PointerButton.Primary, sample);
+        _fsm.PointerUp(PointerButton.Primary, sample);
+        Assert.Single(_feedback.OfType<GroupCommitted>());
+        Assert.Equal(HexDirection.South, U(_a).Orders.FinalFacing);
+    }
+
+    [Fact]
     public void Centre_of_the_last_KTD_never_confirms()
     {
         Collect(_a, _b);

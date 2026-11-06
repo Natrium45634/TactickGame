@@ -868,9 +868,9 @@ public sealed partial class InputStateMachine
         {
             status = DraftTargetStatus.NoTarget;
         }
-        else if (hex == source)
+        else if (hex == source || OnGroundOf(source, sample) is not null)
         {
-            sector = SectorAt(source, plane);
+            sector = SectorAt(source, OnGroundOf(source, sample) ?? plane);
             status = sector is null ? DraftTargetStatus.Neutral : DraftTargetStatus.FacingSector;
             if (sector is not null && draft.Waypoints.Count == 0)
             {
@@ -914,8 +914,20 @@ public sealed partial class InputStateMachine
         }
 
         var anchor = _sim.CommandAnchor(unit);
+        if (OnGroundOf(anchor, sample) is { } ground)
+        {
+            return SectorAt(anchor, ground);
+        }
+
         return hex == anchor ? SectorAt(anchor, plane) : null;
     }
+
+    /// <summary>
+    /// The ground point of the sample if it lies in <paramref name="hex"/>: a raised obstacle next to the source hex can
+    /// cover its edge on screen, yet the facing sector there must stay selectable (spec part 2 §4.2).
+    /// </summary>
+    private PlaneVector? OnGroundOf(HexCoord hex, PointerSample sample) =>
+        sample.Ground is { } ground && _layout.PlaneToHex(ground) == hex ? ground : null;
 
     /// <summary>One of six edge sectors of <paramref name="hex"/> in map-plane coordinates, or null in the neutral centre.</summary>
     private HexDirection? SectorAt(HexCoord hex, PlaneVector plane)

@@ -80,6 +80,38 @@ public sealed class OrderQueue
         return wp;
     }
 
+    /// <summary>Number of queued player waypoints (detours excluded).</summary>
+    public int OrderCount
+    {
+        get
+        {
+            var n = 0;
+            foreach (var w in _items)
+            {
+                if (!w.IsDetour)
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+    }
+
+    /// <summary>Inserts detour steps in front of the queue (they are executed first, in the given order).</summary>
+    internal IReadOnlyList<Waypoint> InsertDetours(Func<int> nextId, IReadOnlyList<HexCoord> cells)
+    {
+        var inserted = new List<Waypoint>(cells.Count);
+        foreach (var cell in cells)
+        {
+            inserted.Add(new Waypoint(nextId(), 0, cell, OrderKind.MoveToTile, IsDetour: true));
+        }
+
+        _items.InsertRange(0, inserted);
+        Version++;
+        return inserted;
+    }
+
     internal Waypoint Dequeue()
     {
         if (_items.Count == 0)

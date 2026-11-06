@@ -144,7 +144,7 @@ public partial class UnitView : Node3D
         };
         AddChild(_pendingMarker);
 
-        // Command mode (spec part 2 §6.1): members being collected get a cyan ring, the captain a cyan diamond.
+        // Command mode (spec part 2 §6.1): members being collected get a cyan ring, the captain a white diamond.
         _memberRing = new MeshInstance3D
         {
             Name = "MemberRing",
@@ -162,7 +162,7 @@ public partial class UnitView : Node3D
         };
         AddChild(_memberRing);
 
-        _captainMark = new Node3D { Name = "CaptainMark", Position = new Vector3(0, BodyHeight + 0.62f, 0), Visible = false };
+        _captainMark = new Node3D { Name = "CaptainMark", Position = new Vector3(0, BodyHeight + 0.72f, 0), Visible = false };
         // Drawn above the order overlay (no depth test, higher priority): the captain stays recognisable even under
         // its own cyan command arrow. Lit, so its facets read against the flat arrows.
         var diamondMaterial = new StandardMaterial3D
@@ -175,16 +175,16 @@ public partial class UnitView : Node3D
         };
         _captainMark.AddChild(new MeshInstance3D
         {
-            Mesh = new CylinderMesh { TopRadius = 0f, BottomRadius = 0.16f, Height = 0.2f, RadialSegments = 4, Rings = 1 },
+            Mesh = new CylinderMesh { TopRadius = 0f, BottomRadius = 0.2f, Height = 0.24f, RadialSegments = 4, Rings = 1 },
             MaterialOverride = diamondMaterial,
-            Position = new Vector3(0, 0.1f, 0),
+            Position = new Vector3(0, 0.12f, 0),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
         _captainMark.AddChild(new MeshInstance3D
         {
-            Mesh = new CylinderMesh { TopRadius = 0.16f, BottomRadius = 0f, Height = 0.2f, RadialSegments = 4, Rings = 1 },
+            Mesh = new CylinderMesh { TopRadius = 0.2f, BottomRadius = 0f, Height = 0.24f, RadialSegments = 4, Rings = 1 },
             MaterialOverride = diamondMaterial,
-            Position = new Vector3(0, -0.1f, 0),
+            Position = new Vector3(0, -0.12f, 0),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
         AddChild(_captainMark);
@@ -228,7 +228,7 @@ public partial class UnitView : Node3D
         set => _memberRing.Visible = value;
     }
 
-    /// <summary>Cyan diamond above the unit: captain of the team being formed or of an active command order.</summary>
+    /// <summary>White diamond above the unit: captain of the team being formed or of an active command order.</summary>
     public bool Captain
     {
         get => _captainMark.Visible;

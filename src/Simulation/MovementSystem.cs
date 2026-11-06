@@ -22,17 +22,23 @@ internal sealed class MovementSystem : ISimulationSystem
 {
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
+    private readonly SimulationSettings _settings;
 
-    public MovementSystem(GameState state, List<SimulationEvent> events)
+    public MovementSystem(GameState state, List<SimulationEvent> events, SimulationSettings? settings = null)
     {
         _state = state;
         _events = events;
+        _settings = settings ?? SimulationSettings.Default;
     }
 
     public string Name => "Movement";
 
+    private readonly Dictionary<UnitId, IReadOnlyList<HexCoord>> _teamPaths = new();
+    private long _currentTick;
+
     public void Tick(SimulationContext context)
     {
+        _currentTick = context.Tick;
         // Units are processed in id order: the outcome of conflicts is deterministic.
         foreach (var unit in new List<UnitState>(_state.Units))
         {
@@ -94,6 +100,26 @@ internal sealed class MovementSystem : ISimulationSystem
             return false;
         }
 
+        // Stepped aside for a teammate: stay there until it has gone past (no ping-pong back into its way).
+        if (m.YieldFor is not null && unit.Cell != m.YieldVacated && !YieldReleased(unit, tick))
+        {
+            m.PathCells.Clear();
+            m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.Yielding;
+            return false;
+        }
+
+        // Command order: wait at the current КТД until the whole team has arrived (detours are never held back).
+        var group = unit.Orders.GroupId is { } groupId ? _state.FindGroup(groupId) : null;
+        if (group is not null && !target.IsDetour && GroupCoordinator.IsAheadOfTeam(_state, group, unit))
+        {
+            m.PathCells.Clear();
+            m.WaitingSinceTick = null;
+            m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.TeamStage;
+            return false;
+        }
+
         var needsPlan = m.PathCells.Count == 0
             || m.PathWaypointId != target.Id
             || m.PathTopologyVersion != _state.TopologyVersion
@@ -104,6 +130,11 @@ internal sealed class MovementSystem : ISimulationSystem
             if (m.Status is MovementStatus.Blocked or MovementStatus.Waiting && m.PathCells.Count == 0
                 && m.BlockedAtTopologyVersion == _state.TopologyVersion && m.PathWaypointId == target.Id)
             {
+                if (m.WaitReason == WaitReason.Teammate)
+                {
+                    WaitForTeammates(unit, target, tick); // only the yield timer runs while nothing changes
+                }
+
                 return false; // nothing changed since the last failed attempt
             }
 
@@ -111,6 +142,25 @@ internal sealed class MovementSystem : ISimulationSystem
             m.PathWaypointId = target.Id;
             if (path is null)
             {
+                if (group is not null && !IsHeldByOutsider(unit, target.Cell)
+                    && Pathfinder.FindPath(_state.Grid, unit.Cell, target.Cell, GroupCoordinator.ObstaclesIgnoringTeammates(_state, unit)) is { } teamPath)
+                {
+                    // Only teammates close the way: a normal moment of a group move — wait quietly (re-planned whenever
+                    // occupancy changes) and, if it lasts, ask one of them to step aside (spec part 2 §6.2).
+                    m.PathCells.Clear();
+                    m.BlockedAtTopologyVersion = _state.TopologyVersion;
+                    if (m.WaitReason != WaitReason.Teammate || m.Status != MovementStatus.Waiting)
+                    {
+                        m.WaitingSinceTick = tick;
+                    }
+
+                    m.Status = MovementStatus.Waiting;
+                    m.WaitReason = WaitReason.Teammate;
+                    _teamPaths[unit.Id] = teamPath;
+                    WaitForTeammates(unit, target, tick);
+                    return false;
+                }
+
                 Block(unit, target, tick);
                 return false;
             }
@@ -129,14 +179,20 @@ internal sealed class MovementSystem : ISimulationSystem
 
             m.BlockReason = BlockReason.None;
             m.Status = MovementStatus.Moving;
+            m.WaitReason = WaitReason.None;
+            m.WaitingSinceTick = null;
+            _teamPaths.Remove(unit.Id);
         }
 
         var next = m.PathCells[0];
         if (_state.IsReservedByOther(next, unit.Id))
         {
             m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.Reservation;
             return false;
         }
+
+        m.WaitReason = WaitReason.None;
 
         _state.Reserve(next, unit.Id);
         m.StepFrom = unit.Cell;
@@ -178,11 +234,6 @@ internal sealed class MovementSystem : ISimulationSystem
             _events.Add(new FinalFacingApplied(tick, unit.Id, finalFacing));
         }
 
-        if (unit.Orders.IsEmpty && unit.Orders.GroupId is not null)
-        {
-            _state.SetQueueGroup(unit.Id, null); // this member has completed its part of the command order
-        }
-
         if (unit.Orders.IsEmpty && m.Status != MovementStatus.Idle)
         {
             m.Status = MovementStatus.Idle;
@@ -193,31 +244,142 @@ internal sealed class MovementSystem : ISimulationSystem
         }
     }
 
-    /// <summary>True if <paramref name="cell"/> is occupied by another member of the unit's command order.</summary>
-    private bool IsHeldByTeammate(UnitState unit, HexCoord cell)
-    {
-        if (unit.Orders.GroupId is not { } group || _state.UnitAt(cell) is not { } occupant || occupant.Id == unit.Id)
-        {
-            return false;
-        }
+    /// <summary>True if <paramref name="cell"/> is occupied by a unit that is not a teammate in the same command order.</summary>
+    private bool IsHeldByOutsider(UnitState unit, HexCoord cell) =>
+        _state.UnitAt(cell) is { } occupant && occupant.Id != unit.Id && !GroupCoordinator.AreTeammates(_state, unit, occupant);
 
-        return occupant.Orders.GroupId == group || (_state.FindGroup(group)?.IsMember(occupant.Id) ?? false);
-    }
-
-    private void Block(UnitState unit, HexTactics.Core.Orders.Waypoint target, long tick)
+    /// <summary>
+    /// The way of <paramref name="unit"/> is closed only by teammates. After <see cref="SimulationSettings.TeammateYieldDelaySeconds"/>
+    /// the first standing teammate on the path is asked to step aside to a free neighbouring hex off the path (it then
+    /// carries on with its own route, or returns to its final place and facing). If nobody can step aside for
+    /// <see cref="SimulationSettings.TeammateWaitLimitSeconds"/>, the unit reports a blocked route instead of waiting silently.
+    /// </summary>
+    private void WaitForTeammates(UnitState unit, HexTactics.Core.Orders.Waypoint target, long tick)
     {
         var m = unit.Motion;
-        if (IsHeldByTeammate(unit, target.Cell))
+        if (m.WaitingSinceTick is not { } since || !_teamPaths.TryGetValue(unit.Id, out var path))
         {
-            // A member of the same command order stands on (or passes through) this member's slot: that is a normal,
-            // temporary situation inside a group move — wait quietly and re-plan when occupancy changes.
-            m.PathCells.Clear();
-            m.BlockedAtTopologyVersion = _state.TopologyVersion;
-            m.Status = MovementStatus.Waiting;
             return;
         }
 
-        var reason = _state.IsOccupiedByOther(target.Cell, unit.Id) ? BlockReason.TargetOccupied : BlockReason.NoPath;
+        var waited = (tick - since) * _settings.TickDuration;
+        if (waited < _settings.TeammateYieldDelaySeconds)
+        {
+            return;
+        }
+
+        if (TryRequestYield(unit, path))
+        {
+            m.WaitingSinceTick = tick; // give the teammate time to move before asking again
+            return;
+        }
+
+        if (waited >= _settings.TeammateWaitLimitSeconds)
+        {
+            Block(unit, target, tick, BlockReason.BlockedByTeammates);
+        }
+    }
+
+    /// <summary>
+    /// True once the unit that asked this one to step aside has gone past the vacated hex (or no longer needs it, or a
+    /// safety timeout elapsed); clears the yield state.
+    /// </summary>
+    private bool YieldReleased(UnitState unit, long tick)
+    {
+        var m = unit.Motion;
+        var vacated = m.YieldVacated!.Value;
+        var requester = _state.FindUnit(m.YieldFor!.Value);
+        var released = requester is null
+            || !GroupCoordinator.AreTeammates(_state, unit, requester)
+            || (tick - m.YieldSinceTick) * _settings.TickDuration >= _settings.TeammateWaitLimitSeconds
+            || (requester.Cell != m.YieldRequesterCell
+                && requester.Cell != vacated
+                && requester.Motion.StepTo != vacated
+                && !System.Linq.Enumerable.Contains(requester.Motion.Path, vacated));
+        if (released)
+        {
+            m.YieldFor = null;
+            m.YieldVacated = null;
+            m.YieldRequesterCell = null;
+        }
+
+        return released;
+    }
+
+    private bool TryRequestYield(UnitState unit, IReadOnlyList<HexCoord> path)
+    {
+        var onPath = new HashSet<HexCoord>(path);
+        for (var i = 1; i < path.Count; i++)
+        {
+            if (_state.UnitAt(path[i]) is not { } mate || !GroupCoordinator.AreTeammates(_state, unit, mate))
+            {
+                continue;
+            }
+
+            if (mate.Motion.IsStepping || mate.Orders.Peek() is { IsDetour: true })
+            {
+                return true; // it is already moving / stepping aside: just keep waiting
+            }
+
+            // Free neighbour of the teammate, off the waiting unit's path; closest to where the teammate is heading.
+            var heading = mate.Orders.Peek()?.Cell ?? mate.Cell;
+            HexCoord? best = null;
+            var bestScore = int.MaxValue;
+            foreach (var dir in HexDirections.All)
+            {
+                var c = mate.Cell.Neighbor(dir);
+                if (!_state.Grid.Contains(c) || !_state.Grid[c].IsWalkable || onPath.Contains(c) || _state.IsOccupied(c) || _state.IsReserved(c))
+                {
+                    continue;
+                }
+
+                var score = c.DistanceTo(heading);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = c;
+                }
+            }
+
+            if (best is not { } aside)
+            {
+                return false;
+            }
+
+            var group = _state.FindGroup(mate.Orders.GroupId!.Value)!;
+            if (mate.Orders.IsEmpty)
+            {
+                // Finished member: step aside and come back to its place, then look where the order said.
+                _state.InsertDetours(mate.Id, new[] { aside, mate.Cell });
+                if (group.FinalFacings.TryGetValue(mate.Id, out var facing))
+                {
+                    _state.SetFinalFacing(mate.Id, facing);
+                }
+            }
+            else
+            {
+                _state.InsertDetours(mate.Id, new[] { aside });
+            }
+
+            mate.Motion.PathCells.Clear();
+            mate.Motion.YieldFor = unit.Id;
+            mate.Motion.YieldVacated = mate.Cell;
+            mate.Motion.YieldRequesterCell = unit.Cell;
+            mate.Motion.YieldSinceTick = _currentTick;
+            _events.Add(new TeammateYielded(_currentTick, mate.Id, unit.Id, aside));
+            return true;
+        }
+
+        return false;
+    }
+
+    private void Block(UnitState unit, HexTactics.Core.Orders.Waypoint target, long tick, BlockReason? forced = null)
+    {
+        var m = unit.Motion;
+        var reason = forced ?? (_state.IsOccupiedByOther(target.Cell, unit.Id) ? BlockReason.TargetOccupied : BlockReason.NoPath);
+        m.WaitReason = WaitReason.None;
+        m.WaitingSinceTick = null;
+        _teamPaths.Remove(unit.Id);
         m.PathCells.Clear();
         m.BlockedAtTopologyVersion = _state.TopologyVersion;
         if (m.Status != MovementStatus.Blocked || m.BlockReason != reason)

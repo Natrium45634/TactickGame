@@ -33,7 +33,12 @@ public enum GroupPlanError
 }
 
 /// <summary>The formation at one КТД: captain on the КТД, every companion on its own neighbouring slot.</summary>
-public sealed record GroupStagePlan(int WaypointIndex, HexCoord Target, GroupPlanError Error, IReadOnlyList<GroupSlotAssignment> Assignments, int TotalCost)
+/// <param name="TotalCost">Summed path length of all members to their destinations.</param>
+/// <param name="Conflicts">
+/// Arrival-order conflicts of the chosen formation (a place on another member's way, see <see cref="GroupStageEvaluator"/>);
+/// 0 means the team can arrive in any order without anyone standing in somebody's way.
+/// </param>
+public sealed record GroupStagePlan(int WaypointIndex, HexCoord Target, GroupPlanError Error, IReadOnlyList<GroupSlotAssignment> Assignments, int TotalCost, int Conflicts = 0)
 {
     public bool IsValid => Error == GroupPlanError.None;
 
@@ -58,24 +63,32 @@ public sealed record GroupChainPlan(IReadOnlyList<GroupStagePlan> Stages, int Fa
 }
 
 /// <summary>
-/// Evaluates candidate КТД hexes for one stage from fixed member start hexes (spec part 2 §6.2). Distance fields of all
-/// members are computed once, so the same evaluator can colour all 120 hexes and follow the cursor cheaply.
+/// Evaluates candidate КТД hexes for one stage from fixed member start hexes (spec part 2 §6.2). Shortest-path trees of
+/// all members are computed once, so the same evaluator can colour all 120 hexes and follow the cursor cheaply.
 /// <list type="bullet">
 /// <item>The captain must reach the КТД itself; companions never target it.</item>
 /// <item>Companions take distinct free, walkable, reachable hexes of the first ring around the КТД (up to six companions,
 /// i.e. teams of at most seven, §6.2; larger teams are not specified yet, §14.8).</item>
-/// <item>Assignment minimises the summed path length; ties are broken by the clockwise slot order (N, NE, SE, S, SW, NW) of
-/// the members in collection order. The result depends only on the state and the inputs — stable while the cursor moves.</item>
+/// <item>The team may arrive in any order, so a member waiting on its place must not stand in another member's way
+/// ("mutual infinite blocking", §6.2). The assignment therefore first minimises arrival conflicts — a companion's place
+/// on the captain's way, a companion's way through the КТД, a companion's way through another companion's place — and
+/// then the summed path length (§6.2: short paths, compact formation).</item>
+/// <item>Ties are broken by the clockwise slot order (N, NE, SE, S, SW, NW) of the members in collection order. The result
+/// depends only on the state and the inputs — stable while the cursor moves (§10 determinism).</item>
 /// <item>Hexes of other members do not block (they move with the group); hexes of non-members do.</item>
 /// </list>
 /// </summary>
 public sealed class GroupStageEvaluator
 {
+    /// <summary>Weight of one conflict in the objective: always more than any possible length difference.</summary>
+    private const int ConflictWeight = 4096;
+
     private readonly GameState _state;
     private readonly IReadOnlyList<UnitId> _members;
     private readonly HashSet<UnitId> _memberSet;
     private readonly IReadOnlyList<HexCoord> _sources;
     private readonly IReadOnlyDictionary<HexCoord, int>[] _distances;
+    private readonly IReadOnlyDictionary<HexCoord, HexCoord>[] _parents;
     private readonly int _waypointIndex;
 
     /// <param name="members">All members, captain first.</param>
@@ -97,9 +110,10 @@ public sealed class GroupStageEvaluator
         _waypointIndex = waypointIndex;
         var obstacles = GroupRoutePlanner.ObstaclesFor(state, _memberSet);
         _distances = new IReadOnlyDictionary<HexCoord, int>[members.Count];
+        _parents = new IReadOnlyDictionary<HexCoord, HexCoord>[members.Count];
         for (var i = 0; i < members.Count; i++)
         {
-            _distances[i] = Pathfinder.DistanceField(state.Grid, sources[i], obstacles);
+            (_distances[i], _parents[i]) = Pathfinder.ShortestPathTree(state.Grid, sources[i], obstacles);
         }
     }
 
@@ -121,30 +135,44 @@ public sealed class GroupStageEvaluator
             return Fail(target, GroupPlanError.CaptainUnreachable);
         }
 
-        var slots = new List<HexCoord>(HexDirections.Count);
-        foreach (var dir in HexDirections.All)
-        {
-            var cell = target.Neighbor(dir);
-            if (IsFreeSlot(cell))
-            {
-                slots.Add(cell);
-            }
-        }
-
+        var slots = CandidateSlots(target);
         var companions = _members.Count - 1;
         if (companions > slots.Count)
         {
             return Fail(target, GroupPlanError.NotEnoughSlots);
         }
 
-        // Exhaustive search (≤ 6 companions × ≤ 6 slots = at most 720 leaves): minimal total cost, the first
+        // Per companion and slot: path length and the hexes strictly between start and slot on its shortest path.
+        var captainWay = Interior(0, target);
+        var dist = new int[companions, slots.Count];
+        var ways = new HashSet<HexCoord>?[companions, slots.Count];
+        var baseConflicts = new int[companions, slots.Count];
+        for (var k = 0; k < companions; k++)
+        {
+            for (var s = 0; s < slots.Count; s++)
+            {
+                if (!_distances[k + 1].TryGetValue(slots[s], out var d))
+                {
+                    dist[k, s] = -1;
+                    continue;
+                }
+
+                dist[k, s] = d;
+                ways[k, s] = Interior(k + 1, slots[s]);
+                baseConflicts[k, s] = (captainWay.Contains(slots[s]) ? 1 : 0) + (ways[k, s]!.Contains(target) ? 1 : 0);
+            }
+        }
+
+        // Exhaustive search (≤ 6 companions × ≤ 6 slots = at most 720 leaves): minimal (conflicts, length); the first
         // optimum in slot order wins, which makes the choice deterministic.
         var best = new int[companions];
         var current = new int[companions];
         var used = new bool[slots.Count];
-        var bestCost = int.MaxValue;
-        Search(0, 0);
-        if (companions > 0 && bestCost == int.MaxValue)
+        var bestScore = int.MaxValue;
+        var bestConflicts = 0;
+        var bestLength = 0;
+        Search(0, 0, 0);
+        if (companions > 0 && bestScore == int.MaxValue)
         {
             return Fail(target, GroupPlanError.NotEnoughSlots);
         }
@@ -155,35 +183,118 @@ public sealed class GroupStageEvaluator
             assignments.Add(new GroupSlotAssignment(_waypointIndex, _members[k + 1], slots[best[k]]));
         }
 
-        return new GroupStagePlan(_waypointIndex, target, GroupPlanError.None, assignments, captainCost + (companions > 0 ? bestCost : 0));
+        return new GroupStagePlan(_waypointIndex, target, GroupPlanError.None, assignments, captainCost + bestLength, bestConflicts);
 
-        void Search(int k, int cost)
+        void Search(int k, int conflicts, int length)
         {
-            if (cost >= bestCost)
+            if ((conflicts * ConflictWeight) + length >= bestScore)
             {
                 return;
             }
 
             if (k == companions)
             {
-                bestCost = cost;
+                bestScore = (conflicts * ConflictWeight) + length;
+                bestConflicts = conflicts;
+                bestLength = length;
                 Array.Copy(current, best, companions);
                 return;
             }
 
             for (var s = 0; s < slots.Count; s++)
             {
-                if (used[s] || !_distances[k + 1].TryGetValue(slots[s], out var d))
+                if (used[s] || dist[k, s] < 0)
                 {
                     continue;
                 }
 
+                // Pairwise: this companion's way through an earlier companion's place, and the other way round.
+                var pair = 0;
+                for (var j = 0; j < k; j++)
+                {
+                    var t = current[j];
+                    pair += (ways[k, s]!.Contains(slots[t]) ? 1 : 0) + (ways[j, t]!.Contains(slots[s]) ? 1 : 0);
+                }
+
                 used[s] = true;
                 current[k] = s;
-                Search(k + 1, cost + d);
+                Search(k + 1, conflicts + baseConflicts[k, s] + pair, length + dist[k, s]);
                 used[s] = false;
             }
         }
+    }
+
+    /// <summary>
+    /// Objective of a given formation (diagnostics/tests): arrival conflicts and summed companion path length, or null if
+    /// a companion cannot reach its place. <paramref name="companionSlots"/> is parallel to the companions (members 1…).
+    /// </summary>
+    public (int Conflicts, int Length)? Score(HexCoord target, IReadOnlyList<HexCoord> companionSlots)
+    {
+        var captainWay = Interior(0, target);
+        var conflicts = 0;
+        var length = 0;
+        var ways = new HashSet<HexCoord>[companionSlots.Count];
+        for (var k = 0; k < companionSlots.Count; k++)
+        {
+            if (!_distances[k + 1].TryGetValue(companionSlots[k], out var d))
+            {
+                return null;
+            }
+
+            length += d;
+            ways[k] = Interior(k + 1, companionSlots[k]);
+            conflicts += (captainWay.Contains(companionSlots[k]) ? 1 : 0) + (ways[k].Contains(target) ? 1 : 0);
+            for (var j = 0; j < k; j++)
+            {
+                conflicts += (ways[k].Contains(companionSlots[j]) ? 1 : 0) + (ways[j].Contains(companionSlots[k]) ? 1 : 0);
+            }
+        }
+
+        return (conflicts, length);
+    }
+
+    /// <summary>Free places around <paramref name="target"/> in slot order (see the class remarks).</summary>
+    public IReadOnlyList<HexCoord> CandidateSlots(HexCoord target)
+    {
+        // If a companion starts this stage on the КТД itself, it must not take the captain's start hex: the two would
+        // wait for each other (captain → its hex, it → captain's hex).
+        var captainStartForbidden = false;
+        for (var i = 1; i < _sources.Count; i++)
+        {
+            captainStartForbidden |= _sources[i] == target;
+        }
+
+        var slots = new List<HexCoord>(HexDirections.Count);
+        foreach (var dir in HexDirections.All)
+        {
+            var cell = target.Neighbor(dir);
+            if (IsFreeSlot(cell) && !(captainStartForbidden && cell == CaptainSource))
+            {
+                slots.Add(cell);
+            }
+        }
+
+        return slots;
+    }
+
+    /// <summary>Hexes strictly between member <paramref name="index"/>'s start and <paramref name="goal"/> on its shortest path.</summary>
+    private HashSet<HexCoord> Interior(int index, HexCoord goal)
+    {
+        var cells = new HashSet<HexCoord>();
+        var parents = _parents[index];
+        var start = _sources[index];
+        if (goal == start || !parents.TryGetValue(goal, out var cell))
+        {
+            return cells;
+        }
+
+        while (cell != start)
+        {
+            cells.Add(cell);
+            cell = parents[cell];
+        }
+
+        return cells;
     }
 
     private GroupPlanError ValidateTarget(HexCoord target)

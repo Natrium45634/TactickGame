@@ -212,9 +212,9 @@ public sealed partial class InputStateMachine
             var source = _groupWaypoints.Count > 0 ? _groupWaypoints[^1] : (HexCoord?)null;
             var unitAt = sample.Unit is { } u && state.FindUnit(u) is not null ? state.FindUnit(u) : state.UnitAt(hex);
             var captainSide = _groupMembers.Count > 0 ? state.GetUnit(_groupMembers[0]).Side : Settings.PlacementSide;
-            if (source == hex)
+            if (source is { } last && (last == hex || OnGroundOf(last, sample) is not null))
             {
-                sector = SectorAt(hex, plane);
+                sector = SectorAt(last, OnGroundOf(last, sample) ?? plane);
                 status = sector is null ? GroupTargetStatus.Neutral : GroupTargetStatus.FacingSector;
             }
             else if (unitAt is not null && unitAt.Side != captainSide)
@@ -255,7 +255,8 @@ public sealed partial class InputStateMachine
             preview,
             sector,
             hoverUnit,
-            evaluator);
+            evaluator,
+            sector is { } captainFacing && _groupMembers.Count > 0 ? _sim.PreviewCompanionFacings(_groupMembers, captainFacing) : null);
     }
 
     /// <summary>Re-plans the confirmed КТД stages when members move or the map changes (the preview stays truthful).</summary>

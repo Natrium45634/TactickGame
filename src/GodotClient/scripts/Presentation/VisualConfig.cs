@@ -75,7 +75,7 @@ public static class VisualConfig
 
     /// <summary>
     /// Command orders are CYAN (spec part 2 §3.1, §6): live arrows from every member, КТД markers, companion slots,
-    /// the rings of the members being collected and the captain's diamond.
+    /// and the rings of the members being collected.
     /// </summary>
     public static readonly Color ArrowCommand = new(0.30f, 0.85f, 1.0f, 0.85f);
     public static readonly Color ArrowCommandCompanion = new(0.30f, 0.85f, 1.0f, 0.60f);
@@ -85,7 +85,8 @@ public static class VisualConfig
     public static readonly Color CommandRim = new(0.05f, 0.33f, 0.45f, 0.95f);
     public static readonly Color CommandSlot = new(0.30f, 0.85f, 1.0f, 0.85f);
     public static readonly Color MemberRing = new(0.30f, 0.85f, 1.0f, 0.95f);
-    public static readonly Color CaptainMark = new(0.30f, 0.85f, 1.0f, 1.0f);
+    /// <summary>Captain's diamond: white (lit) so it stays readable on top of its own cyan command arrow.</summary>
+    public static readonly Color CaptainMark = new(0.98f, 0.98f, 1.0f, 1.0f);
 
     /// <summary>Facing-sector preview (mini arrow at the edge of the source hex).</summary>
     public static readonly Color FacingPreview = new(1.0f, 1.0f, 1.0f, 0.9f);

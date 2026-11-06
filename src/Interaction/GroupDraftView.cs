@@ -53,6 +53,10 @@ public enum GroupTargetStatus
 /// <param name="Preview">Formation for the hex under the cursor (valid or with its error), or null.</param>
 /// <param name="SectorFacing">Captain's final facing previewed in a sector of the last КТД.</param>
 /// <param name="NextStage">Evaluator of the next КТД (lets the view colour every hex with the same rules).</param>
+/// <param name="FacingPreview">
+/// With <paramref name="SectorFacing"/>: the final facing every member would get if the player clicked now (companions
+/// the captain's way or ±60°, fixed per order — the preview shows exactly what will be stored), otherwise null.
+/// </param>
 public sealed record GroupDraftView(
     IReadOnlyList<UnitId> Members,
     IReadOnlyList<HexCoord> Anchors,
@@ -65,7 +69,8 @@ public sealed record GroupDraftView(
     GroupStagePlan? Preview,
     HexDirection? SectorFacing,
     UnitId? HoverUnit,
-    GroupStageEvaluator? NextStage)
+    GroupStageEvaluator? NextStage,
+    IReadOnlyDictionary<UnitId, HexDirection>? FacingPreview = null)
 {
     public UnitId? Captain => Members.Count > 0 ? Members[0] : null;
 

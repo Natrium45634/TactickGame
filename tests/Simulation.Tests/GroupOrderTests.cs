@@ -60,7 +60,7 @@ public class GroupOrderTests
     }
 
     [Fact]
-    public void Assignment_minimises_the_total_path_length_and_is_deterministic()
+    public void In_open_ground_the_formation_is_conflict_free_with_minimal_total_length_and_deterministic()
     {
         var members = new[] { Spawn(1, 8), Spawn(4, 8), Spawn(0, 2), Spawn(4, 1) };
         var target = C(2, 4);
@@ -68,6 +68,7 @@ public class GroupOrderTests
         var again = Evaluate(members, target);
 
         Assert.True(plan.IsValid);
+        Assert.Equal(0, plan.Conflicts);
         Assert.Equal(plan.Assignments, again.Assignments);
 
         // Brute force over all slot permutations gives the same minimal cost.
@@ -158,8 +159,10 @@ public class GroupOrderTests
         {
             Assert.Equal(2, U(m).Orders.Count);
             Assert.Equal(group.Id, U(m).Orders.GroupId);
-            Assert.Equal(HexDirection.SouthEast, U(m).Orders.FinalFacing);
+            Assert.Equal(group.FinalFacings[m], U(m).Orders.FinalFacing);
         }
+
+        Assert.Equal(HexDirection.SouthEast, group.FinalFacings[a]);
 
         Assert.Contains(_sim.DrainEvents(), e => e is GroupOrderApplied g && g.GroupId == group.Id);
 
@@ -167,7 +170,8 @@ public class GroupOrderTests
         Assert.Equal(C(6, 0), U(a).Cell);
         Assert.All(new[] { b, c }, m => Assert.Equal(1, U(m).Cell.DistanceTo(C(6, 0))));
         Assert.NotEqual(U(b).Cell, U(c).Cell);
-        Assert.All(members, m => Assert.Equal(HexDirection.SouthEast, U(m).Facing));
+        Assert.Equal(HexDirection.SouthEast, U(a).Facing);
+        Assert.All(members, m => Assert.Equal(group.FinalFacings[m], U(m).Facing));
         Assert.All(members, m => Assert.Null(U(m).Orders.GroupId));
         Assert.Empty(_sim.State.Groups);
         Assert.Contains(_sim.DrainEvents(), e => e is GroupOrderFinished);
@@ -229,7 +233,7 @@ public class GroupOrderTests
         Assert.NotNull(U(pending).Facing);
         RunUntilIdle(new[] { a, pending });
         Assert.Equal(1, U(pending).Cell.DistanceTo(C(3, 2)));
-        Assert.Equal(HexDirection.NorthEast, U(pending).Facing);
+        Assert.Contains(U(pending).Facing!.Value, new[] { HexDirection.North, HexDirection.NorthEast, HexDirection.SouthEast });
     }
 
     [Fact]

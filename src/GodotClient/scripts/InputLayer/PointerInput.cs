@@ -72,12 +72,14 @@ public partial class PointerInput : Node
 
         var unit = _units.PickUnit(camera.ProjectRayOrigin(screen), camera.ProjectRayNormal(screen));
         int? waypoint = null;
+        PlaneVector? groundPoint = null;
         if (BoardPicker.GroundPoint(camera, screen, out var ground))
         {
             waypoint = _orders.PickWaypoint(ground, _fsm.SelectedUnit);
+            groundPoint = ground;
         }
 
-        return new PointerSample(new ScreenPoint(screen.X, screen.Y), plane, hex, unit, waypoint);
+        return new PointerSample(new ScreenPoint(screen.X, screen.Y), plane, hex, unit, waypoint, groundPoint);
     }
 
     public override void _Input(InputEvent @event)

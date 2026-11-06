@@ -74,6 +74,17 @@ $script:RegressionScenarioV09 = ($script:RegressionScenarioV08 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.10.0+: companions look the captain's way or ±60° (seeded), so the v0.9 companion check is relaxed; then a team of
+# three with two КТД moves in synchronised stages and ends in formation with the stored facings.
+$script:RegressionScenarioV10 = (($script:RegressionScenarioV09 -replace ';key:Escape$', '') -replace 'expect:facing:4:South', 'expect:facing-near:4:South') + ';' + (@(
+    'command', 'click:6,1', 'expect:captain:1', 'click:2,2', 'click:9,8', 'expect:group:3:0',
+    'click:4,4', 'click:8,5', 'expect:group:3:2', 'click:8,5@South:0.6', 'expect:group:none',
+    'expect:ingroup:1:yes', 'expect:ingroup:2:yes', 'expect:ingroup:3:yes',
+    'waitidle:1:4000', 'waitidle:2:4000', 'waitidle:3:4000',
+    'expect:cell:1:8,5', 'expect:facing:1:South', 'expect:facing-near:2:South', 'expect:facing-near:3:South', 'expect:ingroup:2:no',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -133,7 +144,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }
+            $scenario = if ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }
+                        elseif ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }

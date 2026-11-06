@@ -27,6 +27,27 @@ public enum BlockReason
 
     /// <summary>The waypoint hex is free but no path leads to it (obstacles / units around).</summary>
     NoPath = 2,
+
+    /// <summary>Only members of the same command order close the way and none of them can step aside.</summary>
+    BlockedByTeammates = 3,
+}
+
+/// <summary>Why a unit with orders is not stepping right now (status <see cref="MovementStatus.Waiting"/>).</summary>
+public enum WaitReason
+{
+    None = 0,
+
+    /// <summary>The next hex is reserved by another unit stepping into/out of it.</summary>
+    Reservation = 1,
+
+    /// <summary>Command order: this member reached the current КТД stage and waits for the rest of the team.</summary>
+    TeamStage = 2,
+
+    /// <summary>Command order: a teammate stands in the way (it will move on or step aside).</summary>
+    Teammate = 3,
+
+    /// <summary>Command order: stepped aside and waits until the teammate it made way for has passed.</summary>
+    Yielding = 4,
 }
 
 /// <summary>
@@ -54,6 +75,24 @@ public sealed class UnitMotion
     public MovementStatus Status { get; internal set; }
 
     public BlockReason BlockReason { get; internal set; }
+
+    /// <summary>Reason of the current <see cref="MovementStatus.Waiting"/> status.</summary>
+    public WaitReason WaitReason { get; internal set; }
+
+    /// <summary>Tick the current wait for teammates started (yield timer), or null.</summary>
+    public long? WaitingSinceTick { get; internal set; }
+
+    /// <summary>The teammate this unit stepped aside for (it holds aside until that unit has passed), or null.</summary>
+    public UnitId? YieldFor { get; internal set; }
+
+    /// <summary>The hex this unit vacated for <see cref="YieldFor"/>.</summary>
+    public HexCoord? YieldVacated { get; internal set; }
+
+    /// <summary>Where <see cref="YieldFor"/> stood when it asked (it must have moved on before this unit returns).</summary>
+    public HexCoord? YieldRequesterCell { get; internal set; }
+
+    /// <summary>Tick of the yield request (safety timeout).</summary>
+    public long YieldSinceTick { get; internal set; }
 
     /// <summary>Remaining planned hexes of the current segment (next step first), excluding the unit's position.</summary>
     public IReadOnlyList<HexCoord> Path => PathCells;

@@ -20,4 +20,8 @@ public enum OrderKind
 /// to the player (1, 2, 3 …); it stays stable while earlier points are consumed and restarts at 1
 /// when a new chain replaces the queue.
 /// </summary>
-public sealed record Waypoint(int Id, int Sequence, HexCoord Cell, OrderKind Kind = OrderKind.MoveToTile);
+/// <param name="IsDetour">
+/// A temporary step inserted by the simulation (a team member stepping aside to let a teammate pass, spec part 2 §6.2).
+/// Not an order of the player: not drawn, not numbered, never held back by the team's stage synchronisation.
+/// </param>
+public sealed record Waypoint(int Id, int Sequence, HexCoord Cell, OrderKind Kind = OrderKind.MoveToTile, bool IsDetour = false);

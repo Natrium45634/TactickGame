@@ -431,4 +431,18 @@ public class DraftTests
         Assert.Equal(before, Unit.Orders.Items);
         Assert.Equal(HexDirection.South, Unit.Orders.FinalFacing);
     }
+
+    [Fact]
+    public void Facing_sector_next_to_a_raised_wall_uses_the_ground_point_single_draft()
+    {
+        Chain(C(7, 1));
+        var ground = _layout.HexToPlane(C(7, 1)) + (HexLayout.DirectionVector(HexDirection.South) * 0.6);
+        var sample = new PointerSample(new ScreenPoint(1, 1), _layout.HexToPlane(C(7, 2)), C(7, 2), null, null, ground);
+        _fsm.PointerMove(sample);
+        Assert.Equal(DraftTargetStatus.FacingSector, _fsm.Draft!.Status);
+        _fsm.PointerDown(PointerButton.Primary, sample);
+        _fsm.PointerUp(PointerButton.Primary, sample);
+        Assert.Null(_fsm.Draft);
+        Assert.Equal(HexDirection.South, Unit.Orders.FinalFacing);
+    }
 }

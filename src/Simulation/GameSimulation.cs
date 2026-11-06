@@ -27,7 +27,7 @@ public sealed class GameSimulation
         Settings = settings ?? SimulationSettings.Default;
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
-        AddSystem(new MovementSystem(State, _events));
+        AddSystem(new MovementSystem(State, _events, Settings));
     }
 
     /// <summary>Systems executed every tick, in order.</summary>
@@ -107,6 +107,7 @@ public sealed class GameSimulation
             system.Tick(_context);
         }
 
+        GroupCoordinator.CompleteFinished(State);
         PruneGroups();
     }
 
@@ -386,7 +387,7 @@ public sealed class GameSimulation
             stages.Add(stage.Assignments);
         }
 
-        var facings = CompanionFacings(order);
+        var facings = CompanionFacingRule.Assign(order.Members, order.FinalCaptainFacing, Settings.Seed, State.NextGroupId);
         var group = State.AddGroup(order.Captain, order.Members.ToArray(), order.GroupWaypoints.ToArray(), stages, facings);
         var memberSet = new HashSet<UnitId>(order.Members);
         foreach (var member in order.Members)
@@ -426,20 +427,12 @@ public sealed class GameSimulation
     }
 
     /// <summary>
-    /// Final facings of all members of a command order: the captain looks where the player chose; in this version the
-    /// companions look the same way (spec part 2 §14.5 allows exactly the captain's facing; the seeded ±60° choice
-    /// follows with synchronised execution).
+    /// The facings a command order with these members would assign if confirmed now with <paramref name="captainFacing"/>
+    /// (spec part 2 §6.3): the captain's choice, companions the captain's way or ±60°. Stable — depends only on the seed,
+    /// the next order id and the unit ids, so the preview never re-rolls while the cursor moves.
     /// </summary>
-    private static Dictionary<UnitId, HexDirection> CompanionFacings(GroupOrder order)
-    {
-        var facings = new Dictionary<UnitId, HexDirection>();
-        foreach (var member in order.Members)
-        {
-            facings[member] = order.FinalCaptainFacing;
-        }
-
-        return facings;
-    }
+    public IReadOnlyDictionary<UnitId, HexDirection> PreviewCompanionFacings(IReadOnlyList<UnitId> members, HexDirection captainFacing) =>
+        CompanionFacingRule.Assign(members, captainFacing, Settings.Seed, State.NextGroupId);
 
     /// <summary>
     /// Removes the given waypoint and all following ones from the unit's queue (RMB on a confirmed ТД, spec part 2
@@ -461,6 +454,12 @@ public sealed class GameSimulation
 
         var sequence = unit.Orders.Items[index].Sequence;
         State.TruncateWaypoints(id, index);
+        if (unit.Orders.GroupId is not null)
+        {
+            // An edited route is personal: the unit leaves the command order (the rest of the team goes on without it).
+            State.SetQueueGroup(id, null);
+            PruneGroups();
+        }
         _events.Add(new OrdersTruncated(Tick, id, sequence, unit.Orders.Count));
         return CommandResult.Ok;
     }

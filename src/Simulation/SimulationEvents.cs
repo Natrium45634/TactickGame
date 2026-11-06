@@ -68,3 +68,6 @@ public sealed record GroupOrderRejected(long Tick, UnitId Captain, int FailedInd
 
 /// <summary>No member executes the command order any more (finished or replaced by personal orders).</summary>
 public sealed record GroupOrderFinished(long Tick, int GroupId) : SimulationEvent(Tick);
+
+/// <summary>A team member stepped aside to <paramref name="Aside"/> to let a teammate pass (spec part 2 §6.2).</summary>
+public sealed record TeammateYielded(long Tick, UnitId Unit, UnitId For, HexCoord Aside) : SimulationEvent(Tick);

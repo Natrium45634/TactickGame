@@ -197,6 +197,13 @@ public sealed class GameState
 
     public void TruncateWaypoints(UnitId id, int index) => GetUnit(id).Orders.TruncateFrom(index);
 
+    /// <summary>Puts temporary detour steps in front of the unit's queue (stepping aside for a teammate).</summary>
+    public IReadOnlyList<Waypoint> InsertDetours(UnitId id, IReadOnlyList<HexCoord> cells) =>
+        GetUnit(id).Orders.InsertDetours(() => _nextWaypointId++, cells);
+
+    /// <summary>Id the next accepted command order will get (used to preview its seeded companion facings).</summary>
+    public int NextGroupId => _nextGroupId;
+
     // ----- Command orders (spec part 2 §6.4) -----
 
     /// <summary>Accepted command orders that still have at least one member executing them (ordered by id).</summary>

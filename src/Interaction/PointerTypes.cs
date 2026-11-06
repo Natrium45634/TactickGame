@@ -24,4 +24,8 @@ public enum PointerButton
 /// <param name="Hex">Hex containing <paramref name="Plane"/>; may be outside of the map (the state machine checks bounds).</param>
 /// <param name="Unit">Unit whose body is under the pointer, if any.</param>
 /// <param name="WaypointId">Waypoint marker under the pointer, if any.</param>
-public readonly record struct PointerSample(ScreenPoint Screen, PlaneVector? Plane, HexCoord? Hex, UnitId? Unit = null, int? WaypointId = null);
+/// <param name="Ground">
+/// Point on the ground plane ignoring raised tiles. A raised obstacle can cover part of a neighbouring hex on screen;
+/// facing sectors of the source hex are chosen with this point, so the edge next to a wall stays selectable.
+/// </param>
+public readonly record struct PointerSample(ScreenPoint Screen, PlaneVector? Plane, HexCoord? Hex, UnitId? Unit = null, int? WaypointId = null, PlaneVector? Ground = null);

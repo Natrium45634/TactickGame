@@ -101,17 +101,31 @@ public static class UiText
     public static string Motion(UnitState u) => u.Motion.Status switch
     {
         MovementStatus.Moving => "идёт",
-        MovementStatus.Waiting => "ждёт освобождения клетки",
-        MovementStatus.Blocked => u.Motion.BlockReason == BlockReason.TargetOccupied ? "остановлен — ТД занята" : "остановлен — нет пути",
+        MovementStatus.Waiting => u.Motion.WaitReason switch
+        {
+            WaitReason.TeamStage => "на месте, ждёт остальных у КТД",
+            WaitReason.Teammate => "ждёт, пока свои освободят проход",
+            WaitReason.Yielding => "уступил проход своему",
+            _ => "ждёт освобождения клетки",
+        },
+        MovementStatus.Blocked => u.Motion.BlockReason switch
+        {
+            BlockReason.TargetOccupied => "остановлен — ТД занята",
+            BlockReason.BlockedByTeammates => "остановлен — проход закрыт своими",
+            _ => "остановлен — нет пути",
+        },
         _ => "стоит",
     };
 
     public static string Blocked(UnitBlocked b, GameState state)
     {
         var where = $"ТД{b.Waypoint.Sequence} {Cell(b.Waypoint.Cell)}";
-        var reason = b.Reason == BlockReason.TargetOccupied
-            ? $"{where} занята юнитом {state.UnitAt(b.Waypoint.Cell)?.Id}"
-            : $"нет пути к {where}";
+        var reason = b.Reason switch
+        {
+            BlockReason.TargetOccupied => $"{where} занята юнитом {state.UnitAt(b.Waypoint.Cell)?.Id}",
+            BlockReason.BlockedByTeammates => $"проход к {where} закрыт участниками команды, и им некуда отойти",
+            _ => $"нет пути к {where}",
+        };
         return $"Юнит {b.Unit} остановлен: {reason}. Приказы сохранены, движение продолжится, когда путь появится.";
     }
 

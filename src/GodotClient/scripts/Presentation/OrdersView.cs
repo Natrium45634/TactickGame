@@ -208,6 +208,11 @@ public partial class OrdersView : Node3D
             var from = _layout.HexToPlane(anchor);
             foreach (var wp in unit.Orders.Items)
             {
+                if (wp.IsDetour)
+                {
+                    continue; // stepping aside for a teammate: not an order of the player
+                }
+
                 var to = _layout.HexToPlane(wp.Cell);
                 AddArrow(chain, from, to, startInset: 0.36f, endInset: MarkerRadius + 0.04f);
                 from = to;
@@ -220,6 +225,11 @@ public partial class OrdersView : Node3D
 
             foreach (var wp in unit.Orders.Items)
             {
+                if (wp.IsDetour)
+                {
+                    continue;
+                }
+
                 var pos = _layout.HexToPlane(wp.Cell).ToWorld(0f);
                 _markers.Add((wp.Id, unit.Id, wp.Sequence, pos));
                 if (group is not null)
@@ -339,7 +349,7 @@ public partial class OrdersView : Node3D
 
         if (group.Status == GroupTargetStatus.FacingSector && group.SectorFacing is { } sector && group.Source is { } last)
         {
-            // Captain's facing at the last КТД; in this version the companions look the same way (spec part 2 §14.5).
+            // Captain's facing at the last КТД and the companions' facings (captain's way or ±60°, fixed per order).
             AddFacingPreview(last, sector);
             if (group.Stages.Count > 0 && group.Stages[^1].IsValid)
             {
@@ -347,7 +357,8 @@ public partial class OrdersView : Node3D
                 {
                     if (a.Unit != captain)
                     {
-                        AddFacingPreview(a.Destination, sector, 0.7f);
+                        var facing = group.FacingPreview is { } facings && facings.TryGetValue(a.Unit, out var f) ? f : sector;
+                        AddFacingPreview(a.Destination, facing, 0.7f);
                     }
                 }
             }

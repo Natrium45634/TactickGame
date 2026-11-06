@@ -137,6 +137,53 @@ public static class Pathfinder
         return dist;
     }
 
+    /// <summary>
+    /// Like <see cref="DistanceField"/>, plus the predecessor of every reached hex on one shortest path from
+    /// <paramref name="start"/> (neighbours are expanded in the fixed direction order, so the tree is deterministic).
+    /// </summary>
+    public static (IReadOnlyDictionary<HexCoord, int> Distances, IReadOnlyDictionary<HexCoord, HexCoord> Parents) ShortestPathTree(
+        HexGrid grid, HexCoord start, Func<HexCoord, bool>? isBlocked = null)
+    {
+        ArgumentNullException.ThrowIfNull(grid);
+        var dist = new Dictionary<HexCoord, int>();
+        var parent = new Dictionary<HexCoord, HexCoord>();
+        if (!grid.Contains(start))
+        {
+            return (dist, parent);
+        }
+
+        var open = new PriorityQueue<HexCoord, (int Cost, long Seq)>();
+        long seq = 0;
+        dist[start] = 0;
+        open.Enqueue(start, (0, seq++));
+        while (open.TryDequeue(out var current, out var key))
+        {
+            if (key.Cost > dist[current])
+            {
+                continue;
+            }
+
+            foreach (var dir in HexDirections.All)
+            {
+                var next = current.Neighbor(dir);
+                if (!Passable(grid, next, start, isBlocked))
+                {
+                    continue;
+                }
+
+                var cost = key.Cost + grid[next].MoveCost;
+                if (!dist.TryGetValue(next, out var known) || cost < known)
+                {
+                    dist[next] = cost;
+                    parent[next] = current;
+                    open.Enqueue(next, (cost, seq++));
+                }
+            }
+        }
+
+        return (dist, parent);
+    }
+
     /// <summary>Set of hexes reachable from <paramref name="start"/> (including it).</summary>
     public static IReadOnlySet<HexCoord> Reachable(HexGrid grid, HexCoord start, Func<HexCoord, bool>? isBlocked = null) =>
         new HashSet<HexCoord>(DistanceField(grid, start, isBlocked).Keys);

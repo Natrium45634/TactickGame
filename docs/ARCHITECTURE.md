@@ -229,17 +229,21 @@ tests/*  ──► соответствующие сборки
 - Системы правил: `ISimulationSystem.Tick(SimulationContext)` для каждой зарегистрированной системы по порядку;
   контекст даёт `State`, `Tick`, `DeltaSeconds`, `Emit(event)` (D-031).
 
-## 7.4. Командные приказы (с v0.9.0, ТЗ ч.2 §6, D-050–D-055)
+## 7.4. Командные приказы (с v0.9.0, ТЗ ч.2 §6, D-050–D-061)
 
 - `GroupOrder(Captain, Members, GroupWaypoints, FinalCaptainFacing)` — капитан всегда `Members[0]`.
 - `GroupStageEvaluator(state, members, sources, index).Evaluate(ктд)` → `GroupStagePlan` (ошибка или назначения
-  `GroupSlotAssignment(index, unit, destination)`): КТД проходима, свободна (кроме капитана), капитан до неё дойдёт;
-  спутникам — разные свободные достижимые клетки первого кольца; минимум суммы длин путей, ничьи — по порядку сторон.
-  Одни поля расстояний на этап — поэтому так же дёшево красятся все 120 клеток.
+  `GroupSlotAssignment(index, unit, destination)`, `TotalCost`, `Conflicts`): КТД проходима, свободна (кроме капитана),
+  капитан до неё дойдёт; спутникам — разные свободные достижимые клетки первого кольца; минимум (конфликты порядка
+  прихода, суммарная длина), ничьи — по порядку сторон (D-058). Одно дерево кратчайших путей на участника и этап — так же
+  дёшево красятся все 120 клеток.
 - `GroupRoutePlanner.PlanChain` — этап k стартует с мест этапа k−1; `ValidateMembers` — 1…7, без дублей, одна сторона.
 - `GameSimulation.ApplyGroupOrder` — транзакция (как `ApplyOrder`): `GroupOrderState` в `GameState.Groups`, очереди
-  участников = их места, `OrderQueue.GroupId`, финальные взгляды (в v0.9.0 спутники = капитан). Удаляется, когда его не
-  выполняет ни один участник. `MovementSystem`: место занято участником той же команды → `Waiting` без `UnitBlocked`.
+  участников = их места, `OrderQueue.GroupId`, финальные взгляды (`CompanionFacingRule`, seed, D-057). Завершается для всех
+  сразу, когда закончили все (`GroupCoordinator.CompleteFinished`).
+- `MovementSystem` (v0.10.0): участник впереди команды по этапам ждёт (`WaitReason.TeamStage`, D-056); путь закрыт только
+  своими → `WaitReason.Teammate`, через 0,8 с стоящий на пути отходит обходным шагом (`Waypoint.IsDetour`, `TeammateYielded`)
+  и ждёт, пока его пропустят (`WaitReason.Yielding`); некому отойти 6 с → `BlockReason.BlockedByTeammates` (D-059).
 - `InputStateMachine.Group` → `GroupDraftView`: участники, якоря, источники следующего этапа, КТД, планы этапов,
   предпросмотр под курсором, сектор взгляда, `NextStage` (оценщик для подсветки).
 
@@ -276,7 +280,8 @@ tests/*  ──► соответствующие сборки
 
 - `BoardPicker`: луч камеры пересекается сначала с плоскостью верха препятствий (они загораживают то,
   что за ними), затем с плоскостью земли `y = 0`; точка плоскости → `HexLayout.PlaneToHex`. Клетка возвращается
-  и вне поля — границы проверяет автомат/модель.
+  и вне поля — границы проверяет автомат/модель. Дополнительно в `PointerSample.Ground` передаётся точка земли без учёта
+  препятствий: по ней выбирается сектор взгляда исходной клетки, если её край закрыт соседней колонной (D-060).
 - `UnitsView.PickUnit`: отрезок луча между высотой корпуса и землёй проецируется на плоскость; попадание —
   если расстояние до оси юнита ≤ 0,42. Берётся ближайший к камере.
 - Метод не зависит от угла и положения камеры: будущие зум/панорамирование не потребуют изменений.
@@ -307,14 +312,16 @@ tests/*  ──► соответствующие сборки
 `expect:lifecycle:ID:Active|PlacedPendingFacing`, `expect:mode:RosterDrag|SingleDraft|…`.
 Шаги v0.9: `command` — нажать настоящую карточку «Команда». Проверки: `expect:group:none|M:K` (M участников, K КТД в
 открытом командном черновике), `expect:captain:ID`, `expect:ingroup:ID:yes|no` (юнит выполняет командный приказ).
+Проверка v0.10: `expect:facing-near:ID:Dir` — взгляд Dir или ±60° (спутники).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
-для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9+). Точка `P` — `c,r` (центр гекса) или
+для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
+трёх с двумя КТД для v0.10+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.9.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.10.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

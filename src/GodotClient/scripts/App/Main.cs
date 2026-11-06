@@ -464,6 +464,11 @@ public partial class Main : Node3D
         {
             switch (e)
             {
+                case WaypointReached { Waypoint.IsDetour: true }:
+                    break; // stepping aside for a teammate is not an order of the player
+                case TeammateYielded y:
+                    ShowMessage($"Юнит {y.Unit} уступил проход юниту {y.For} (шаг в {UiText.Cell(y.Aside)}).", false);
+                    break;
                 case WaypointReached r:
                     ShowMessage($"Юнит {r.Unit} достиг ТД{r.Waypoint.Sequence} {UiText.Cell(r.Waypoint.Cell)}.", false);
                     break;
@@ -873,7 +878,7 @@ public partial class Main : Node3D
     /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
     /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
     /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
-    /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no
+    /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no · expect:facing-near:ID:Dir
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -907,6 +912,15 @@ public partial class Main : Node3D
                 actual = Unit(1)?.Motion.Status.ToString() ?? "none";
                 ok = actual == a[2];
                 break;
+            case "facing-near":
+                {
+                    // expect:facing-near:ID:Dir — the unit looks Dir or 60° aside (companion facings of a command order)
+                    var expected = Enum.Parse<HexDirection>(a[2]);
+                    var f = Unit(1)?.Facing;
+                    actual = f?.ToString() ?? "none";
+                    ok = f == expected || f == expected.RotateClockwise(1) || f == expected.RotateClockwise(-1);
+                    break;
+                }
             case "paused":
                 actual = _sim.IsPaused ? "true" : "false";
                 ok = actual == a[1];
