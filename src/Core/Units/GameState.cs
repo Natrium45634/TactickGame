@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HexTactics.Core.Combat;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
@@ -19,6 +20,7 @@ public sealed class GameState
     private int _nextUnitId = 1;
     private int _nextWaypointId = 1;
     private int _nextGroupId = 1;
+    private readonly List<UnitState> _fallen = new();
 
     public GameState(MapDefinition map, HexTactics.Core.Roster.RosterState? roster = null)
     {
@@ -72,7 +74,7 @@ public sealed class GameState
     public bool IsOccupiedByOther(HexCoord cell, UnitId except) => _occupancy.TryGetValue(cell, out var id) && id != except;
 
     /// <summary>Creates a unit. The caller (spawn rules) must have validated the cell; violations throw.</summary>
-    public UnitState CreateUnit(Side side, HexCoord cell, HexDirection? facing, double speedHexesPerSecond, UnitLifecycle lifecycle = UnitLifecycle.Active, int? rosterEntry = null)
+    public UnitState CreateUnit(Side side, HexCoord cell, HexDirection? facing, double speedHexesPerSecond, UnitLifecycle lifecycle = UnitLifecycle.Active, int? rosterEntry = null, UnitStats? stats = null)
     {
         if (lifecycle == UnitLifecycle.Active && facing is null)
         {
@@ -99,12 +101,98 @@ public sealed class GameState
             throw new ArgumentOutOfRangeException(nameof(speedHexesPerSecond), "Speed must be positive.");
         }
 
-        var unit = new UnitState(new UnitId(_nextUnitId++), side, cell, facing, speedHexesPerSecond, lifecycle, rosterEntry);
+        var unitStats = (stats ?? UnitStats.Default) with { MoveSpeedHexPerSecond = speedHexesPerSecond };
+        var unit = new UnitState(new UnitId(_nextUnitId++), side, cell, facing, unitStats, lifecycle, rosterEntry);
         _units.Add(unit.Id, unit);
         _occupancy[cell] = unit.Id;
         OccupancyVersion++;
         return unit;
     }
+
+    /// <summary>Units removed from the map after their death (for statistics and the UI; never act again).</summary>
+    public IReadOnlyList<UnitState> Fallen => _fallen;
+
+    /// <summary>
+    /// Lowers the unit's health (never below 0); at 0 the unit is dead at once — it no longer attacks, moves or accepts
+    /// orders — and is removed by <see cref="RemoveDead"/> at the end of the tick. Returns the damage actually dealt.
+    /// </summary>
+    public int ApplyDamage(UnitId id, int amount)
+    {
+        var unit = GetUnit(id);
+        if (!unit.IsAlive || amount <= 0)
+        {
+            return 0;
+        }
+
+        var dealt = Math.Min(amount, unit.CurrentHealth);
+        unit.CurrentHealth -= dealt;
+        if (unit.CurrentHealth == 0)
+        {
+            unit.LifeState = LifeState.Dead;
+        }
+
+        return dealt;
+    }
+
+    /// <summary>
+    /// Removes dead units from the map (deterministic id order): their hex and every reservation they hold are freed,
+    /// their orders are dropped. Returns them.
+    /// </summary>
+    public IReadOnlyList<UnitState> RemoveDead()
+    {
+        List<UnitState>? dead = null;
+        foreach (var unit in _units.Values)
+        {
+            if (!unit.IsAlive)
+            {
+                (dead ??= new List<UnitState>()).Add(unit);
+            }
+        }
+
+        if (dead is null)
+        {
+            return Array.Empty<UnitState>();
+        }
+
+        foreach (var unit in dead)
+        {
+            _units.Remove(unit.Id);
+            if (_occupancy.TryGetValue(unit.Cell, out var holder) && holder == unit.Id)
+            {
+                _occupancy.Remove(unit.Cell);
+            }
+
+            foreach (var cell in new List<HexCoord>(_reservations.Keys))
+            {
+                if (_reservations[cell] == unit.Id)
+                {
+                    _reservations.Remove(cell);
+                }
+            }
+
+            unit.Orders.Clear();
+            unit.Orders.SetAttackTarget(null);
+            unit.Orders.SetGroup(null);
+            unit.Motion.PathCells.Clear();
+            unit.Motion.StepFrom = null;
+            unit.Motion.StepTo = null;
+            unit.Motion.Plan = null;
+            _fallen.Add(unit);
+            if (unit.RosterEntryId is { } entry && Roster.Find(entry) is { } card)
+            {
+                Roster.Set(card, HexTactics.Core.Roster.RosterEntryState.Unavailable, unit.Id);
+            }
+        }
+
+        OccupancyVersion++;
+        return dead;
+    }
+
+    /// <summary>Sets the attack stage of the unit's order (null: no attack).</summary>
+    public void SetAttackTarget(UnitId id, UnitId? target) => GetUnit(id).Orders.SetAttackTarget(target);
+
+    /// <summary>Drops the detour steps at the front of the unit's queue.</summary>
+    public void RemoveLeadingDetours(UnitId id) => GetUnit(id).Orders.RemoveLeadingDetours();
 
     /// <summary>
     /// Atomically transfers the logical occupancy of a unit to an adjacent or any free walkable hex.

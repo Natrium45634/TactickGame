@@ -28,6 +28,7 @@ public sealed class GameSimulation
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
         AddSystem(new MovementSystem(State, _events, Settings, Layout));
+        AddSystem(new AttackSystem(State, _events, Settings));
     }
 
     /// <summary>Map-plane geometry of the simulation (hex size 1): unit positions and motion curves use it.</summary>
@@ -113,6 +114,12 @@ public sealed class GameSimulation
             system.Tick(_context);
         }
 
+        // Spec part 3 §7 step 5: deaths are processed once, after all actions of the tick, in id order.
+        foreach (var dead in State.RemoveDead())
+        {
+            _events.Add(new UnitDied(Tick, dead.Id, dead.Side, dead.Cell));
+        }
+
         GroupCoordinator.CompleteFinished(State);
         PruneGroups();
     }
@@ -139,7 +146,7 @@ public sealed class GameSimulation
 
         var cell = resolution.Cell!.Value;
         var facing = request.Facing ?? SpawnRules.DefaultFacing(State.Grid, cell);
-        var unit = State.CreateUnit(request.Side, cell, facing, Settings.DefaultUnitSpeed);
+        var unit = State.CreateUnit(request.Side, cell, facing, Settings.DefaultUnitSpeed, stats: Settings.DefaultStats);
         _events.Add(new UnitSpawned(Tick, unit.Id, cell, request.Method));
         return new SpawnResult(unit.Id, cell, SpawnError.None, null);
     }
@@ -201,7 +208,7 @@ public sealed class GameSimulation
             return new PlacementResult(null, cell, error);
         }
 
-        var unit = State.CreateUnit(Side.Player, cell, null, Settings.DefaultUnitSpeed, UnitLifecycle.PlacedPendingFacing, entryId);
+        var unit = State.CreateUnit(Side.Player, cell, null, Settings.DefaultUnitSpeed, UnitLifecycle.PlacedPendingFacing, entryId, Settings.DefaultStats);
         State.Roster.Set(entry!, RosterEntryState.PlacedPendingFacing, unit.Id);
         _events.Add(new UnitPlacedFromRoster(Tick, entryId, unit.Id, cell));
         return new PlacementResult(unit.Id, cell, PlacementError.None);
@@ -307,7 +314,7 @@ public sealed class GameSimulation
     public OrderApplyResult ApplyOrder(IndividualOrder order)
     {
         ArgumentNullException.ThrowIfNull(order);
-        if (State.FindUnit(order.Unit) is null)
+        if (State.FindUnit(order.Unit) is not { IsAlive: true } unit)
         {
             return new OrderApplyResult(false, 0, WaypointError.UnknownUnit);
         }
@@ -317,6 +324,17 @@ public sealed class GameSimulation
             throw new ArgumentOutOfRangeException(nameof(order), "Invalid final facing.");
         }
 
+        UnitState? target = null;
+        if (order.AttackTarget is { } targetId)
+        {
+            target = State.FindUnit(targetId);
+            if (target is null || !target.IsAlive || target.Side == unit.Side)
+            {
+                _events.Add(new OrderApplyRejected(Tick, order.Unit, order.Waypoints.Count, WaypointError.InvalidTarget));
+                return new OrderApplyResult(false, order.Waypoints.Count, WaypointError.InvalidTarget);
+            }
+        }
+
         var (failed, error) = OrderDraftValidator.ValidateChain(State, order.Unit, CommandAnchor(order.Unit), order.Waypoints);
         if (error != WaypointError.None)
         {
@@ -324,17 +342,23 @@ public sealed class GameSimulation
             return new OrderApplyResult(false, failed, error);
         }
 
-        var unit = State.GetUnit(order.Unit);
+        // Spec part 3 §4.1: an attack order turns the unit to its target at once (also on pause); no facing is chosen.
+        var attackFacing = target is null ? (HexDirection?)null : HexDirections.Toward(unit.Cell, target.Cell) ?? order.FinalFacing;
         if (!unit.IsActive)
         {
             // First order of a placed unit: it gets a facing right away (first step of the route, or the chosen one).
-            var initial = order.FinalFacing;
-            if (order.Waypoints.Count > 0 && Core.Pathfinding.Pathfinder.FindPath(State.Grid, unit.Cell, order.Waypoints[0], State.ObstaclesFor(unit.Id)) is { Count: > 1 } path)
+            var initial = attackFacing ?? order.FinalFacing;
+            if (attackFacing is null && order.Waypoints.Count > 0 && Core.Pathfinding.Pathfinder.FindPath(State.Grid, unit.Cell, order.Waypoints[0], State.ObstaclesFor(unit.Id)) is { Count: > 1 } path)
             {
                 initial = unit.Cell.DirectionTo(path[1]) ?? order.FinalFacing;
             }
 
             ActivateIfPending(unit, initial);
+        }
+        else if (attackFacing is { } turn && unit.Facing != turn)
+        {
+            State.SetFacing(unit.Id, turn);
+            _events.Add(new FacingChanged(Tick, unit.Id, turn));
         }
 
         State.ClearWaypoints(order.Unit);
@@ -343,10 +367,12 @@ public sealed class GameSimulation
             State.AppendWaypoint(order.Unit, cell);
         }
 
-        State.SetFinalFacing(order.Unit, order.FinalFacing);
+        State.SetFinalFacing(order.Unit, target is null ? order.FinalFacing : null);
+        State.SetAttackTarget(order.Unit, target?.Id);
+        unit.Combat.Reset();
         State.SetQueueGroup(order.Unit, null); // a personal order takes the unit out of its command order
         PruneGroups();
-        _events.Add(new OrderApplied(Tick, order.Unit, order.Waypoints, order.FinalFacing));
+        _events.Add(new OrderApplied(Tick, order.Unit, order.Waypoints, attackFacing ?? order.FinalFacing, target?.Id));
         return OrderApplyResult.Ok;
     }
 
@@ -460,6 +486,7 @@ public sealed class GameSimulation
 
         var sequence = unit.Orders.Items[index].Sequence;
         State.TruncateWaypoints(id, index);
+        State.SetAttackTarget(id, null); // the attack stage follows the removed waypoints
         if (unit.Orders.GroupId is not null)
         {
             // An edited route is personal: the unit leaves the command order (the rest of the team goes on without it).

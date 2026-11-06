@@ -1,3 +1,4 @@
+using HexTactics.Core.Combat;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Orders;
 
@@ -20,13 +21,14 @@ public enum UnitLifecycle
 /// </summary>
 public sealed class UnitState
 {
-    internal UnitState(UnitId id, Side side, HexCoord cell, HexDirection? facing, double speedHexesPerSecond, UnitLifecycle lifecycle, int? rosterEntry)
+    internal UnitState(UnitId id, Side side, HexCoord cell, HexDirection? facing, UnitStats stats, UnitLifecycle lifecycle, int? rosterEntry)
     {
         Id = id;
         Side = side;
         Cell = cell;
         Facing = facing;
-        SpeedHexesPerSecond = speedHexesPerSecond;
+        Stats = stats;
+        CurrentHealth = stats.MaxHealth;
         Lifecycle = lifecycle;
         RosterEntryId = rosterEntry;
     }
@@ -51,8 +53,23 @@ public sealed class UnitState
     /// <summary>The roster card the unit was placed from, if any.</summary>
     public int? RosterEntryId { get; }
 
-    /// <summary>Movement speed in hex transitions per second (prototype default: 2).</summary>
-    public double SpeedHexesPerSecond { get; }
+    /// <summary>Characteristics of the unit (spec part 3 §3).</summary>
+    public UnitStats Stats { get; }
+
+    /// <summary>Movement speed in hex transitions per second (spec part 3 §2.4: 1).</summary>
+    public double SpeedHexesPerSecond => Stats.MoveSpeedHexPerSecond;
+
+    public int MaxHealth => Stats.MaxHealth;
+
+    /// <summary>Current health, 0 … <see cref="MaxHealth"/>; damage lowers it, never below 0.</summary>
+    public int CurrentHealth { get; internal set; }
+
+    public LifeState LifeState { get; internal set; }
+
+    public bool IsAlive => LifeState == LifeState.Alive;
+
+    /// <summary>State of the normal attack (target from <see cref="OrderQueue.AttackTarget"/>).</summary>
+    public CombatState Combat { get; } = new();
 
     /// <summary>Pending waypoints (ТД) in execution order.</summary>
     public OrderQueue Orders { get; } = new();
@@ -60,5 +77,5 @@ public sealed class UnitState
     /// <summary>Current movement between hex centres (driven by the simulation).</summary>
     public UnitMotion Motion { get; } = new();
 
-    public override string ToString() => $"Unit {Id} {Side} at {Cell} facing {Facing?.ShortName() ?? "-"} {Lifecycle}";
+    public override string ToString() => $"Unit {Id} {Side} at {Cell} facing {Facing?.ShortName() ?? "-"} {Lifecycle} {CurrentHealth}/{MaxHealth} HP";
 }

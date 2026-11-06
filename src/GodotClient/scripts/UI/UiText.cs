@@ -81,13 +81,29 @@ public static class UiText
     {
         var text = $"Юнит {u.Id}{(name is null ? string.Empty : $" «{name}»")} · {SideName(u.Side)}{(u.IsActive ? string.Empty : " · ожидает взгляда (не активен)")}\n" +
                    $"клетка {Cell(u.Cell)} · взгляд: {(u.Facing is { } f ? $"{Direction(f)} ({f.ShortName()})" : "не задан — выберите сектор у ребра")}\n" +
-                   $"скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД в очереди: {u.Orders.Count}\n" +
+                   $"здоровье {u.CurrentHealth}/{u.MaxHealth} · скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД: {u.Orders.OrderCount}\n" +
                    $"движение: {Motion(u)}{(paused && u.Motion.Status != MovementStatus.Idle ? " (пауза)" : string.Empty)}";
-        if (!u.Orders.IsEmpty)
+        if (u.Orders.AttackTarget is { } target)
+        {
+            text += $"\nатака юнита {target}: " + u.Combat.Status switch
+            {
+                HexTactics.Core.Combat.AttackStatus.FollowingRoute => "после ТД",
+                HexTactics.Core.Combat.AttackStatus.Approaching => "подход на дистанцию удара",
+                HexTactics.Core.Combat.AttackStatus.Attacking => $"удары ({u.Combat.HitsDelivered} нанесено)",
+                HexTactics.Core.Combat.AttackStatus.TargetUnreachable => "цель недостижима — ждёт",
+                _ => "ожидает",
+            };
+        }
+        if (u.Orders.OrderCount > 0)
         {
             var parts = new System.Collections.Generic.List<string>();
             foreach (var wp in u.Orders.Items)
             {
+                if (wp.IsDetour)
+                {
+                    continue;
+                }
+
                 var mark = wp.Id == selectedWaypoint ? "▸" : string.Empty;
                 parts.Add($"{mark}{wp.Sequence}{Cell(wp.Cell)}");
             }
@@ -132,6 +148,13 @@ public static class UiText
     public static string Committed(DraftCommitted c)
     {
         var o = c.Order;
+        if (o.AttackTarget is { } target)
+        {
+            return o.Waypoints.Count == 0
+                ? $"Юнит {c.Unit}: атака юнита {target} — взгляд на цель, подход и удары по таймеру."
+                : $"Юнит {c.Unit}: {o.Waypoints.Count} ТД, затем атака юнита {target} (взгляд — на цель).";
+        }
+
         if (o.IsTurnInPlace)
         {
             return $"Юнит {c.Unit}: поворот на месте — {Direction(o.FinalFacing)} ({o.FinalFacing.ShortName()}).";

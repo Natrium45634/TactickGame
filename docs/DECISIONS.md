@@ -405,6 +405,38 @@ F3 (и шаг автоматизации `debug:on|off`) показывает п
 кривую текущего шага (розовая) и след последних позиций (оранжевый). Только отображение; правила не меняются.
 **Статус:** принято.
 
+## D-068. Характеристики и данные баланса (§3, §8)
+`UnitStats` (MaxHealth 100, MoveSpeedHexPerSecond 1,0, AttackRatePerSecond 3,0, NormalAttackDamage 10,
+NormalAttackRangeHex 1) задаются в `SimulationSettings.DefaultStats`; клиент читает их из `res://data/balance.json`
+(экспортируется вместе с картой). Урон 10 и дальность 1 — `PROTOTYPE_DEFAULT`, не канон (§11). **Статус:** принято.
+
+## D-069. Смерть (§3, §7 п.5)
+`GameState.ApplyDamage` уменьшает здоровье не ниже 0; при 0 юнит сразу `Dead` (не бьёт, не ходит, не получает приказов).
+После всех систем тика `RemoveDead` по порядку id снимает погибших: клетка и все резервы освобождаются, очередь
+сбрасывается, юнит переносится в `Fallen`, карточка ростера → `Unavailable`, событие `UnitDied`. Тело не остаётся
+препятствием (допущение §3). Судьба команды при гибели капитана — открытый вопрос §11: участники просто продолжают свои
+маршруты. **Статус:** принято.
+
+## D-070. Приказ атаки (§4.1, §4.3)
+`IndividualOrder.AttackTarget` — конечная стадия цепочки после ТД; `OrderQueue.AttackTarget`, `FinalFacing = null`.
+Ввод: живой враг под концом стрелки (тело или его клетка) проверяется до правила «красная клетка = отмена»; клик/отпускание
+→ `ApplyOrder` сразу, без выбора взгляда. Взгляд — `HexDirections.Toward(клетка юнита, клетка цели)`: ближайшее из шести
+по скалярному произведению, равенство — первое в порядке N, NE, SE, S, SW, NW; ставится при подтверждении (и на паузе).
+Цель — только живой юнит другой стороны (`WaypointError.InvalidTarget`). Групповая атака не вводится (§4.1 п.5).
+**Статус:** принято.
+
+## D-071. Исполнение атаки (§4.2, §7 п.4)
+`AttackSystem` после `MovementSystem`, юниты по id. Пока есть ТД — идёт по ним. Цель вне радиуса — обходной шаг к
+ближайшей свободной достижимой клетке в радиусе (длина пути, равенство — порядок клеток), не чаще раза в 0,5 с; клетку
+цели не занимает; нет такой клетки — `TargetUnreachable` + событие, ожидание на месте. В радиусе и стоя — поворот к цели
+и удар каждые 1/AttackRate игрового времени, первый — через интервал (3 с → 9 ударов). Цель ушла из радиуса — снова
+подход, таймер заново. Цель погибла/исчезла — `AttackTargetLost`, приказ снят. Новой цели сам не ищет (без ИИ/агро).
+**Статус:** принято (проектные предложения §4.2).
+
+## D-072. Мишени и стенд (§9)
+Враги — юниты стороны `Enemy` без приказов и без ИИ: «Мишень врага (T)» (режим выставления со стороной Enemy) и кнопка
+«Стенд» (четыре мишени у стены и на открытом месте). **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -438,3 +470,10 @@ F3 (и шаг автоматизации `debug:on|off`) показывает п
   `GameSimulation.Layout/PositionOf`; новое пространство имён `HexTactics.Core.Motion` (`CubicSegment`, `MotionCurve`,
   `StepGeometry`, `StepPlan`, `MotionCorridor`). Клиент: `UnitsView.PositionOf` берёт точку кривой из симуляции.
   Регрессионный сценарий v0.11 = v0.10 + замер времени перехода.
+- **v0.12.0: бой.** `UnitState`: `Stats`, `CurrentHealth`, `LifeState`, `Combat`; `SpeedHexesPerSecond` берётся из
+  `Stats`; `GameState.CreateUnit(..., stats)`, `ApplyDamage`, `RemoveDead`, `Fallen`, `SetAttackTarget`,
+  `RemoveLeadingDetours`; `OrderQueue.AttackTarget`, `RemoveLeadingDetours`; `IndividualOrder(..., UnitId? AttackTarget)`;
+  `WaypointError.InvalidTarget`; `HexDirections.Toward`; `SimulationSettings.DefaultStats` (`DefaultUnitSpeed` —
+  производное); `AttackSystem`; события `DamageApplied`, `UnitDied`, `AttackStarted`, `AttackTargetLost`,
+  `AttackTargetUnreachable`; `OrderApplied.AttackTarget`. Ввод: `AttackTarget` в одиночном черновике — приказ, а не
+  `AttackTargetReserved` (в командном — по-прежнему резерв). Регрессионный сценарий v0.12 = v0.11 + атака мишени.

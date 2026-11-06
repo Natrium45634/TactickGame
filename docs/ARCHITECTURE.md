@@ -33,6 +33,7 @@ TactickGame/                     корень репозитория (логич
                                  GroupOrderState), GroupRoutePlanner (+GroupStageEvaluator) — с v0.9.0
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
       Motion/                    CubicSegment, MotionCurve, StepGeometry, StepPlan, MotionCorridor (с v0.11.0)
+      Combat/                    UnitStats, LifeState, AttackStatus, CombatState (с v0.12.0)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
@@ -256,6 +257,18 @@ tests/*  ──► соответствующие сборки
 - `InputStateMachine.Group` → `GroupDraftView`: участники, якоря, источники следующего этапа, КТД, планы этапов,
   предпросмотр под курсором, сектор взгляда, `NextStage` (оценщик для подсветки).
 
+## 7.5. Бой (с v0.12.0, ТЗ ч.3 §3–4, §7, D-068–D-072)
+
+- `UnitStats` (Core/Combat) из `SimulationSettings.DefaultStats` ← `data/balance.json`; `UnitState.CurrentHealth`,
+  `LifeState`, `Combat` (`AttackStatus`, таймер, клетка подхода, счётчик ударов).
+- Приказ атаки: `IndividualOrder.AttackTarget` → `OrderQueue.AttackTarget` (последняя стадия после ТД), взгляд к цели
+  при подтверждении (`HexDirections.Toward`).
+- Тик: `MovementSystem` → `AttackSystem` (подход обходным шагом к ближайшей свободной клетке в радиусе / удары по
+  таймеру 1/AttackRate / цель потеряна) → `GameState.RemoveDead` (смерти, освобождение клеток, `UnitDied`) →
+  завершение команд. На паузе тиков нет — нет ни урона, ни таймеров.
+- Клиент: `HealthBarsView` (полоски здоровья в экранных координатах), `CombatFxView` (всплывающий урон, след погибшего),
+  `OrdersView.DrawAttackOrders` (оранжевая стрелка атаки и кольцо цели).
+
 ## 8. Визуальные слои
 
 | Порядок | Слой | Реализация |
@@ -324,15 +337,18 @@ tests/*  ──► соответствующие сборки
 Проверка v0.10: `expect:facing-near:ID:Dir` — взгляд Dir или ±60° (спутники).
 Шаги/проверки v0.11: `debug:on|off` (оверлей движения), `expect:arrived:ID:SECONDS` (игровое время от `mark` до
 `MovementFinished` юнита, ±0,05 с), `expect:in-cell:ID` (нарисованное тело лежит в логическом гексе).
+Шаги/проверки v0.12: `spawn:enemy:c,r` (неподвижная мишень), `waitdead:ID[:max]`, `expect:hp:ID:N`,
+`expect:alive:ID:yes|no`, `expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable`.
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
-трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11+). Точка `P` — `c,r` (центр гекса) или
+трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
+для v0.12+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.11.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.12.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

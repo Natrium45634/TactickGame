@@ -291,8 +291,9 @@ public class DraftTests
     }
 
     [Fact]
-    public void Enemy_under_the_arrow_is_a_reserved_attack_target_and_changes_nothing()
+    public void Enemy_under_the_arrow_becomes_the_attack_target_after_the_waypoints_spec_part3()
     {
+        // Spec part 3 §4.1 replaces the part 2 reservation: the click creates an AttackTargetOrder instead of a waypoint.
         var enemy = _sim.Spawn(SpawnRequest.AtCell(C(3, 6), Side.Enemy)).Unit!.Value;
         Chain(C(3, 1));
         _fsm.PointerMove(AtHex(C(3, 6)));
@@ -300,10 +301,12 @@ public class DraftTests
         Assert.Equal(enemy, _fsm.Draft.AttackTarget);
 
         Click(AtHex(C(3, 6)));
-        Assert.NotNull(_fsm.Draft); // no cancel, no waypoint
-        Assert.Equal(new[] { C(3, 1) }, _fsm.Draft!.Waypoints);
-        Assert.Contains(_feedback, f => f is AttackTargetReserved r && r.Target == enemy);
-        Assert.Equal(OrderKind.AttackTarget, (OrderKind)1); // the order kind exists as a reserved type
+        Assert.Null(_fsm.Draft); // committed at once: no facing step
+        var committed = Assert.IsType<DraftCommitted>(_feedback.Last());
+        Assert.Equal(OrderKind.AttackTarget, committed.Order.Kind);
+        Assert.Equal(new[] { C(3, 1) }, Unit.Orders.Items.Select(w => w.Cell));
+        Assert.Equal(enemy, Unit.Orders.AttackTarget);
+        Assert.Null(Unit.Orders.FinalFacing);
     }
 
     [Fact]

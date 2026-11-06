@@ -25,6 +25,9 @@ public enum WaypointError
     Occupied,
     SameAsSource,
     Unreachable,
+
+    /// <summary>The attack target does not exist, is dead or is not an enemy (spec part 3 §4.1).</summary>
+    InvalidTarget,
 }
 
 /// <summary>

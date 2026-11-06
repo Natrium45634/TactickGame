@@ -94,6 +94,15 @@ $script:RegressionScenarioV11 = ($script:RegressionScenarioV10 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.12.0+ (spec part 3 §3–4): a static enemy target; the white arrow dropped on it gives an attack order on pause —
+# the unit faces the target at once, no damage while paused; after resuming it approaches and kills it (10 × 10 HP).
+$script:RegressionScenarioV12 = ($script:RegressionScenarioV11 -replace ';key:Escape$', '') + ';' + (@(
+    'spawn:enemy:11,4', 'expect:units:6', 'expect:hp:6:100', 'pause:on', 'drag:11,6>11,4', 'expect:draft:none',
+    'expect:facing:5:North', 'expect:attack:5:None', 'wait:10', 'expect:hp:6:100', 'pause:off',
+    'waitdead:6:4000', 'expect:units:5', 'expect:hp:5:100', 'expect:cell:5:11,5', 'expect:in-cell:5', 'expect:attack:5:None',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -153,7 +162,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }
+            $scenario = if ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
+                        elseif ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }
                         elseif ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }
                         elseif ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }

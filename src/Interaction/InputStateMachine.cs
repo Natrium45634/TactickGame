@@ -452,8 +452,31 @@ public sealed partial class InputStateMachine
 
     // ------------------------------------------------------------------ placement / selection / debug modes
 
-    public void EnterPlacementMode()
+    /// <summary>Side of units created by the debug placement mode (enemy targets for the test stand, spec part 3 §9).</summary>
+    public Side PlacementSide { get; private set; } = Side.Player;
+
+    /// <summary>Debug placement of units of the given side (the enemy side places static targets — no AI).</summary>
+    public void TogglePlacementMode(Side side)
     {
+        if (Mode == InputMode.Placement && PlacementSide == side)
+        {
+            ExitPlacementMode();
+            return;
+        }
+
+        if (Mode == InputMode.Placement)
+        {
+            ExitPlacementMode();
+        }
+
+        EnterPlacementMode(side);
+    }
+
+    public void EnterPlacementMode() => EnterPlacementMode(Settings.PlacementSide);
+
+    public void EnterPlacementMode(Side side)
+    {
+        PlacementSide = side;
         if (Mode == InputMode.Placement)
         {
             return;
@@ -687,8 +710,8 @@ public sealed partial class InputStateMachine
     {
         // A pointer that misses the plane yields a request without a cell (rejected as MissingCell).
         var request = hex is { } cell
-            ? SpawnRequest.AtCell(cell, Settings.PlacementSide)
-            : new SpawnRequest(SpawnMethod.DirectPlacement, Settings.PlacementSide);
+            ? SpawnRequest.AtCell(cell, PlacementSide)
+            : new SpawnRequest(SpawnMethod.DirectPlacement, PlacementSide);
         var result = _sim.Spawn(request);
         Feedback?.Invoke(new SpawnAttempted(request, result));
         if (result.Success)
@@ -780,7 +803,9 @@ public sealed partial class InputStateMachine
                 break; // the centre never confirms; the draft stays open
 
             case DraftTargetStatus.AttackTarget:
-                Feedback?.Invoke(new AttackTargetReserved(draft.Owner, view.AttackTarget!.Value));
+                // Spec part 3 §4.1: a living enemy at the end of the arrow becomes the attack target instead of a waypoint;
+                // the waypoints so far stay, no facing is asked — the target sets it.
+                CommitAttack(draft, view.AttackTarget!.Value);
                 break;
 
             default:
@@ -812,6 +837,25 @@ public sealed partial class InputStateMachine
             EndDraft();
         }
 
+        Feedback?.Invoke(new DraftCommitted(owner, order));
+    }
+
+    private void CommitAttack(OrderDraft draft, UnitId target)
+    {
+        var anchor = _sim.CommandAnchor(draft.Owner);
+        var targetCell = _sim.State.FindUnit(target)?.Cell ?? anchor;
+        var facing = HexDirections.Toward(draft.SourceFor(anchor), targetCell) ?? HexDirection.North;
+        var order = IndividualOrder.Attack(draft.Owner, draft.Waypoints, target, facing);
+        var result = _sim.ApplyOrder(order);
+        if (!result.Success)
+        {
+            Feedback?.Invoke(new DraftCommitFailed(draft.Owner, result));
+            return;
+        }
+
+        draft.MarkCommitted();
+        var owner = draft.Owner;
+        EndDraft();
         Feedback?.Invoke(new DraftCommitted(owner, order));
     }
 
@@ -877,8 +921,9 @@ public sealed partial class InputStateMachine
                 unitFacing = sector; // turn in place preview
             }
         }
-        else if (state.UnitAt(hex) is { } other && other.Side != owner.Side)
+        else if (EnemyUnder(sample, hex, owner) is { } other)
         {
+            // Checked before the "red hex cancels" rule: a living enemy is a target, not a forbidden waypoint (spec part 3 §4.1).
             status = DraftTargetStatus.AttackTarget;
             attack = other.Id;
         }
@@ -898,6 +943,18 @@ public sealed partial class InputStateMachine
 
         draft.PreviewFacing = sector;
         Draft = new DraftView(draft.Owner, draft.Waypoints, anchor, source, sourceCenter, sample.Plane, sample.Hex, status, sector, unitFacing, reachable, path, _held, draft.IsEdit, attack);
+    }
+
+    /// <summary>A living enemy of <paramref name="owner"/> under the pointer: its body, or the unit on the hex.</summary>
+    private UnitState? EnemyUnder(PointerSample sample, HexCoord hex, UnitState owner)
+    {
+        var state = _sim.State;
+        if (sample.Unit is { } picked && state.FindUnit(picked) is { IsAlive: true } body && body.Side != owner.Side)
+        {
+            return body;
+        }
+
+        return state.UnitAt(hex) is { IsAlive: true } other && other.Side != owner.Side ? other : null;
     }
 
     private void UpdateHoverTurn(PointerSample sample)

@@ -406,6 +406,7 @@ public partial class OrdersView : Node3D
     {
         _overlayMesh.ClearSurfaces();
         _overlayVertices.Clear();
+        DrawAttackOrders(state, selected, draft, visualPosition);
 
         if (group is not null)
         {
@@ -447,6 +448,73 @@ public partial class OrdersView : Node3D
         }
 
         Commit(_overlayMesh, _overlayVertices);
+    }
+
+    /// <summary>
+    /// Attack orders (spec part 3 §4): an attack arrow from the end of the unit's waypoints (or from the unit) to its
+    /// target and a ring around the target; while aiming a draft at an enemy, the ring marks the target hex instead of a
+    /// forbidden waypoint.
+    /// </summary>
+    private void DrawAttackOrders(GameState state, UnitId? selected, DraftView? draft, Func<UnitId, PlaneVector?> visualPosition)
+    {
+        foreach (var unit in state.Units)
+        {
+            if (unit.Orders.AttackTarget is not { } targetId || unit.Id == draft?.Unit || state.FindUnit(targetId) is not { } target)
+            {
+                continue;
+            }
+
+            HexCoord? lastWaypoint = null;
+            foreach (var wp in unit.Orders.Items)
+            {
+                if (!wp.IsDetour)
+                {
+                    lastWaypoint = wp.Cell;
+                }
+            }
+
+            var from = lastWaypoint is { } c ? _layout.HexToPlane(c) : visualPosition(unit.Id) ?? _layout.HexToPlane(unit.Cell);
+            var to = visualPosition(target.Id) ?? _layout.HexToPlane(target.Cell);
+            var tris = new List<Vector3>();
+            AddArrow(tris, from, to, lastWaypoint is null ? 0.36f : MarkerRadius, 0.5f, 0.75f);
+            var color = unit.Id == selected ? VisualConfig.ArrowAttack : VisualConfig.ArrowAttack with { A = 0.5f };
+            AddColored(tris, color);
+            AddTargetRing(to, color);
+        }
+
+        if (draft is { Status: DraftTargetStatus.AttackTarget, AttackTarget: { } aimed } && visualPosition(aimed) is { } aimedAt)
+        {
+            AddTargetRing(aimedAt, VisualConfig.ArrowAttack);
+        }
+    }
+
+    /// <summary>Flat hexagonal ring around a target (on the ground, above everything like the arrows).</summary>
+    private void AddTargetRing(PlaneVector centre, Color color)
+    {
+        var tris = new List<Vector3>();
+        const float inner = 0.58f;
+        const float outer = 0.72f;
+        for (var i = 0; i < 6; i++)
+        {
+            var a0 = Corner(centre, i, inner);
+            var a1 = Corner(centre, i + 1, inner);
+            var b0 = Corner(centre, i, outer);
+            var b1 = Corner(centre, i + 1, outer);
+            tris.Add(a0);
+            tris.Add(b0);
+            tris.Add(b1);
+            tris.Add(a0);
+            tris.Add(b1);
+            tris.Add(a1);
+        }
+
+        AddColored(tris, color);
+
+        static Vector3 Corner(PlaneVector c, int i, float r)
+        {
+            var angle = Mathf.DegToRad(60f * i);
+            return new Vector3((float)c.X + (r * Mathf.Cos(angle)), ArrowLift + 0.012f, (float)c.Z + (r * Mathf.Sin(angle)));
+        }
     }
 
     /// <summary>White mini-arrow at the edge of the hex in the previewed direction, with a dark outline.</summary>

@@ -387,16 +387,20 @@ public class AcceptanceTests
     }
 
     [Fact]
-    public void P20_click_on_enemy_routes_to_reserved_attack_target_without_fake_combat()
+    public void P20_part3_P10_click_on_enemy_creates_an_attack_order_with_the_facing_set_by_the_target()
     {
+        // Part 2 reserved the attack type; part 3 §4 makes it a real order (acceptance 3.10).
         var id = Spawn(C(2, 4));
         var enemy = _sim.Spawn(SpawnRequest.AtCell(C(4, 4), Side.Enemy)).Unit!.Value;
-        Drag(AtHex(C(2, 4)), AtHex(C(3, 1)));
-        Click(AtHex(C(4, 4)));
-        Assert.Contains(_feedback, f => f is AttackTargetReserved r && r.Target == enemy);
-        Assert.Equal(new[] { C(3, 1) }, _fsm.Draft!.Waypoints);
-        Assert.True(System.Enum.IsDefined(OrderKind.AttackTarget));
+        _sim.SetPaused(true);
+        Drag(AtHex(C(2, 4)), AtHex(C(4, 4))); // the arrow goes straight onto the enemy
+
+        var unit = _sim.State.GetUnit(id);
+        Assert.Null(_fsm.Draft);
+        Assert.Equal(enemy, unit.Orders.AttackTarget);
+        Assert.True(unit.Orders.IsEmpty); // no fake waypoint on the enemy's hex
+        Assert.Equal(HexDirections.Toward(C(2, 4), C(4, 4)), unit.Facing); // turned at once, even on pause
         Assert.Equal(C(4, 4), _sim.State.GetUnit(enemy).Cell);
-        Assert.True(_sim.State.GetUnit(id).Orders.IsEmpty);
+        Assert.Equal(100, _sim.State.GetUnit(enemy).CurrentHealth); // no damage while paused
     }
 }

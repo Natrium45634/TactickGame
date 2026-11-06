@@ -40,8 +40,8 @@ public sealed record TerrainChanged(long Tick, HexCoord Cell, TileType Type) : S
 
 public sealed record PauseChanged(long Tick, bool Paused) : SimulationEvent(Tick);
 
-/// <summary>A complete order (waypoints + final facing) replaced the unit's queue atomically.</summary>
-public sealed record OrderApplied(long Tick, UnitId Unit, IReadOnlyList<HexCoord> Waypoints, HexDirection FinalFacing) : SimulationEvent(Tick);
+/// <summary>A complete order (waypoints + final facing or attack target) replaced the unit's queue atomically.</summary>
+public sealed record OrderApplied(long Tick, UnitId Unit, IReadOnlyList<HexCoord> Waypoints, HexDirection FinalFacing, UnitId? AttackTarget = null) : SimulationEvent(Tick);
 
 /// <summary>An order was rejected as a whole; the previous queue is unchanged.</summary>
 public sealed record OrderApplyRejected(long Tick, UnitId Unit, int FailedIndex, WaypointError Error) : SimulationEvent(Tick);
@@ -71,3 +71,31 @@ public sealed record GroupOrderFinished(long Tick, int GroupId) : SimulationEven
 
 /// <summary>A team member stepped aside to <paramref name="Aside"/> to let a teammate pass (spec part 2 §6.2).</summary>
 public sealed record TeammateYielded(long Tick, UnitId Unit, UnitId For, HexCoord Aside) : SimulationEvent(Tick);
+
+/// <summary>Health was lowered (spec part 3 §3, §8). <paramref name="HealthAfter"/> 0 means the target is dead.</summary>
+public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, int Amount, int HealthAfter, DamageKind Kind) : SimulationEvent(Tick);
+
+/// <summary>A dead unit was removed from the map at the end of the tick; its hex is free (spec part 3 §3).</summary>
+public sealed record UnitDied(long Tick, UnitId Unit, Side Side, HexCoord Cell) : SimulationEvent(Tick);
+
+/// <summary>The target is in range: the unit starts hitting it (first hit after one interval).</summary>
+public sealed record AttackStarted(long Tick, UnitId Unit, UnitId Target) : SimulationEvent(Tick);
+
+/// <summary>The attack order ended because its target is gone (spec part 3 §4.2, §8).</summary>
+public sealed record AttackTargetLost(long Tick, UnitId Unit, UnitId Target, AttackLostReason Reason) : SimulationEvent(Tick);
+
+/// <summary>No free reachable hex within range of the target: the unit waits in place (spec part 3 §4.2).</summary>
+public sealed record AttackTargetUnreachable(long Tick, UnitId Unit, UnitId Target) : SimulationEvent(Tick);
+
+public enum DamageKind
+{
+    NormalAttack = 0,
+    Skill = 1,
+    Debug = 2,
+}
+
+public enum AttackLostReason
+{
+    TargetDied = 0,
+    TargetRemoved = 1,
+}

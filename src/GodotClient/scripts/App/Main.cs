@@ -37,6 +37,9 @@ public partial class Main : Node3D
     private UnitsView _units = null!;
     private OrdersView _orders = null!;
     private MotionDebugView _motionDebug = null!;
+    private HealthBarsView _healthBars = null!;
+    private CombatFxView _combatFx = null!;
+    private Button _enemyButton = null!;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
     private RosterBar _rosterBar = null!;
@@ -68,7 +71,7 @@ public partial class Main : Node3D
         InputBindings.Register();
         _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
         _layout = new HexLayout(VisualConfig.HexSize);
-        _sim = new GameSimulation(_map, roster: RosterState.Prototype());
+        _sim = new GameSimulation(_map, new SimulationSettings { DefaultStats = LoadBalance() }, RosterState.Prototype());
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
@@ -98,6 +101,13 @@ public partial class Main : Node3D
         _motionDebug = new MotionDebugView { Name = "MotionDebug" };
         AddChild(_motionDebug);
         _motionDebug.Initialize(_layout);
+
+        _combatFx = new CombatFxView { Name = "CombatFx" };
+        AddChild(_combatFx);
+        var barsLayer = new CanvasLayer { Name = "HealthBars", Layer = 5 };
+        AddChild(barsLayer);
+        _healthBars = new HealthBarsView { Name = "Bars" };
+        barsLayer.AddChild(_healthBars);
 
         _cameraRig = new CameraRig { Name = "CameraRig" };
         AddChild(_cameraRig);
@@ -147,6 +157,8 @@ public partial class Main : Node3D
         _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview, group?.Members);
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
         _motionDebug.Sync(_sim.State, u => _units.PositionOf(u, interpolation));
+        _healthBars.UiScale = _hud.UiScale;
+        _healthBars.Sync(_sim.State, _cameraRig.Camera, u => _units.PositionOf(u, interpolation), _fsm.SelectedUnit);
         _rosterBar.SetCommandState(group is not null, group is null ? "клик — собрать"
             : group.IsCollecting ? $"сбор: {group.Members.Count} (ПКМ — выход)"
             : $"КТД: {group.Waypoints.Count} · взгляд у ребра");
@@ -284,7 +296,8 @@ public partial class Main : Node3D
         _statusLabel.Text = $"Окно {size.X:0}×{size.Y:0} · {Engine.GetFramesPerSecond():0} FPS · юнитов: {_sim.State.UnitCount}";
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
         _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId, _sim.IsPaused, _sim.State.Roster.FindByUnit(selected.Id)?.Name);
-        _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement);
+        _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Player);
+        _enemyButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Enemy);
         _pauseButton.SetPressedNoSignal(_sim.IsPaused);
         _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
         _timeLabel.Text = $"Игровое время {_sim.GameTime:0.0} с · тик {_sim.Tick} · {(_sim.IsPaused ? "пауза" : "идёт")}";
@@ -340,6 +353,53 @@ public partial class Main : Node3D
 
     private bool IsOverUi(Vector2 position) => _hud.IsOverUi(position) || _rosterBar.IsOverUi(position);
 
+    /// <summary>
+    /// Test stand of spec part 3 §9: static enemy targets (no AI) next to the wall corner and in the open, so attacks,
+    /// approach and smoothing can be checked by hand together with the roster and the command mode.
+    /// </summary>
+    private void SpawnTestStand()
+    {
+        foreach (var (c, r) in new[] { (7, 4), (9, 5), (3, 8), (10, 1) })
+        {
+            _sim.Spawn(SpawnRequest.AtCell(HexCoord.FromOffset(c, r), HexTactics.Core.Units.Side.Enemy, HexDirection.South));
+        }
+
+        ShowMessage("Стенд: четыре неподвижные вражеские мишени (без ИИ). Протяните стрелку юнита на врага — атака.", false);
+    }
+
+    /// <summary>Unit characteristics from <c>data/balance.json</c> (spec part 3 §8: balance in data, not in code).</summary>
+    private static HexTactics.Core.Combat.UnitStats LoadBalance()
+    {
+        const string path = "res://data/balance.json";
+        var stats = HexTactics.Core.Combat.UnitStats.Default;
+        if (!FileAccess.FileExists(path))
+        {
+            GD.PushWarning($"{path} not found — default characteristics are used.");
+            return stats;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(FileAccess.GetFileAsString(path));
+            var root = doc.RootElement;
+            int I(string name, int fallback) => root.TryGetProperty(name, out var v) ? v.GetInt32() : fallback;
+            double D(string name, double fallback) => root.TryGetProperty(name, out var v) ? v.GetDouble() : fallback;
+            return stats with
+            {
+                MaxHealth = I("maxHealth", stats.MaxHealth),
+                MoveSpeedHexPerSecond = D("moveSpeedHexPerSecond", stats.MoveSpeedHexPerSecond),
+                AttackRatePerSecond = D("attackRatePerSecond", stats.AttackRatePerSecond),
+                NormalAttackDamage = I("normalAttackDamage", stats.NormalAttackDamage),
+                NormalAttackRangeHex = I("normalAttackRangeHex", stats.NormalAttackRangeHex),
+            };
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            GD.PushWarning($"{path}: {ex.Message} — default characteristics are used.");
+            return stats;
+        }
+    }
+
     private void RotateSelected(int steps)
     {
         if (_fsm.SelectedUnit is { } id && _sim.State.FindUnit(id) is { } unit)
@@ -356,7 +416,9 @@ public partial class Main : Node3D
                 ShowMessage(UiText.Spawn(s.Request, s.Result, _map), !s.Result.Success);
                 break;
             case PlacementModeChanged { Active: true }:
-                ShowMessage("Режим выставления: щёлкните по зелёной клетке. Esc / ПКМ — выход.", false);
+                ShowMessage(_fsm.PlacementSide == HexTactics.Core.Units.Side.Enemy
+                    ? "Мишень врага: щёлкните по зелёной клетке — неподвижный враг (без ИИ). Esc / ПКМ — выход."
+                    : "Режим выставления: щёлкните по зелёной клетке. Esc / ПКМ — выход.", false);
                 break;
             case DraftStarted d:
                 ShowMessage(d.IsEdit
@@ -455,6 +517,9 @@ public partial class Main : Node3D
             case Key.E:
                 RotateSelected(+1); // clockwise
                 break;
+            case Key.T:
+                _fsm.TogglePlacementMode(HexTactics.Core.Units.Side.Enemy);
+                break;
             case Key.P:
                 _fsm.TogglePlacementMode();
                 break;
@@ -477,6 +542,23 @@ public partial class Main : Node3D
         {
             switch (e)
             {
+                case DamageApplied or UnitDied:
+                    _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
+                    if (e is UnitDied died)
+                    {
+                        ShowMessage($"Юнит {died.Unit} ({UiText.SideName(died.Side)}) погиб — клетка {UiText.Cell(died.Cell)} свободна.", died.Side == HexTactics.Core.Units.Side.Player);
+                    }
+
+                    break;
+                case AttackStarted s:
+                    ShowMessage($"Юнит {s.Unit} атакует юнит {s.Target}: {_sim.Settings.DefaultStats.AttackRatePerSecond:0.#} удара/с.", false);
+                    break;
+                case AttackTargetLost l:
+                    ShowMessage($"Юнит {l.Unit}: цель {l.Target} уничтожена — атака завершена.", false);
+                    break;
+                case AttackTargetUnreachable u:
+                    ShowMessage($"Юнит {u.Unit}: цель {u.Target} недостижима — рядом нет свободной клетки для удара. Юнит ждёт.", true);
+                    break;
                 case WaypointReached { Waypoint.IsDetour: true }:
                     break; // stepping aside for a teammate is not an order of the player
                 case TeammateYielded y:
@@ -602,6 +684,11 @@ public partial class Main : Node3D
 
         _placementButton = _hud.AddButton("Выставить на клетку (P)", () => _fsm.TogglePlacementMode());
         _placementButton.ToggleMode = true;
+        var combatRow = _hud.AddRow();
+        _enemyButton = new Button { Text = "Мишень врага (T)", FocusMode = Control.FocusModeEnum.None, ToggleMode = true, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        _enemyButton.Pressed += () => _fsm.TogglePlacementMode(HexTactics.Core.Units.Side.Enemy);
+        combatRow.AddChild(_enemyButton);
+        AddRowButton(combatRow, "Стенд", SpawnTestStand);
         _obstacleButton = _hud.AddButton("Препятствие: поставить/убрать (O)", () => _fsm.ToggleObstacleEditMode());
         _obstacleButton.ToggleMode = true;
         _messageLabel = _hud.AddLabel("—", fontSize: 13);
@@ -731,6 +818,7 @@ public partial class Main : Node3D
                     {
                         "base" => SpawnRequest.AtBase(),
                         "zone" => SpawnRequest.AtZone(int.Parse(a[1], CultureInfo.InvariantCulture)),
+                        "enemy" => SpawnRequest.AtCell(ParseHex(a[1]), HexTactics.Core.Units.Side.Enemy, HexDirection.South),
                         _ => SpawnRequest.AtCell(ParseHex(a[1])),
                     };
                     SpawnFromPanel(request);
@@ -862,6 +950,24 @@ public partial class Main : Node3D
                     return 1;
                 }
 
+            case "waitdead":
+                {
+                    // waitdead:<unit>[:<maxFrames>] — polls until the unit has been removed after its death.
+                    var a = arg.Split(':');
+                    var gone = _sim.State.FindUnit(new HexTactics.Core.Units.UnitId(int.Parse(a[0], CultureInfo.InvariantCulture))) is null;
+                    var max = a.Length > 1 ? int.Parse(a[1], CultureInfo.InvariantCulture) : 1200;
+                    var count = _pollCounts.TryGetValue(step, out var c) ? c + 1 : 1;
+                    _pollCounts[step] = count;
+                    if (!gone && count < max)
+                    {
+                        return AutomationRunner.Repeat;
+                    }
+
+                    _pollCounts.Remove(step);
+                    _automation.ReportCheck(gone, $"{step} (after {count} frames)");
+                    return 1;
+                }
+
             case "expect":
                 RunExpectation(arg);
                 return 1;
@@ -901,7 +1007,8 @@ public partial class Main : Node3D
     /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
     /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
     /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no · expect:facing-near:ID:Dir ·
-    /// expect:arrived:ID:SECONDS (game time from mark to the unit's arrival) · expect:in-cell:ID
+    /// expect:arrived:ID:SECONDS (game time from mark to the unit's arrival) · expect:in-cell:ID · expect:hp:ID:N ·
+    /// expect:alive:ID:yes|no · expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -992,6 +1099,18 @@ public partial class Main : Node3D
                     break;
                 }
 
+            case "hp":
+                actual = Unit(1)?.CurrentHealth.ToString(CultureInfo.InvariantCulture) ?? "none";
+                ok = actual == a[2];
+                break;
+            case "alive":
+                actual = Unit(1) is { IsAlive: true } ? "yes" : "no";
+                ok = actual == a[2];
+                break;
+            case "attack":
+                actual = Unit(1)?.Combat.Status.ToString() ?? "none";
+                ok = actual == a[2];
+                break;
             case "in-cell":
                 {
                     // expect:in-cell:ID — the drawn body lies in the unit's logical cell (spec part 3 §2.3)

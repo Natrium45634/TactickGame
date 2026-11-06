@@ -10,7 +10,10 @@ public sealed record SimulationSettings
     /// Base unit speed in hex transitions per second (spec part 3 §2.4: 1 hex/s, replaces the 2 hex/s test value of
     /// part 1). Time of a route = transitions / speed, independent of how much the curve shortens it.
     /// </summary>
-    public double DefaultUnitSpeed { get; init; } = 1.0;
+    public double DefaultUnitSpeed => DefaultStats.MoveSpeedHexPerSecond;
+
+    /// <summary>Characteristics of new units (spec part 3 §3); the client loads them from balance data.</summary>
+    public HexTactics.Core.Combat.UnitStats DefaultStats { get; init; } = HexTactics.Core.Combat.UnitStats.Default;
 
     /// <summary>
     /// Seed of the few deliberately random decisions (companion facings of command orders, spec part 2 §6.3, §10).

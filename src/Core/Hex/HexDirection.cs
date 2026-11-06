@@ -35,6 +35,37 @@ public static class HexDirections
 
     public static HexDirection Opposite(this HexDirection direction) => (HexDirection)(((int)direction + 3) % Count);
 
+    private static readonly HexLayout UnitLayout = new(1.0);
+
+    /// <summary>
+    /// The one of six directions closest to the line <paramref name="from"/> → <paramref name="to"/> on the map plane
+    /// (spec part 3 §4.2). A line exactly between two directions resolves to the first of them in the order
+    /// N, NE, SE, S, SW, NW — a stable rule. Null if both hexes are the same.
+    /// </summary>
+    public static HexDirection? Toward(HexCoord from, HexCoord to)
+    {
+        if (from == to)
+        {
+            return null;
+        }
+
+        var v = UnitLayout.HexToPlane(to) - UnitLayout.HexToPlane(from);
+        HexDirection? best = null;
+        var bestDot = double.MinValue;
+        foreach (var dir in All)
+        {
+            var d = HexLayout.DirectionVector(dir);
+            var dot = (v.X * d.X) + (v.Z * d.Z);
+            if (dot > bestDot + 1e-9)
+            {
+                bestDot = dot;
+                best = dir;
+            }
+        }
+
+        return best;
+    }
+
     /// <summary>Rotates by <paramref name="steps"/> × 60° clockwise (negative = counter-clockwise).</summary>
     public static HexDirection RotateClockwise(this HexDirection direction, int steps = 1) =>
         (HexDirection)((((int)direction + steps) % Count + Count) % Count);

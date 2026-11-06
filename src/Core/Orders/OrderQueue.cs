@@ -34,6 +34,37 @@ public sealed class OrderQueue
     /// </summary>
     public int? GroupId { get; private set; }
 
+    /// <summary>
+    /// Final stage of the order (spec part 3 §4): after the waypoints the unit attacks this enemy unit. Null for a plain
+    /// move order. An attack order has no player-chosen final facing — the target sets it.
+    /// </summary>
+    public HexTactics.Core.Units.UnitId? AttackTarget { get; private set; }
+
+    internal void SetAttackTarget(HexTactics.Core.Units.UnitId? target)
+    {
+        if (AttackTarget != target)
+        {
+            AttackTarget = target;
+            Version++;
+        }
+    }
+
+    /// <summary>Removes the detour steps at the front of the queue.</summary>
+    internal void RemoveLeadingDetours()
+    {
+        var n = 0;
+        while (n < _items.Count && _items[n].IsDetour)
+        {
+            n++;
+        }
+
+        if (n > 0)
+        {
+            _items.RemoveRange(0, n);
+            Version++;
+        }
+    }
+
     internal void SetGroup(int? groupId)
     {
         if (GroupId != groupId)
