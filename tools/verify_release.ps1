@@ -131,6 +131,16 @@ $script:RegressionScenarioV14 = ($script:RegressionScenarioV13 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.14.1+ (spec part 3 §6.4): while the waypoint menu is open or a skill is aimed from a waypoint the green/red movement
+# fills are hidden (the grey area is never mixed with them); cancelling the aiming brings the draft and its fills back.
+$script:RegressionScenarioV141 = ($script:RegressionScenarioV14 -replace ';key:Escape$', '') + ';' + (@(
+    'select:5', 'pause:on', 'drag:11,7>10,7', 'expect:draft:1', 'expect:movefill:on',
+    'click:10,7', 'expect:menu:open:1', 'expect:movefill:off', 'menu-skill', 'expect:mode:SkillAim', 'expect:movefill:off',
+    'move:10,5', 'rclick:10,5', 'expect:mode:SingleDraft', 'expect:draft:1', 'expect:draft-skills:0', 'expect:movefill:on',
+    'key:Escape', 'expect:draft:none', 'expect:movefill:off', 'expect:cell:5:11,7', 'pause:off',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -190,7 +200,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
+            $scenario = if ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
+                        elseif ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
                         elseif ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
                         elseif ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
                         elseif ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }

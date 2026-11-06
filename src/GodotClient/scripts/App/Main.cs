@@ -229,9 +229,17 @@ public partial class Main : Node3D
     /// <summary>
     /// Passability layer. Placement mode: every cell shows whether a unit can be placed there.
     /// Order draft: all 120 cells are green/red, the source hex (facing sectors) neutral.
+    /// While a skill is aimed or a waypoint menu is open a click places no waypoint, so the movement fills are hidden:
+    /// the grey skill area is never mixed with them (spec part 3 §6.4).
     /// </summary>
     private void UpdateFills(DraftView? drag, GroupDraftView? group)
     {
+        if (!MovementFillsAllowed)
+        {
+            drag = null;
+            group = null;
+        }
+
         string stamp;
         if (group?.NextStage is not null)
         {
@@ -317,6 +325,8 @@ public partial class Main : Node3D
             }
         }
     }
+
+    private bool MovementFillsAllowed => _fsm.SkillAim is null && _fsm.WaypointMenu is null;
 
     /// <summary>
     /// Grey hit areas (spec part 3 §5.2, §6.4) — on their own layer, never mixed into the green/red movement fills:
@@ -1276,6 +1286,11 @@ public partial class Main : Node3D
             case "hp":
                 actual = Unit(1)?.CurrentHealth.ToString(CultureInfo.InvariantCulture) ?? "none";
                 ok = actual == a[2];
+                break;
+            case "movefill":
+                // expect:movefill:on|off — the green/red movement fills are shown (a draft or a command stage)
+                actual = MovementFillsAllowed && (_fsm.Draft is not null || _fsm.Group?.NextStage is not null) ? "on" : "off";
+                ok = actual == a[1];
                 break;
             case "menu":
                 actual = _fsm.WaypointMenu is { } openMenu ? $"open:{openMenu.Number}" : "none";
