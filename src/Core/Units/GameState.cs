@@ -21,6 +21,7 @@ public sealed class GameState
     private int _nextWaypointId = 1;
     private int _nextGroupId = 1;
     private readonly List<UnitState> _fallen = new();
+    private int _nextSkillActionId = 1;
 
     public GameState(MapDefinition map, HexTactics.Core.Roster.RosterState? roster = null)
     {
@@ -186,6 +187,32 @@ public sealed class GameState
 
         OccupancyVersion++;
         return dead;
+    }
+
+    /// <summary>Gives the unit its skill set.</summary>
+    public void SetSkills(UnitId id, IReadOnlyList<string> skills) => GetUnit(id).Skills = skills;
+
+    /// <summary>Creates a planned skill action with a new stable id (spec part 3 §6.5).</summary>
+    public HexTactics.Core.Skills.SkillAction NewSkillAction(string skillId, HexDirection direction, int? originWaypointId = null) =>
+        new(_nextSkillActionId++, skillId, direction, originWaypointId);
+
+    /// <summary>Plans (or clears) the unit's immediate skill use.</summary>
+    public void SetPendingSkill(UnitId id, HexTactics.Core.Skills.SkillAction? action)
+    {
+        var unit = GetUnit(id);
+        if (unit.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } old && !ReferenceEquals(old, action))
+        {
+            old.Status = HexTactics.Core.Skills.SkillActionStatus.Cancelled;
+        }
+
+        unit.PendingSkill = action;
+    }
+
+    /// <summary>Marks a skill action as executed at <paramref name="tick"/> (it never fires again).</summary>
+    public void MarkExecuted(HexTactics.Core.Skills.SkillAction action, long tick)
+    {
+        action.Status = HexTactics.Core.Skills.SkillActionStatus.Executed;
+        action.ResolvedTick = tick;
     }
 
     /// <summary>Sets the attack stage of the unit's order (null: no attack).</summary>

@@ -28,6 +28,7 @@ public sealed class GameSimulation
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
         AddSystem(new MovementSystem(State, _events, Settings, Layout));
+        AddSystem(new SkillSystem(State, _events, Settings));
         AddSystem(new AttackSystem(State, _events, Settings));
     }
 
@@ -147,6 +148,7 @@ public sealed class GameSimulation
         var cell = resolution.Cell!.Value;
         var facing = request.Facing ?? SpawnRules.DefaultFacing(State.Grid, cell);
         var unit = State.CreateUnit(request.Side, cell, facing, Settings.DefaultUnitSpeed, stats: Settings.DefaultStats);
+        State.SetSkills(unit.Id, Settings.DefaultSkillSet);
         _events.Add(new UnitSpawned(Tick, unit.Id, cell, request.Method));
         return new SpawnResult(unit.Id, cell, SpawnError.None, null);
     }
@@ -209,6 +211,7 @@ public sealed class GameSimulation
         }
 
         var unit = State.CreateUnit(Side.Player, cell, null, Settings.DefaultUnitSpeed, UnitLifecycle.PlacedPendingFacing, entryId, Settings.DefaultStats);
+        State.SetSkills(unit.Id, Settings.DefaultSkillSet);
         State.Roster.Set(entry!, RosterEntryState.PlacedPendingFacing, unit.Id);
         _events.Add(new UnitPlacedFromRoster(Tick, entryId, unit.Id, cell));
         return new PlacementResult(unit.Id, cell, PlacementError.None);
@@ -229,6 +232,43 @@ public sealed class GameSimulation
         }
 
         _events.Add(new UnitActivated(Tick, unit.Id, facing));
+    }
+
+    /// <summary>
+    /// Immediate use of a skill (spec part 3 §5.2): planned now (also on pause) and fired once as soon as the unit stands
+    /// on a hex centre — from that hex, towards <paramref name="direction"/>. Replaces a previous unfired immediate use.
+    /// </summary>
+    public CommandResult UseSkill(UnitId id, string skillId, HexDirection direction)
+    {
+        var unit = State.FindUnit(id);
+        if (unit is not { IsAlive: true })
+        {
+            return CommandResult.Fail($"Unit {id} does not exist.");
+        }
+
+        if (!unit.IsActive)
+        {
+            return CommandResult.Fail("The unit has no facing yet.");
+        }
+
+        if (!Enum.IsDefined(direction) || !Settings.Skills.ContainsKey(skillId) || !unit.Skills.Contains(skillId))
+        {
+            return CommandResult.Fail($"Unit {id} has no skill {skillId}.");
+        }
+
+        var action = State.NewSkillAction(skillId, direction);
+        State.SetPendingSkill(id, action);
+        _events.Add(new SkillPlanned(Tick, id, action.Id, skillId, direction));
+        return CommandResult.Ok;
+    }
+
+    /// <summary>Drops the unit's unfired immediate skill use.</summary>
+    public void CancelPendingSkill(UnitId id)
+    {
+        if (State.FindUnit(id) is { PendingSkill: not null })
+        {
+            State.SetPendingSkill(id, null);
+        }
     }
 
     /// <summary>Turns a unit in place to one of the six directions.</summary>

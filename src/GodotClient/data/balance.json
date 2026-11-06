@@ -4,5 +4,6 @@
   "moveSpeedHexPerSecond": 1.0,
   "attackRatePerSecond": 3.0,
   "normalAttackDamage": 10,
-  "normalAttackRangeHex": 1
+  "normalAttackRangeHex": 1,
+  "linearStrikeDamage": 20
 }

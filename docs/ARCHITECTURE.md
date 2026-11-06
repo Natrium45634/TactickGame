@@ -34,6 +34,7 @@ TactickGame/                     корень репозитория (логич
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
       Motion/                    CubicSegment, MotionCurve, StepGeometry, StepPlan, MotionCorridor (с v0.11.0)
       Combat/                    UnitStats, LifeState, AttackStatus, CombatState (с v0.12.0)
+      Skills/                    SkillDefinition, SkillCatalog, SkillAction (с v0.13.0)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
@@ -269,6 +270,16 @@ tests/*  ──► соответствующие сборки
 - Клиент: `HealthBarsView` (полоски здоровья в экранных координатах), `CombatFxView` (всплывающий урон, след погибшего),
   `OrdersView.DrawAttackOrders` (оранжевая стрелка атаки и кольцо цели).
 
+## 7.6. Навыки (с v0.13.0, ТЗ ч.3 §5, D-073–D-075)
+
+- `SkillDefinition` (Core/Skills): относительные шаги клеток, урон, правила попадания, поля стоимости/перезарядки/каста;
+  `Area(origin, direction, grid)` — две клетки «Линейного удара», без клеток за краем.
+- `SkillAction` — запланированное применение: id, навык, направление, ТД-источник (с v0.14.0), статус.
+- `GameSimulation.UseSkill` → `UnitState.PendingSkill`; `SkillSystem` (после движения, до атак) исполняет его один раз,
+  когда юнит стоит в центре клетки: поворот в направление удара, снимок врагов в области на этом тике, урон, `SkillActivated`.
+- Ввод: `InputMode.SkillAim` / `SkillAimView` (`InputStateMachine.Skill.cs`). Клиент: серый слой `SkillAreaLayer`
+  (отдельный от зелёно-красного), красная стрелка `OrdersView.DrawSkillAim`, вспышка `CombatFxView.SkillFlash`.
+
 ## 8. Визуальные слои
 
 | Порядок | Слой | Реализация |
@@ -339,16 +350,17 @@ tests/*  ──► соответствующие сборки
 `MovementFinished` юнита, ±0,05 с), `expect:in-cell:ID` (нарисованное тело лежит в логическом гексе).
 Шаги/проверки v0.12: `spawn:enemy:c,r` (неподвижная мишень), `waitdead:ID[:max]`, `expect:hp:ID:N`,
 `expect:alive:ID:yes|no`, `expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable`.
+Проверка v0.13: `expect:pending-skill:ID:yes|no` (навык запланирован и ещё не сработал).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
-для v0.12+). Точка `P` — `c,r` (центр гекса) или
+для v0.12, `$RegressionScenarioV13` = V12 + «Линейный удар» для v0.13+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.12.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.13.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

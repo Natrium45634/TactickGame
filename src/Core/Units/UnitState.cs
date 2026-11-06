@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HexTactics.Core.Combat;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Orders;
@@ -70,6 +71,12 @@ public sealed class UnitState
 
     /// <summary>State of the normal attack (target from <see cref="OrderQueue.AttackTarget"/>).</summary>
     public CombatState Combat { get; } = new();
+
+    /// <summary>Skills the unit can use (skill ids, spec part 3 §3 "набор навыков").</summary>
+    public IReadOnlyList<string> Skills { get; internal set; } = System.Array.Empty<string>();
+
+    /// <summary>An immediate skill use waiting for the unit to stand on a hex centre (executed once, then cleared).</summary>
+    public HexTactics.Core.Skills.SkillAction? PendingSkill { get; internal set; }
 
     /// <summary>Pending waypoints (ТД) in execution order.</summary>
     public OrderQueue Orders { get; } = new();

@@ -103,6 +103,16 @@ $script:RegressionScenarioV12 = ($script:RegressionScenarioV11 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.13.0+ (spec part 3 §5): «Линейный удар» aimed with the real key R on pause — planned, no damage until resume;
+# then both enemies in the two hexes take 20; RMB cancels a second aiming without effect.
+$script:RegressionScenarioV13 = ($script:RegressionScenarioV12 -replace ';key:Escape$', '') + ';' + (@(
+    'spawn:enemy:11,4', 'spawn:enemy:11,3', 'expect:units:7', 'select:5', 'pause:on', 'key:R', 'expect:mode:SkillAim',
+    'move:11,3', 'click:11,3', 'expect:mode:UnitSelected', 'expect:pending-skill:5:yes', 'wait:10', 'expect:hp:7:100',
+    'pause:off', 'wait:6', 'expect:pending-skill:5:no', 'expect:hp:7:80', 'expect:hp:8:80', 'expect:hp:5:100', 'expect:facing:5:North',
+    'key:R', 'move:11,6', 'rclick:11,6', 'expect:mode:UnitSelected', 'expect:pending-skill:5:no', 'wait:6', 'expect:hp:7:80',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -162,7 +172,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
+            $scenario = if ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
+                        elseif ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
                         elseif ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }
                         elseif ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }
                         elseif ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }

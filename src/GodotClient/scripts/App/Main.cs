@@ -40,6 +40,9 @@ public partial class Main : Node3D
     private HealthBarsView _healthBars = null!;
     private CombatFxView _combatFx = null!;
     private Button _enemyButton = null!;
+    private Button _skillButton = null!;
+    private HexFillLayer _skillLayer = null!;
+    private string _skillStamp = string.Empty;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
     private RosterBar _rosterBar = null!;
@@ -71,7 +74,18 @@ public partial class Main : Node3D
         InputBindings.Register();
         _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
         _layout = new HexLayout(VisualConfig.HexSize);
-        _sim = new GameSimulation(_map, new SimulationSettings { DefaultStats = LoadBalance() }, RosterState.Prototype());
+        var (stats, linearStrikeDamage) = LoadBalance();
+        _sim = new GameSimulation(
+            _map,
+            new SimulationSettings
+            {
+                DefaultStats = stats,
+                Skills = new System.Collections.Generic.Dictionary<string, HexTactics.Core.Skills.SkillDefinition>
+                {
+                    [HexTactics.Core.Skills.SkillCatalog.LinearStrikeId] = HexTactics.Core.Skills.SkillCatalog.LinearStrike(linearStrikeDamage),
+                },
+            },
+            RosterState.Prototype());
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
@@ -89,6 +103,11 @@ public partial class Main : Node3D
         _hoverLayer = new HexFillLayer { Name = "HoverLayer", RenderPriority = 3, ExtraLift = 0.002f };
         AddChild(_hoverLayer);
         _hoverLayer.Build(_map.Grid, _layout);
+
+        // Grey skill areas: their own layer, never mixed with the green/red movement fills (spec part 3 §5.2, §6.4).
+        _skillLayer = new HexFillLayer { Name = "SkillAreaLayer", RenderPriority = 2, ExtraLift = 0.001f };
+        AddChild(_skillLayer);
+        _skillLayer.Build(_map.Grid, _layout);
 
         _orders = new OrdersView { Name = "Orders" };
         AddChild(_orders);
@@ -145,6 +164,7 @@ public partial class Main : Node3D
         _board.SyncTerrain(_map.Grid, _layout);
         _fillLayer.SyncTerrain();
         _hoverLayer.SyncTerrain();
+        _skillLayer.SyncTerrain();
 
         _rosterBar.UiScale = _hud.UiScale;
         _rosterBar.LeftEdge = _hud.ScreenRect.End.X;
@@ -155,7 +175,8 @@ public partial class Main : Node3D
         var interpolation = _sim.InterpolationAlpha * _sim.Settings.TickDuration;
         var group = _fsm.Group;
         _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview, group?.Members);
-        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
+        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition, _fsm.SkillAim);
+        UpdateSkillAreas();
         _motionDebug.Sync(_sim.State, u => _units.PositionOf(u, interpolation));
         _healthBars.UiScale = _hud.UiScale;
         _healthBars.Sync(_sim.State, _cameraRig.Camera, u => _units.PositionOf(u, interpolation), _fsm.SelectedUnit);
@@ -290,6 +311,42 @@ public partial class Main : Node3D
         }
     }
 
+    /// <summary>
+    /// Grey hit areas (spec part 3 §5.2): the area being aimed (stronger) and the planned, not yet fired skill uses of all
+    /// units (lighter, computed from where they will fire). Fired actions disappear at once.
+    /// </summary>
+    private void UpdateSkillAreas()
+    {
+        var aim = _fsm.SkillAim;
+        var planned = new System.Collections.Generic.List<HexCoord>();
+        foreach (var unit in _sim.State.Units)
+        {
+            if (unit.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } action
+                && _sim.Settings.Skills.TryGetValue(action.SkillId, out var skill))
+            {
+                planned.AddRange(skill.Area(_sim.CommandAnchor(unit.Id), action.Direction, _map.Grid));
+            }
+        }
+
+        var stamp = $"{string.Join(';', aim?.Area ?? System.Array.Empty<HexCoord>())}|{string.Join(';', planned)}";
+        if (stamp == _skillStamp)
+        {
+            return;
+        }
+
+        _skillStamp = stamp;
+        _skillLayer.ClearAll();
+        foreach (var cell in planned)
+        {
+            _skillLayer.SetFill(cell, VisualConfig.SkillAreaPlanned);
+        }
+
+        foreach (var cell in aim?.Area ?? System.Array.Empty<HexCoord>())
+        {
+            _skillLayer.SetFill(cell, VisualConfig.SkillAreaAim);
+        }
+    }
+
     private void UpdateHud()
     {
         var size = GetViewport().GetVisibleRect().Size;
@@ -302,6 +359,8 @@ public partial class Main : Node3D
         _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
         _timeLabel.Text = $"Игровое время {_sim.GameTime:0.0} с · тик {_sim.Tick} · {(_sim.IsPaused ? "пауза" : "идёт")}";
         _obstacleButton.SetPressedNoSignal(_fsm.Mode == InputMode.ObstacleEdit);
+        _skillButton.Disabled = selected is not { IsAlive: true, IsActive: true } || selected.Side != HexTactics.Core.Units.Side.Player;
+        _skillButton.SetPressedNoSignal(_fsm.IsAimingSkill);
     }
 
     private string DescribeCell(HexCoord h)
@@ -351,6 +410,18 @@ public partial class Main : Node3D
         }
     }
 
+    private void ToggleSkillAim()
+    {
+        if (_fsm.IsAimingSkill)
+        {
+            _fsm.CancelSkillAim();
+        }
+        else
+        {
+            _fsm.BeginSkillAim(HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
+        }
+    }
+
     private bool IsOverUi(Vector2 position) => _hud.IsOverUi(position) || _rosterBar.IsOverUi(position);
 
     /// <summary>
@@ -368,14 +439,15 @@ public partial class Main : Node3D
     }
 
     /// <summary>Unit characteristics from <c>data/balance.json</c> (spec part 3 §8: balance in data, not in code).</summary>
-    private static HexTactics.Core.Combat.UnitStats LoadBalance()
+    private static (HexTactics.Core.Combat.UnitStats Stats, int LinearStrikeDamage) LoadBalance()
     {
         const string path = "res://data/balance.json";
         var stats = HexTactics.Core.Combat.UnitStats.Default;
+        var strike = HexTactics.Core.Skills.SkillCatalog.LinearStrike().Damage;
         if (!FileAccess.FileExists(path))
         {
             GD.PushWarning($"{path} not found — default characteristics are used.");
-            return stats;
+            return (stats, strike);
         }
 
         try
@@ -384,19 +456,19 @@ public partial class Main : Node3D
             var root = doc.RootElement;
             int I(string name, int fallback) => root.TryGetProperty(name, out var v) ? v.GetInt32() : fallback;
             double D(string name, double fallback) => root.TryGetProperty(name, out var v) ? v.GetDouble() : fallback;
-            return stats with
+            return (stats with
             {
                 MaxHealth = I("maxHealth", stats.MaxHealth),
                 MoveSpeedHexPerSecond = D("moveSpeedHexPerSecond", stats.MoveSpeedHexPerSecond),
                 AttackRatePerSecond = D("attackRatePerSecond", stats.AttackRatePerSecond),
                 NormalAttackDamage = I("normalAttackDamage", stats.NormalAttackDamage),
                 NormalAttackRangeHex = I("normalAttackRangeHex", stats.NormalAttackRangeHex),
-            };
+            }, I("linearStrikeDamage", strike));
         }
         catch (System.Text.Json.JsonException ex)
         {
             GD.PushWarning($"{path}: {ex.Message} — default characteristics are used.");
-            return stats;
+            return (stats, strike);
         }
     }
 
@@ -468,6 +540,20 @@ public partial class Main : Node3D
             case RosterUnitPlaced r:
                 ShowMessage($"«{RosterName(r.RosterEntry)}» на {UiText.Cell(r.Cell)}. Клик по зелёной — ТД1, у ребра клетки — взгляд (обязателен).", false);
                 break;
+            case SkillAimStarted:
+                ShowMessage("Линейный удар: наведите курсор в сторону удара — серые две клетки будут поражены. ЛКМ — применить, ПКМ/Esc — отмена.", false);
+                break;
+            case SkillAimCancelled:
+                ShowMessage("Навык отменён.", false);
+                break;
+            case SkillUsePlanned p:
+                ShowMessage(_sim.IsPaused
+                    ? $"Юнит {p.Unit}: удар {UiText.Direction(p.Direction)} — после снятия паузы."
+                    : $"Юнит {p.Unit}: удар {UiText.Direction(p.Direction)}.", false);
+                break;
+            case SkillUseRefused r:
+                ShowMessage($"Юнит {r.Unit}: навык недоступен.", true);
+                break;
             case GroupModeChanged { Active: true }:
                 ShowMessage("Команда: кликните своего юнита — он капитан; затем остальных участников. Клик по клетке — КТД1. ПКМ/Esc — выход.", false);
                 break;
@@ -517,6 +603,9 @@ public partial class Main : Node3D
             case Key.E:
                 RotateSelected(+1); // clockwise
                 break;
+            case Key.R:
+                ToggleSkillAim();
+                break;
             case Key.T:
                 _fsm.TogglePlacementMode(HexTactics.Core.Units.Side.Enemy);
                 break;
@@ -542,6 +631,12 @@ public partial class Main : Node3D
         {
             switch (e)
             {
+                case SkillActivated s:
+                    _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
+                    ShowMessage(s.Hit.Count == 0
+                        ? $"Юнит {s.Unit}: линейный удар — попаданий нет."
+                        : $"Юнит {s.Unit}: линейный удар — попаданий {s.Hit.Count} (по {_sim.Settings.Skills[s.SkillId].Damage} урона).", false);
+                    break;
                 case DamageApplied or UnitDied:
                     _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
                     if (e is UnitDied died)
@@ -661,6 +756,9 @@ public partial class Main : Node3D
 
         _hud.AddHeader("Выбранный юнит");
         _selectionLabel = _hud.AddLabel(string.Empty, fontSize: 13);
+        _skillButton = _hud.AddButton("✦ Линейный удар (R)", () => ToggleSkillAim());
+        _skillButton.ToggleMode = true;
+        _skillButton.TooltipText = "Навык: 20 урона врагам в двух клетках перед юнитом. Направление — курсором, ЛКМ — применить, ПКМ — отмена.";
         _hud.AddSeparator();
 
         _hud.AddHeader("Приказы");
@@ -1101,6 +1199,10 @@ public partial class Main : Node3D
 
             case "hp":
                 actual = Unit(1)?.CurrentHealth.ToString(CultureInfo.InvariantCulture) ?? "none";
+                ok = actual == a[2];
+                break;
+            case "pending-skill":
+                actual = Unit(1)?.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } ? "yes" : "no";
                 ok = actual == a[2];
                 break;
             case "alive":

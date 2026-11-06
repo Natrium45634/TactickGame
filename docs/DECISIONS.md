@@ -437,6 +437,24 @@ NormalAttackRangeHex 1) задаются в `SimulationSettings.DefaultStats`; �
 Враги — юниты стороны `Enemy` без приказов и без ИИ: «Мишень врага (T)» (режим выставления со стороной Enemy) и кнопка
 «Стенд» (четыре мишени у стены и на открытом месте). **Статус:** принято.
 
+## D-073. Описание навыка и область (§5.1, §8)
+`SkillDefinition`: `RelativeSteps` (пути по направлениям относительно выбранного; «Линейный удар» = [вперёд], [вперёд,
+вперёд]), `Damage`, `FriendlyFire = false`, `BlockedByObstacles = false`, `Cost/CooldownSeconds/CastSeconds = null`
+(временные правила §5.1, расширяются данными). `Area(origin, direction, grid)` — чистая гекс-арифметика; клетки вне
+поля отбрасываются. Урон «Линейного удара» (20) — в `data/balance.json`. **Статус:** принято.
+
+## D-074. Немедленное применение (§5.2 — проектное предложение)
+Вызов — кнопка «✦ Линейный удар (R)» в блоке выбранного юнита или клавиша R. Направление — ближайшее из шести к вектору
+«центр клетки юнита (якорь команд) → точка курсора на земле», нейтральный центр 0,3 гекса не выбирает. Подтверждение ЛКМ
+создаёт `SkillAction` (`UseSkill`), ПКМ/Esc отменяют только прицеливание. Действие срабатывает в первом тике, когда юнит
+стоит в центре клетки (текущий шаг доводится до конца), — от этой клетки; юнит поворачивается в направление удара и так
+остаётся до следующего шага (§6.3). Повторное прицеливание заменяет несработавшее действие (старое — `Cancelled`).
+Красная стрелка прицеливания используется и здесь — тот же визуальный язык, что для ТД в v0.14.0. **Статус:** принято.
+
+## D-075. Порядок тика (§7)
+`MovementSystem` → `SkillSystem` → `AttackSystem` → снятие погибших → завершение команд. На паузе нет тиков: ни
+срабатываний, ни урона, ни таймеров. Все системы обходят юнитов по возрастанию id. **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -477,3 +495,8 @@ NormalAttackRangeHex 1) задаются в `SimulationSettings.DefaultStats`; �
   производное); `AttackSystem`; события `DamageApplied`, `UnitDied`, `AttackStarted`, `AttackTargetLost`,
   `AttackTargetUnreachable`; `OrderApplied.AttackTarget`. Ввод: `AttackTarget` в одиночном черновике — приказ, а не
   `AttackTargetReserved` (в командном — по-прежнему резерв). Регрессионный сценарий v0.12 = v0.11 + атака мишени.
+- **v0.13.0: навык.** Пространство имён `HexTactics.Core.Skills` (`SkillDefinition`, `SkillCatalog`, `SkillAction`,
+  `SkillActionStatus`); `UnitState.Skills`, `PendingSkill`; `GameState.SetSkills/NewSkillAction/SetPendingSkill/MarkExecuted`;
+  `SimulationSettings.Skills/DefaultSkillSet`; `GameSimulation.UseSkill/CancelPendingSkill`; `SkillSystem` (между
+  движением и атаками); события `SkillPlanned`, `SkillActivated`; `InputMode.SkillAim`, `SkillAimView`
+  (`InputStateMachine.Skill.cs`); `OrdersView.Sync(..., SkillAimView?)`. Регрессионный сценарий v0.13 = v0.12 + навык.

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 namespace HexTactics.Simulation;
 
 /// <summary>Technical parameters of the simulation (spec §6.3, §7). Not balance values.</summary>
@@ -11,6 +12,16 @@ public sealed record SimulationSettings
     /// part 1). Time of a route = transitions / speed, independent of how much the curve shortens it.
     /// </summary>
     public double DefaultUnitSpeed => DefaultStats.MoveSpeedHexPerSecond;
+
+    /// <summary>Skills by id (spec part 3 §5); the client loads the damage from balance data.</summary>
+    public IReadOnlyDictionary<string, HexTactics.Core.Skills.SkillDefinition> Skills { get; init; } =
+        new Dictionary<string, HexTactics.Core.Skills.SkillDefinition>
+        {
+            [HexTactics.Core.Skills.SkillCatalog.LinearStrikeId] = HexTactics.Core.Skills.SkillCatalog.LinearStrike(),
+        };
+
+    /// <summary>Skill set of new units (prototype: every unit has «Линейный удар»).</summary>
+    public IReadOnlyList<string> DefaultSkillSet { get; init; } = new[] { HexTactics.Core.Skills.SkillCatalog.LinearStrikeId };
 
     /// <summary>Characteristics of new units (spec part 3 §3); the client loads them from balance data.</summary>
     public HexTactics.Core.Combat.UnitStats DefaultStats { get; init; } = HexTactics.Core.Combat.UnitStats.Default;

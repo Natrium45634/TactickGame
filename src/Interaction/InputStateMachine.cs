@@ -38,6 +38,9 @@ public enum InputMode
 
     /// <summary>The team has at least one КТД: clicks add КТД, a sector of the last one confirms (§6.2, §6.3).</summary>
     GroupDraft = 8,
+
+    /// <summary>Aiming an immediate skill use of the selected unit (spec part 3 §5.2).</summary>
+    SkillAim = 9,
 }
 
 public sealed record InteractionSettings
@@ -148,6 +151,12 @@ public sealed partial class InputStateMachine
             return;
         }
 
+        if (IsAimingSkill)
+        {
+            UpdateSkillAim(sample);
+            return;
+        }
+
         if (IsDrafting)
         {
             UpdateDraftView(sample);
@@ -234,6 +243,16 @@ public sealed partial class InputStateMachine
             return;
         }
 
+        if (IsAimingSkill)
+        {
+            if (press is not null)
+            {
+                SkillAimClick(sample);
+            }
+
+            return;
+        }
+
         if (IsDrafting)
         {
             if (_held)
@@ -273,6 +292,10 @@ public sealed partial class InputStateMachine
         {
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
         }
+        else if (IsAimingSkill)
+        {
+            CancelSkillAim();
+        }
         else if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -301,6 +324,10 @@ public sealed partial class InputStateMachine
         {
             UpdateGroupView(groupPointer);
         }
+        else if (IsAimingSkill && Pointer is { } aimPointer)
+        {
+            UpdateSkillAim(aimPointer);
+        }
     }
 
     /// <summary>
@@ -317,6 +344,11 @@ public sealed partial class InputStateMachine
         if (IsGrouping)
         {
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
+        }
+
+        if (IsAimingSkill)
+        {
+            CancelSkillAim();
         }
 
         if (IsDrafting)
@@ -348,6 +380,11 @@ public sealed partial class InputStateMachine
         if (Mode == InputMode.RosterDrag)
         {
             return;
+        }
+
+        if (IsAimingSkill)
+        {
+            CancelSkillAim();
         }
 
         if (IsGrouping)
@@ -476,6 +513,11 @@ public sealed partial class InputStateMachine
 
     public void EnterPlacementMode(Side side)
     {
+        if (IsAimingSkill)
+        {
+            CancelSkillAim();
+        }
+
         PlacementSide = side;
         if (Mode == InputMode.Placement)
         {
@@ -526,6 +568,11 @@ public sealed partial class InputStateMachine
 
     public void ToggleObstacleEditMode()
     {
+        if (IsAimingSkill)
+        {
+            CancelSkillAim();
+        }
+
         if (IsGrouping)
         {
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
@@ -571,6 +618,11 @@ public sealed partial class InputStateMachine
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
         }
 
+        if (IsAimingSkill && unit != SelectedUnit)
+        {
+            CancelSkillAim();
+        }
+
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -592,6 +644,11 @@ public sealed partial class InputStateMachine
     /// <summary>Drops selections that no longer exist (call once per frame).</summary>
     public void Validate()
     {
+        if (IsAimingSkill && (SelectedUnit is not { } aimer || _sim.State.FindUnit(aimer) is null))
+        {
+            EndSkillAim();
+        }
+
         if (_draft is { } draft && _sim.State.FindUnit(draft.Owner) is null)
         {
             CancelDraft(DraftCancelReason.UnitLost, DraftTargetStatus.NoTarget, null);
@@ -663,6 +720,12 @@ public sealed partial class InputStateMachine
         if (IsGrouping)
         {
             GroupSecondaryPress(sample);
+            return;
+        }
+
+        if (IsAimingSkill)
+        {
+            CancelSkillAim(); // RMB cancels only the skill preview (spec part 3 §6.2)
             return;
         }
 
@@ -755,7 +818,7 @@ public sealed partial class InputStateMachine
 
     private void SelectInternal(UnitId? unit, int? waypointId)
     {
-        if (!IsDrafting && !IsGrouping)
+        if (!IsDrafting && !IsGrouping && !IsAimingSkill)
         {
             Mode = unit is null ? InputMode.Idle : InputMode.UnitSelected;
         }

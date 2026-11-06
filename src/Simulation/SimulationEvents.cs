@@ -99,3 +99,12 @@ public enum AttackLostReason
     TargetDied = 0,
     TargetRemoved = 1,
 }
+
+/// <summary>A skill use was planned (immediate use or, later, at a waypoint).</summary>
+public sealed record SkillPlanned(long Tick, UnitId Unit, int ActionId, string SkillId, HexDirection Direction) : SimulationEvent(Tick);
+
+/// <summary>
+/// A skill fired once (spec part 3 §5.1, §8): from <paramref name="Origin"/> towards <paramref name="Direction"/> on the
+/// existing hexes <paramref name="Cells"/>; <paramref name="Hit"/> are the enemies standing there at this very tick.
+/// </summary>
+public sealed record SkillActivated(long Tick, UnitId Unit, int ActionId, string SkillId, HexCoord Origin, HexDirection Direction, IReadOnlyList<HexCoord> Cells, IReadOnlyList<UnitId> Hit) : SimulationEvent(Tick);

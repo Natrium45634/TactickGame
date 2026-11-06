@@ -102,6 +102,15 @@ public static class VisualConfig
     public static readonly Color FacingIndicatorOutline = new(0.10f, 0.11f, 0.14f, 0.85f);
     public static readonly Color SelectionRing = new(1.0f, 0.90f, 0.55f, 0.85f);
 
+    /// <summary>
+    /// Skills (spec part 3 §5.2, §6.4): the planned hit area is a soft grey fill (α 0.18–0.28, never opaque, a separate
+    /// layer from the green/red movement fills); the aiming arrow is red; a fired skill flashes briefly.
+    /// </summary>
+    public static readonly Color SkillAreaAim = new(0.16f, 0.17f, 0.21f, 0.28f);
+    public static readonly Color SkillAreaPlanned = new(0.16f, 0.17f, 0.21f, 0.2f);
+    public static readonly Color ArrowSkill = new(0.92f, 0.20f, 0.18f, 0.88f);
+    public static readonly Color SkillFlash = new(1.0f, 0.42f, 0.25f, 0.55f);
+
     /// <summary>Translucent body of a roster card held over the map (spec part 2 §5.2).</summary>
     public static readonly Color GhostValid = new(0.30f, 0.82f, 0.42f, 0.55f);
     public static readonly Color GhostInvalid = new(0.92f, 0.30f, 0.26f, 0.45f);

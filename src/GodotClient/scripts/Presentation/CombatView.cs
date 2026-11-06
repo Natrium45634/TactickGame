@@ -128,6 +128,9 @@ public partial class CombatFxView : Node3D
                     label.Modulate = label.Modulate with { A = 1f - (t * t) };
                     label.OutlineModulate = label.OutlineModulate with { A = 1f - (t * t) };
                     break;
+                case MeshInstance3D mesh when mesh.MaterialOverride is StandardMaterial3D m && m.NoDepthTest:
+                    m.AlbedoColor = m.AlbedoColor with { A = VisualConfig.SkillFlash.A * (1f - t) };
+                    break;
                 case MeshInstance3D mesh when mesh.MaterialOverride is StandardMaterial3D m:
                     m.AlbedoColor = m.AlbedoColor with { A = 0.8f * (1f - t) };
                     mesh.Scale = new Vector3(1f + t, 1f, 1f + t);
@@ -135,6 +138,31 @@ public partial class CombatFxView : Node3D
             }
 
             _items[i] = (node, age, life, start);
+        }
+    }
+
+    /// <summary>Brief flash of the hexes a skill hit (spec part 3 §6.4: no lingering "ghost" areas afterwards).</summary>
+    public void SkillFlash(IEnumerable<HexTactics.Core.Hex.HexCoord> cells, HexTactics.Core.Hex.HexLayout layout)
+    {
+        foreach (var cell in cells)
+        {
+            var mark = new MeshInstance3D
+            {
+                Mesh = new CylinderMesh { TopRadius = 0.92f, BottomRadius = 0.92f, Height = 0.02f, RadialSegments = 6 },
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = VisualConfig.SkillFlash,
+                    Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                    NoDepthTest = true,
+                    RenderPriority = 12,
+                },
+                Rotation = new Vector3(0, Mathf.Pi / 6f, 0),
+                CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            };
+            AddChild(mark);
+            mark.Position = layout.HexToPlane(cell).ToWorld(0.03f);
+            _items.Add((mark, 0, 0.6, mark.Position));
         }
     }
 
@@ -148,6 +176,9 @@ public partial class CombatFxView : Node3D
                 break;
             case UnitDied died:
                 Death(layout.HexToPlane(died.Cell).ToWorld(0f));
+                break;
+            case SkillActivated skill:
+                SkillFlash(skill.Cells, layout);
                 break;
         }
     }

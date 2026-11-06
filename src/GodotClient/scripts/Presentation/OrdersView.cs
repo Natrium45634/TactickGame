@@ -102,7 +102,8 @@ public partial class OrdersView : Node3D
         GroupDraftView? group,
         HexDirection? hoverTurn,
         Func<UnitId, HexCoord> anchorOf,
-        Func<UnitId, PlaneVector?> visualPosition)
+        Func<UnitId, PlaneVector?> visualPosition,
+        SkillAimView? skillAim = null)
     {
         // Routes of units that are being re-planned (single draft or command draft) stay visible but faded.
         var ghosts = new HashSet<UnitId>();
@@ -126,6 +127,8 @@ public partial class OrdersView : Node3D
         RebuildDraftMarkers(draft);
         RebuildGroupMarkers(group);
         DrawOverlay(state, selected, draft, group, hoverTurn, anchorOf, visualPosition);
+        DrawSkillAim(skillAim);
+        Commit(_overlayMesh, _overlayVertices);
         DrawPaths(state, selected, draft, visualPosition);
     }
 
@@ -446,8 +449,6 @@ public partial class OrdersView : Node3D
         {
             AddFacingPreview(anchorOf(unit), facing);
         }
-
-        Commit(_overlayMesh, _overlayVertices);
     }
 
     /// <summary>
@@ -486,6 +487,20 @@ public partial class OrdersView : Node3D
         {
             AddTargetRing(aimedAt, VisualConfig.ArrowAttack);
         }
+    }
+
+    /// <summary>Red aiming arrow of a skill from its origin hex towards the chosen direction (spec part 3 §5.2, §6.4).</summary>
+    private void DrawSkillAim(SkillAimView? aim)
+    {
+        if (aim?.Direction is not { } direction)
+        {
+            return;
+        }
+
+        var tip = aim.OriginCenter + (HexLayout.DirectionVector(direction) * (_layout.NeighborDistance * 2.0));
+        var tris = new List<Vector3>();
+        AddArrow(tris, aim.OriginCenter, tip, 0.3f, 0.25f, 0.7f);
+        AddColored(tris, VisualConfig.ArrowSkill);
     }
 
     /// <summary>Flat hexagonal ring around a target (on the ground, above everything like the arrows).</summary>
