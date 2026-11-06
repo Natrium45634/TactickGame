@@ -24,6 +24,7 @@ public partial class UnitView : Node3D
     private Node3D _facingPivot = null!;
     private MeshInstance3D _selectionRing = null!;
     private Label3D _blockedMarker = null!;
+    private Label3D _pendingMarker = null!;
     private StandardMaterial3D _bodyMaterial = null!;
     private float _visualAngle;
     private float _targetAngle;
@@ -31,7 +32,8 @@ public partial class UnitView : Node3D
 
     public UnitId UnitId { get; private set; }
 
-    public void Build(UnitState unit)
+    /// <param name="caption">Name shown above the unit (roster operatives), or null.</param>
+    public void Build(UnitState unit, string? caption = null)
     {
         UnitId = unit.Id;
         Name = $"Unit{unit.Id.Value}";
@@ -115,12 +117,48 @@ public partial class UnitView : Node3D
             PixelSize = 0.006f,
             Modulate = new Color(1f, 0.38f, 0.32f),
             OutlineModulate = new Color(0.12f, 0.1f, 0.1f),
-            Position = new Vector3(0, BodyHeight + 0.42f, 0),
+            Position = new Vector3(0, BodyHeight + 0.62f, 0),
             Visible = false,
             RenderPriority = 10,
             OutlineRenderPriority = 9,
         };
         AddChild(_blockedMarker);
+
+        _pendingMarker = new Label3D
+        {
+            Name = "PendingFacing",
+            Text = "?",
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            NoDepthTest = true,
+            FontSize = 64,
+            OutlineSize = 14,
+            PixelSize = 0.006f,
+            Modulate = new Color(1f, 0.85f, 0.35f),
+            OutlineModulate = new Color(0.12f, 0.1f, 0.1f),
+            Position = new Vector3(0, BodyHeight + 0.62f, 0),
+            Visible = false,
+            RenderPriority = 10,
+            OutlineRenderPriority = 9,
+        };
+        AddChild(_pendingMarker);
+
+        if (caption is not null)
+        {
+            AddChild(new Label3D
+            {
+                Name = "Caption",
+                Text = caption,
+                Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+                FontSize = 44,
+                OutlineSize = 12,
+                PixelSize = 0.0058f,
+                Modulate = new Color(0.97f, 0.98f, 1f),
+                OutlineModulate = new Color(0.10f, 0.11f, 0.14f),
+                Position = new Vector3(0, BodyHeight + 0.22f, 0),
+                RenderPriority = 6,
+                OutlineRenderPriority = 5,
+            });
+        }
     }
 
     /// <summary>Shows a red "!" above a unit that stopped because no path exists.</summary>
@@ -136,10 +174,20 @@ public partial class UnitView : Node3D
         set => _selectionRing.Visible = value;
     }
 
-    /// <summary>Updates the visual from the model. The facing turns smoothly; position is set directly.</summary>
-    public void Sync(Vector3 position, HexDirection facing, float delta)
+    /// <summary>
+    /// Updates the visual from the model. The facing turns smoothly; position is set directly. A null facing (unit placed
+    /// from the roster, waiting for its facing) hides the edge indicator and shows a yellow "?".
+    /// </summary>
+    public void Sync(Vector3 position, HexDirection? facingOrNull, float delta)
     {
         Position = position;
+        _facingPivot.Visible = facingOrNull is not null;
+        _pendingMarker.Visible = facingOrNull is null;
+        if (facingOrNull is not { } facing)
+        {
+            return;
+        }
+
         _targetAngle = Mathf.DegToRad((float)facing.AngleDegrees());
         if (!_initialized)
         {

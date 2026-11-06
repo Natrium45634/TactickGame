@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Pathfinding;
+using HexTactics.Core.Roster;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
 using HexTactics.Simulation;
@@ -28,6 +29,9 @@ public enum InputMode
 
     /// <summary>Debug mode: clicking a hex toggles an obstacle (to test re-planning).</summary>
     ObstacleEdit = 5,
+
+    /// <summary>A roster card is dragged over the map (spec part 2 §5).</summary>
+    RosterDrag = 6,
 }
 
 public sealed record InteractionSettings
@@ -66,6 +70,7 @@ public sealed class InputStateMachine
     private PressInfo? _press;
     private OrderDraft? _draft;
     private bool _held;
+    private int? _rosterEntry;
     private IReadOnlySet<HexCoord> _reachable = new HashSet<HexCoord>();
     private HexCoord _reachableSource;
     private UnitId _reachableUnit;
@@ -95,6 +100,9 @@ public sealed class InputStateMachine
     /// <summary>The open order draft, or null.</summary>
     public DraftView? Draft { get; private set; }
 
+    /// <summary>The roster card being dragged over the map, or null.</summary>
+    public PlacementView? Placement { get; private set; }
+
     public bool IsDrafting => _draft is not null;
 
     /// <summary>
@@ -122,6 +130,12 @@ public sealed class InputStateMachine
     public void PointerMove(PointerSample sample)
     {
         Pointer = sample;
+        if (Mode == InputMode.RosterDrag)
+        {
+            UpdatePlacementView(sample);
+            return;
+        }
+
         if (IsDrafting)
         {
             UpdateDraftView(sample);
@@ -192,6 +206,12 @@ public sealed class InputStateMachine
             return;
         }
 
+        if (Mode == InputMode.RosterDrag)
+        {
+            DropRosterCard(sample);
+            return;
+        }
+
         if (IsDrafting)
         {
             if (_held)
@@ -223,7 +243,11 @@ public sealed class InputStateMachine
     public void Cancel()
     {
         _press = null;
-        if (IsDrafting)
+        if (Mode == InputMode.RosterDrag)
+        {
+            CancelRosterDrag(PlacementError.None, null);
+        }
+        else if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
         }
@@ -275,6 +299,114 @@ public sealed class InputStateMachine
         if (Pointer is { } p)
         {
             UpdateDraftView(p);
+        }
+    }
+
+    // ------------------------------------------------------------------ roster (spec part 2 §5)
+
+    /// <summary>
+    /// LMB pressed on a roster card: the card is dragged over the map; allowed hexes are green, others red.
+    /// Releasing on a green hex places the unit and immediately opens its order draft.
+    /// </summary>
+    public void BeginRosterDrag(int entryId)
+    {
+        if (Mode == InputMode.RosterDrag)
+        {
+            return;
+        }
+
+        if (IsDrafting)
+        {
+            CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
+        }
+
+        if (Mode is InputMode.Placement or InputMode.ObstacleEdit)
+        {
+            Cancel();
+        }
+
+        if (!_sim.BeginRosterPlacement(entryId).Success)
+        {
+            return;
+        }
+
+        _rosterEntry = entryId;
+        _press = null;
+        Mode = InputMode.RosterDrag;
+        Feedback?.Invoke(new RosterDragStarted(entryId));
+        UpdatePlacementView(Pointer ?? new PointerSample(new ScreenPoint(0, 0), null, null));
+    }
+
+    /// <summary>A click on the card of an already placed operative selects it (and asks for its facing if pending).</summary>
+    public void SelectRosterEntry(int entryId)
+    {
+        if (_sim.State.Roster.Find(entryId)?.Unit is { } unit && _sim.State.FindUnit(unit) is not null)
+        {
+            Select(unit);
+            OpenDraftIfPendingFacing(unit);
+        }
+    }
+
+    private void UpdatePlacementView(PointerSample sample)
+    {
+        if (_rosterEntry is not { } entry)
+        {
+            return;
+        }
+
+        var error = sample.Hex is { } hex ? PlacementRules.ValidateCell(_sim.State, hex) : PlacementError.OutOfBounds;
+        Placement = new PlacementView(entry, sample.Hex, error, PlacementRules.AllowedCells(_sim.State.Map));
+    }
+
+    private void DropRosterCard(PointerSample sample)
+    {
+        UpdatePlacementView(sample);
+        var entry = _rosterEntry!.Value;
+        var view = Placement!;
+        if (!view.CanPlace)
+        {
+            CancelRosterDrag(view.Error, view.TargetHex);
+            return;
+        }
+
+        var result = _sim.PlaceFromRoster(entry, view.TargetHex!.Value);
+        EndRosterDrag();
+        if (!result.Success)
+        {
+            Feedback?.Invoke(new RosterCardReturned(entry, result.Error, view.TargetHex));
+            return;
+        }
+
+        var placed = result.Unit!.Value;
+        Feedback?.Invoke(new RosterUnitPlaced(entry, placed, result.Cell!.Value));
+        StartDraft(placed); // the arrow is active at once, no extra click on the unit
+    }
+
+    private void CancelRosterDrag(PlacementError error, HexCoord? cell)
+    {
+        if (_rosterEntry is not { } entry)
+        {
+            return;
+        }
+
+        _sim.CancelRosterPlacement(entry);
+        EndRosterDrag();
+        Feedback?.Invoke(new RosterCardReturned(entry, error, cell));
+    }
+
+    private void EndRosterDrag()
+    {
+        _rosterEntry = null;
+        Placement = null;
+        Mode = SelectedUnit is not null ? InputMode.UnitSelected : InputMode.Idle;
+    }
+
+    /// <summary>A placed unit without facing asks for it whenever it is selected (spec part 2 §8.2).</summary>
+    private void OpenDraftIfPendingFacing(UnitId unit)
+    {
+        if (!IsDrafting && _sim.State.FindUnit(unit) is { IsActive: false })
+        {
+            StartDraft(unit);
         }
     }
 
@@ -356,6 +488,11 @@ public sealed class InputStateMachine
             return;
         }
 
+        if (Mode == InputMode.RosterDrag)
+        {
+            CancelRosterDrag(PlacementError.None, null);
+        }
+
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -429,6 +566,7 @@ public sealed class InputStateMachine
                 break;
             case PressTarget.UnitTarget u:
                 SelectInternal(u.Unit, null);
+                OpenDraftIfPendingFacing(u.Unit);
                 break;
             default:
                 SelectInternal(null, null);
@@ -438,6 +576,12 @@ public sealed class InputStateMachine
 
     private void OnSecondaryPress(PointerSample sample)
     {
+        if (Mode == InputMode.RosterDrag)
+        {
+            CancelRosterDrag(PlacementError.None, null);
+            return;
+        }
+
         if (IsDrafting)
         {
             var draft = _draft!;

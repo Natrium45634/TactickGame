@@ -88,6 +88,14 @@ public static class VisualConfig
     public static readonly Color FacingIndicatorOutline = new(0.10f, 0.11f, 0.14f, 0.85f);
     public static readonly Color SelectionRing = new(1.0f, 0.90f, 0.55f, 0.85f);
 
+    /// <summary>Translucent body of a roster card held over the map (spec part 2 §5.2).</summary>
+    public static readonly Color GhostValid = new(0.30f, 0.82f, 0.42f, 0.55f);
+    public static readonly Color GhostInvalid = new(0.92f, 0.30f, 0.26f, 0.45f);
+
+    /// <summary>Placement fills while a roster card is dragged: stronger than the order fills so the allowed cells read at once.</summary>
+    public static readonly Color FillPlacementAllowed = new(0.18f, 0.80f, 0.34f, 0.42f);
+    public static readonly Color FillPlacementDenied = new(0.90f, 0.22f, 0.20f, 0.12f);
+
     public static Color TileColor(TileType type) => type switch
     {
         TileType.Blocked => TileBlocked,

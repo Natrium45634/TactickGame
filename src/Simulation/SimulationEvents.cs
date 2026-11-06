@@ -51,3 +51,11 @@ public sealed record OrdersTruncated(long Tick, UnitId Unit, int RemovedFromSequ
 
 /// <summary>The mandatory final facing of a completed order was applied.</summary>
 public sealed record FinalFacingApplied(long Tick, UnitId Unit, HexDirection Facing) : SimulationEvent(Tick);
+
+/// <summary>A unit was placed from the roster; it waits for its mandatory facing (not active yet).</summary>
+public sealed record UnitPlacedFromRoster(long Tick, int RosterEntry, UnitId Unit, HexCoord Cell) : SimulationEvent(Tick);
+
+public sealed record PlacementRejected(long Tick, int RosterEntry, HexCoord? Cell, Core.Spawning.PlacementError Error) : SimulationEvent(Tick);
+
+/// <summary>A placed unit received its first facing and became active.</summary>
+public sealed record UnitActivated(long Tick, UnitId Unit, HexDirection Facing) : SimulationEvent(Tick);

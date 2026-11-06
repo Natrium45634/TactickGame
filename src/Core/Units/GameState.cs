@@ -18,10 +18,14 @@ public sealed class GameState
     private int _nextUnitId = 1;
     private int _nextWaypointId = 1;
 
-    public GameState(MapDefinition map)
+    public GameState(MapDefinition map, HexTactics.Core.Roster.RosterState? roster = null)
     {
         Map = map ?? throw new ArgumentNullException(nameof(map));
+        Roster = roster ?? HexTactics.Core.Roster.RosterState.Empty();
     }
+
+    /// <summary>The player's roster (bottom panel cards).</summary>
+    public HexTactics.Core.Roster.RosterState Roster { get; }
 
     public MapDefinition Map { get; }
 
@@ -66,8 +70,13 @@ public sealed class GameState
     public bool IsOccupiedByOther(HexCoord cell, UnitId except) => _occupancy.TryGetValue(cell, out var id) && id != except;
 
     /// <summary>Creates a unit. The caller (spawn rules) must have validated the cell; violations throw.</summary>
-    public UnitState CreateUnit(Side side, HexCoord cell, HexDirection facing, double speedHexesPerSecond)
+    public UnitState CreateUnit(Side side, HexCoord cell, HexDirection? facing, double speedHexesPerSecond, UnitLifecycle lifecycle = UnitLifecycle.Active, int? rosterEntry = null)
     {
+        if (lifecycle == UnitLifecycle.Active && facing is null)
+        {
+            throw new InvalidOperationException("An active unit must have a facing.");
+        }
+
         if (!Grid.Contains(cell))
         {
             throw new InvalidOperationException($"Cannot create a unit outside of the map at {cell}.");
@@ -88,7 +97,7 @@ public sealed class GameState
             throw new ArgumentOutOfRangeException(nameof(speedHexesPerSecond), "Speed must be positive.");
         }
 
-        var unit = new UnitState(new UnitId(_nextUnitId++), side, cell, facing, speedHexesPerSecond);
+        var unit = new UnitState(new UnitId(_nextUnitId++), side, cell, facing, speedHexesPerSecond, lifecycle, rosterEntry);
         _units.Add(unit.Id, unit);
         _occupancy[cell] = unit.Id;
         OccupancyVersion++;
@@ -139,6 +148,14 @@ public sealed class GameState
         {
             _reservations.Remove(cell);
         }
+    }
+
+    /// <summary>Gives a pending unit its first facing and makes it active.</summary>
+    public void Activate(UnitId id, HexDirection facing)
+    {
+        var unit = GetUnit(id);
+        unit.Facing = facing;
+        unit.Lifecycle = UnitLifecycle.Active;
     }
 
     public void SetFacing(UnitId id, HexDirection facing)

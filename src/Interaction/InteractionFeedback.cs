@@ -46,3 +46,11 @@ public sealed record ChainContinueRefused(UnitId Unit, Waypoint Pressed, Waypoin
 public sealed record ObstacleEditModeChanged(bool Active) : InteractionFeedback;
 
 public sealed record ObstacleToggled(HexCoord Cell, bool Blocked, CommandResult Result) : InteractionFeedback;
+
+public sealed record RosterDragStarted(int RosterEntry) : InteractionFeedback;
+
+/// <summary>The card was dropped on a forbidden hex / outside the map or the drag was cancelled: nothing was created.</summary>
+public sealed record RosterCardReturned(int RosterEntry, PlacementError Error, HexCoord? Cell) : InteractionFeedback;
+
+/// <summary>The unit appeared on the map; a draft (arrow) was opened for it immediately.</summary>
+public sealed record RosterUnitPlaced(int RosterEntry, UnitId Unit, HexCoord Cell) : InteractionFeedback;

@@ -8,6 +8,7 @@ using HexTactics.Client.UI;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
+using HexTactics.Core.Roster;
 using HexTactics.Core.Spawning;
 using HexTactics.Interaction;
 using HexTactics.Simulation;
@@ -37,6 +38,7 @@ public partial class Main : Node3D
     private OrdersView _orders = null!;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
+    private RosterBar _rosterBar = null!;
     private AutomationRunner _automation = null!;
 
     private Label _cellLabel = null!;
@@ -64,7 +66,7 @@ public partial class Main : Node3D
         InputBindings.Register();
         _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
         _layout = new HexLayout(VisualConfig.HexSize);
-        _sim = new GameSimulation(_map);
+        _sim = new GameSimulation(_map, roster: RosterState.Prototype());
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
@@ -99,10 +101,14 @@ public partial class Main : Node3D
             new Vector3((float)(max.X - min.X), VisualConfig.TileThickness + 1.0f, (float)(max.Z - min.Z))));
 
         BuildHud();
+        _rosterBar = new RosterBar { Name = "Roster" };
+        _rosterBar.Initialize(_sim.State.Roster);
+        _rosterBar.CardPressed += OnRosterCardPressed;
+        AddChild(_rosterBar);
 
         _input = new PointerInput { Name = "PointerInput" };
         AddChild(_input);
-        _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _orders, _hud.IsOverUi);
+        _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _orders, IsOverUi);
         _input.DebugKey += OnDebugKey;
         _input.PauseToggled += () => _sim.TogglePause();
 
@@ -123,12 +129,18 @@ public partial class Main : Node3D
         _fillLayer.SyncTerrain();
         _hoverLayer.SyncTerrain();
 
+        _rosterBar.UiScale = _hud.UiScale;
+        _rosterBar.LeftEdge = _hud.ScreenRect.End.X;
+
         _fsm.Validate();
         _fsm.Refresh();
         var draft = _fsm.Draft;
         var interpolation = _sim.InterpolationAlpha * _sim.Settings.TickDuration;
         _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview);
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
+        var placement = _fsm.Placement;
+        var ghostCell = placement?.TargetHex is { } target && _map.Grid.Contains(target) ? target : (HexCoord?)null;
+        _units.SyncGhost(ghostCell, placement?.CanPlace ?? false);
         UpdateHover();
         UpdateFills(draft);
         UpdateHud();
@@ -139,7 +151,7 @@ public partial class Main : Node3D
     private void UpdateHover()
     {
         HexCoord? hex = null;
-        if (_input.MouseInside && !_hud.IsOverUi(_input.MousePosition))
+        if (_input.MouseInside && !IsOverUi(_input.MousePosition))
         {
             hex = _picker.Pick(_cameraRig.Camera, _input.MousePosition).Hex;
         }
@@ -173,6 +185,17 @@ public partial class Main : Node3D
         {
             stamp = $"draft:{drag.Unit}:{drag.Source}:{_sim.State.TopologyVersion}";
         }
+        else if (_fsm.Mode == InputMode.RosterDrag)
+        {
+            // Allowed cells can be taken or freed by moving units while the card is held.
+            var free = new System.Text.StringBuilder();
+            foreach (var cell in PlacementRules.AllowedCells(_map))
+            {
+                free.Append(PlacementRules.ValidateCell(_sim.State, cell) == PlacementError.None ? '1' : '0');
+            }
+
+            stamp = $"roster:{_sim.State.TopologyVersion}:{free}";
+        }
         else if (_fsm.Mode == InputMode.Placement)
         {
             stamp = $"place:{_sim.State.TopologyVersion}";
@@ -205,6 +228,15 @@ public partial class Main : Node3D
                 _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
             }
         }
+        else if (_fsm.Mode == InputMode.RosterDrag)
+        {
+            // Spec part 2 §5.2: allowed hexes (player base + deploy cells of this map) green, all others softly red.
+            foreach (var cell in _map.Grid.Coords)
+            {
+                var ok = PlacementRules.ValidateCell(_sim.State, cell) == PlacementError.None;
+                _fillLayer.SetFill(cell, ok ? VisualConfig.FillPlacementAllowed : VisualConfig.FillPlacementDenied);
+            }
+        }
         else if (_fsm.Mode == InputMode.Placement)
         {
             foreach (var cell in _map.Grid.Coords)
@@ -220,7 +252,7 @@ public partial class Main : Node3D
         var size = GetViewport().GetVisibleRect().Size;
         _statusLabel.Text = $"Окно {size.X:0}×{size.Y:0} · {Engine.GetFramesPerSecond():0} FPS · юнитов: {_sim.State.UnitCount}";
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
-        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId, _sim.IsPaused);
+        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId, _sim.IsPaused, _sim.State.Roster.FindByUnit(selected.Id)?.Name);
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement);
         _pauseButton.SetPressedNoSignal(_sim.IsPaused);
         _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
@@ -256,11 +288,32 @@ public partial class Main : Node3D
         }
     }
 
+    /// <summary>Card pressed in the roster bar: available operatives are dragged onto the map, placed ones are selected.</summary>
+    private void OnRosterCardPressed(int entryId)
+    {
+        var entry = _sim.State.Roster.Find(entryId);
+        if (entry is null)
+        {
+            return;
+        }
+
+        if (entry.State == RosterEntryState.AvailableInRoster)
+        {
+            _fsm.BeginRosterDrag(entryId);
+        }
+        else
+        {
+            _fsm.SelectRosterEntry(entryId);
+        }
+    }
+
+    private bool IsOverUi(Vector2 position) => _hud.IsOverUi(position) || _rosterBar.IsOverUi(position);
+
     private void RotateSelected(int steps)
     {
         if (_fsm.SelectedUnit is { } id && _sim.State.FindUnit(id) is { } unit)
         {
-            _sim.SetFacing(id, unit.Facing.RotateClockwise(steps));
+            _sim.SetFacing(id, (unit.Facing ?? HexDirection.North).RotateClockwise(steps));
         }
     }
 
@@ -313,11 +366,22 @@ public partial class Main : Node3D
                     ? $"Клетка {UiText.Cell(o.Cell)}: препятствие {(o.Blocked ? "поставлено" : "убрано")}. Маршруты перестраиваются."
                     : $"Клетка {UiText.Cell(o.Cell)}: нельзя изменить ({(o.Result.Reason == "occupied" ? "на клетке юнит" : "база / зона появления")}).", !o.Result.Success);
                 break;
+            case RosterDragStarted r:
+                ShowMessage($"«{RosterName(r.RosterEntry)}»: отпустите на зелёной клетке. Красная, ПКМ, Esc — карточка вернётся.", false);
+                break;
+            case RosterCardReturned r:
+                ShowMessage(UiText.RosterReturned(RosterName(r.RosterEntry), r.Error, r.Cell), r.Error != PlacementError.None);
+                break;
+            case RosterUnitPlaced r:
+                ShowMessage($"«{RosterName(r.RosterEntry)}» на {UiText.Cell(r.Cell)}. Клик по зелёной — ТД1, у ребра клетки — взгляд (обязателен).", false);
+                break;
             case WaypointSelected w:
                 ShowMessage($"Выбрана ТД{w.Waypoint.Sequence} юнита {w.Unit}: клетка {UiText.Cell(w.Waypoint.Cell)}.", false);
                 break;
         }
     }
+
+    private string RosterName(int entryId) => _sim.State.Roster.Find(entryId)?.Name ?? $"#{entryId}";
 
     private void OnDebugKey(Key key)
     {
@@ -445,7 +509,7 @@ public partial class Main : Node3D
             fontSize: 12);
         _hud.AddSeparator();
 
-        _hud.AddHeader("Появление юнита");
+        _hud.AddHeader("Отладка: появление юнита");
         var row = _hud.AddRow();
         AddRowButton(row, "База", () => SpawnFromPanel(SpawnRequest.AtBase()));
         foreach (var zone in _map.SpawnZones)
@@ -497,7 +561,9 @@ public partial class Main : Node3D
         var panel = _hud.ScreenRect;
         var left = panel.End.X + DebugHud.Margin;
         var margin = DebugHud.Margin;
-        var available = new Rect2(left, margin, viewport.X - left - margin, viewport.Y - (2 * margin));
+        // The roster bar sits at the bottom right of the HUD: the board is fitted above it.
+        var barTop = viewport.Y - ((RosterBar.BarHeight + DebugHud.Margin) * _hud.UiScale);
+        var available = new Rect2(left, margin, viewport.X - left - margin, barTop - (2 * margin));
         _cameraRig.Fit(available, viewport);
     }
 
@@ -621,6 +687,42 @@ public partial class Main : Node3D
                     return 2;
                 }
 
+            case "roster":
+                {
+                    // roster:N>A>B — presses the real card N in the bottom bar, drags through the points, releases
+                    // on the last one ("bar" = back over the card). "roster:N" alone presses and releases on the card
+                    // (select a placed operative). A final ">hold" keeps the button pressed (finish with release:P).
+                    var points = arg.Split('>');
+                    var hold = points[^1] == "hold";
+                    if (hold)
+                    {
+                        points = points[..^1];
+                    }
+
+                    var entry = int.Parse(points[0], CultureInfo.InvariantCulture);
+                    var card = _rosterBar.CardCenter(entry);
+                    InjectMotion(card);
+                    InjectButton(card, MouseButton.Left, true);
+                    var last = card;
+                    for (var i = 1; i < points.Length; i++)
+                    {
+                        var next = points[i] == "bar" ? card + new Vector2(0, -4) : PointScreen(points[i]);
+                        for (var k = 1; k <= 4; k++)
+                        {
+                            InjectMotion(last.Lerp(next, k / 4f));
+                        }
+
+                        last = next;
+                    }
+
+                    if (!hold)
+                    {
+                        InjectButton(last, MouseButton.Left, false);
+                    }
+
+                    return 2;
+                }
+
             case "face":
                 if (_fsm.SelectedUnit is { } id)
                 {
@@ -702,7 +804,8 @@ public partial class Main : Node3D
     /// <summary>
     /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
     /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
-    /// expect:draft:none|N (open draft with N waypoints)
+    /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
+    /// expect:mode:InputMode
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -742,6 +845,18 @@ public partial class Main : Node3D
                 break;
             case "draft":
                 actual = _fsm.Draft is null ? "none" : _fsm.Draft.Waypoints.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "roster":
+                actual = _sim.State.Roster.Find(int.Parse(a[1], CultureInfo.InvariantCulture))?.State.ToString() ?? "none";
+                ok = actual == a[2];
+                break;
+            case "lifecycle":
+                actual = Unit(1)?.Lifecycle.ToString() ?? "none";
+                ok = actual == a[2];
+                break;
+            case "mode":
+                actual = _fsm.Mode.ToString();
                 ok = actual == a[1];
                 break;
             case "same-tick":

@@ -51,6 +51,18 @@ $script:RegressionScenarioV07 = @(
     'key:Escape'
 ) -join ';'
 
+# v0.8.0+: the v0.7 scenario plus roster placement (spec part 2 §5): a card dropped on a wall returns, a card dropped
+# on the base opens the arrow at once, a cancelled draft leaves the unit pending, its card reopens the draft.
+$script:RegressionScenarioV08 = ($script:RegressionScenarioV07 -replace ';key:Escape$', '') + ';' + (@(
+    'roster:2>3,5>5,5', 'expect:roster:2:AvailableInRoster', 'expect:units:2',
+    'roster:1>3,5>1,4', 'expect:units:3', 'expect:lifecycle:3:PlacedPendingFacing', 'expect:roster:1:PlacedPendingFacing', 'expect:draft:0',
+    'click:3,4', 'expect:draft:1', 'click:3,4@NorthEast:0.6', 'expect:draft:none', 'expect:lifecycle:3:Active', 'expect:roster:1:Active',
+    'waitidle:3:3000', 'expect:cell:3:3,4', 'expect:facing:3:NorthEast',
+    'roster:3>0,6', 'expect:lifecycle:4:PlacedPendingFacing', 'rclick:6,6', 'expect:draft:none', 'expect:lifecycle:4:PlacedPendingFacing',
+    'roster:3', 'expect:draft:0', 'click:0,6@North:0.6', 'expect:facing:4:North', 'expect:roster:3:Active', 'expect:units:4',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -110,7 +122,9 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 } else { $script:RegressionScenarioV05 }
+            $scenario = if ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
+                        elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
+                        else { $script:RegressionScenarioV05 }
             $smokeArgs += "--hx-script=$scenario"
         }
         Write-Step ("{0}: {1}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $exe))

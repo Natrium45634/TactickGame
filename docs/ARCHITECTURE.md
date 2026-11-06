@@ -30,10 +30,11 @@ TactickGame/                     корень репозитория (логич
       Pathfinding/               Pathfinder (A*, DistanceField, Reachable)
       Orders/                    Waypoint (+OrderKind), OrderQueue (+FinalFacing), WaypointRules, OrderMode,
                                  OrderDraft, OrderDraftValidator, IndividualOrder
-      Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError
+      Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
+      Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
-    Interaction/                 HexTactics.Interaction — InputStateMachine, DraftView (без Godot)
+    Interaction/                 HexTactics.Interaction — InputStateMachine, DraftView, PlacementView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
       scripts/App/               Main (композиционный корень), BuildInfo
@@ -41,7 +42,7 @@ TactickGame/                     корень репозитория (логич
                                  OrdersView (стрелки и ТД), VisualConfig
       scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат),
                                  InputBindings (действия InputMap: пробел — пауза, Esc — отмена)
-      scripts/UI/                DebugHud, UiText (русские тексты сообщений)
+      scripts/UI/                DebugHud, RosterBar (нижняя панель ростера), UiText (русские тексты сообщений)
       scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки)
       shaders/                   tile.gdshader (границы клеток), overlay.gdshader (подсветки)
       maps/prototype.hexmap      данные карты 12×10
@@ -49,8 +50,8 @@ TactickGame/                     корень репозитория (логич
   tests/
     Shared/                      общие хелперы тестов (TestMaps, TestPaths), подключаются ссылкой
     Core.Tests/                  координаты, раскладка, карта, гекс-линия, поиск пути
-    Simulation.Tests/            появление, направления, занятость, приказы, движение
-    Interaction.Tests/           автомат ввода, приёмочные тесты §8 (AcceptanceTests A01–A12)
+    Simulation.Tests/            появление, направления, занятость, приказы, движение, ростер (RosterTests)
+    Interaction.Tests/           автомат ввода, черновики, перетаскивание карточек, приёмочные тесты (A01–A12, P01–P20)
   tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1,
                                  create_release_tags.ps1, common.ps1
   release_archives/vX.Y.Z/       ZIP Windows-сборки + .sha256 + BUILD_INFO.txt (вне папки игры)
@@ -117,8 +118,10 @@ tests/*  ──► соответствующие сборки
   Инварианты: юнит стоит ровно в одной проходимой клетке поля; в клетке не больше одного юнита.
   `MoveUnit` — единственное место смены логической клетки (атомарный перенос занятости).
   `OccupancyVersion`/`TopologyVersion` растут при любом изменении занятости/рельефа — кэши (подсветка, достижимость) сравнивают их.
-- `UnitState`: `Id` (уникален, не переиспользуется), `Side`, `Cell`, `Facing` (одно из 6), `SpeedHexesPerSecond`
-  (по умолчанию 2), `Orders` (`OrderQueue` из `Waypoint`). Изменение — только через `GameState`/`GameSimulation`.
+- `UnitState`: `Id` (уникален, не переиспользуется), `Side`, `Cell`, `Facing` (одно из 6; `null` только у
+  выставленного из ростера и ещё не активного юнита), `Lifecycle` (`Active` | `PlacedPendingFacing`), `RosterEntryId`,
+  `SpeedHexesPerSecond` (по умолчанию 2), `Orders` (`OrderQueue` из `Waypoint`). Изменение — только через
+  `GameState`/`GameSimulation`. `MovementSystem` пропускает неактивных юнитов.
 - `SpawnRules.Resolve(state, request)`:
   - **база** — первая свободная клетка базы в порядке карты (или указанная клетка базы);
   - **зона** — первая свободная клетка указанной зоны (или указанная клетка этой зоны);
@@ -127,12 +130,20 @@ tests/*  ──► соответствующие сборки
   `Occupied`, `BaseFull`, `ZoneFull`, `UnknownZone`, `NoPlayerBase`, `CellNotInZone`, `MissingCell`.
   При ошибке состояние не меняется: никто не удаляется и не переносится.
 - Направление при появлении — к центру карты (квантуется до 6 направлений), если не задано явно.
+- **Ростер (с v0.8.0, ТЗ ч.2 §5, D-046–D-048).** `GameState.Roster` — `RosterState` с карточками `RosterEntry {Id, Name,
+  State, Unit}`; состояния `AvailableInRoster → PlacementPreview → PlacedPendingFacing → Active` (`Unavailable` — резерв).
+  `PlacementRules.ValidateCell`: в поле → клетка базы или зоны выставления (`B`/`D`, только из данных карты) → проходима →
+  свободна и не зарезервирована; иначе `OutOfBounds`, `NotAllowedHere`, `NotWalkable`, `Occupied`.
+  `GameSimulation.BeginRosterPlacement` / `CancelRosterPlacement` / `PlaceFromRoster(entry, cell)` — юнит создаётся с
+  `Facing = null` и `PlacedPendingFacing`; первый принятый `ApplyOrder` или `SetFacing` активирует его (`UnitActivated`).
+  При отказе ничего не создаётся, карточка снова доступна (`PlacementRejected`).
 - `GameSimulation.Spawn/SetFacing` порождают события `UnitSpawned`, `SpawnRejected`, `FacingChanged`
   (`DrainEvents()`); будущие системы добавляют свои события, а не вмешиваются в обработчики ввода.
 
 ## 7. Автомат ввода (`InputStateMachine`, с v0.7.0 — по ТЗ ч.2)
 
-Режимы: `Idle`, `UnitSelected`, `SingleDraft` (открыт черновик), отладочные `Placement`, `ObstacleEdit`.
+Режимы: `Idle`, `UnitSelected`, `SingleDraft` (открыт черновик), `RosterDrag` (перетаскивается карточка ростера, v0.8.0),
+отладочные `Placement`, `ObstacleEdit`.
 
 | Состояние | Событие | Результат |
 |---|---|---|
@@ -149,6 +160,11 @@ tests/*  ──► соответствующие сборки
 | `SingleDraft` | ПКМ по ТД черновика | удалить её и следующие |
 | `SingleDraft` | ПКМ в другом месте / Esc | отмена черновика (`ByUser`) |
 | `UnitSelected` | ПКМ по подтверждённой ТД выбранного юнита | `TruncateOrders` (её и следующие) |
+| любой | ЛКМ на доступной карточке ростера (`BeginRosterDrag`) | `RosterDrag`, открытый черновик отменяется |
+| `RosterDrag` | движение | `PlacementView` (клетка под курсором, ошибка, разрешённые клетки) |
+| `RosterDrag` | отпускание на разрешённой свободной клетке | `PlaceFromRoster` → сразу `SingleDraft` нового юнита |
+| `RosterDrag` | отпускание на запрещённой клетке / вне поля / над панелью, ПКМ, Esc | карточка возвращается (`RosterCardReturned`) |
+| любой | клик по юниту в `PlacedPendingFacing` или по карточке выставленного | выбор; у ожидающего — черновик открывается сам |
 
 - `DraftView` (каждый кадр, `Refresh()`): `Waypoints`, `Anchor`, `Source`, `Pointer`, `TargetHex`, `Status`
   (`Valid`, `FacingSector`, `Neutral`, `AttackTarget`, `OutOfBounds`, `NotWalkable`, `Occupied`, `Unreachable`, `NoTarget`),
@@ -157,7 +173,9 @@ tests/*  ──► соответствующие сборки
 - Сектор = ближайшее из 6 направлений к вектору «центр → курсор» в плоскости карты; нейтральная зона r = 0,3 (D-040).
 - Валидность клетки = `WaypointRules.ValidateTarget(..., reachable)`; применение = `OrderDraftValidator.ValidateChain`
   в `ApplyOrder` — одни и те же правила (зелёное на экране = будет принято).
-- Нажатия над HUD не попадают в автомат; отпускания передаются всегда, чтобы жест не «зависал».
+- Нажатия над HUD и панелью ростера не попадают в автомат; отпускания передаются всегда, чтобы жест не «зависал».
+  Нажатие на карточку обрабатывает UI (`RosterBar.CardPressed` → `BeginRosterDrag`); отпускание после него
+  `PointerInput` передаёт автомату, а выборка над панелями в `RosterDrag` не содержит клетки.
 
 ## 7.1. Приказы движения в модели
 
@@ -206,11 +224,11 @@ tests/*  ──► соответствующие сборки
 | Порядок | Слой | Реализация |
 |---|---|---|
 | 0 | Поле | `BoardView`: один `ArrayMesh` — шестигранные призмы без зазоров; препятствия — поднятые колонны |
-| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): при протягивании все 120 клеток — зелёные (можно поставить ТД) / красные (препятствие, занято, изолировано), исходная — жёлтая; в режиме выставления — зелёные/красные по правилам появления |
+| 1 | Проходимость | `HexFillLayer` (MultiMesh, полупрозрачная заливка, `render_priority = 1`): при протягивании все 120 клеток — зелёные (можно поставить ТД) / красные (препятствие, занято, изолировано), исходная — жёлтая; при перетаскивании карточки ростера — насыщенно-зелёные разрешённые свободные клетки и мягко-красные остальные; в отладочном режиме выставления — зелёные/красные по правилам появления |
 | 2 | Маршрут/стрелки/ТД — **верхний слой** | `OrdersView`, все материалы **без теста глубины** (`NoDepthTest`), т. е. поверх юнитов, препятствий и любых объектов сцены (ТЗ ч.2 §3.1); порядок внутри слоя — `render_priority` 20…28: цепочки «юнит → ТД1 → ТД2…» **белыми** толстыми прямыми стрелками (ширина ½ стороны гекса в плоскости поля), стрелка протягивания, тонкие линии путей (тёмная — маршрут, зелёная — предпросмотр), белые маркеры ТД с тёмной каймой и номерами. HUD (CanvasLayer) — над ними |
-| 3 | Юниты | `UnitsView` → `UnitView`: цилиндр (r 0,28), **белая мини-стрелка у ребра гекса** в направлении взгляда с тёмной обводкой (видна всегда, не только при выделении), тор выделения, красный «!» при остановке; позиция интерполируется между центрами гексов |
+| 3 | Юниты | `UnitsView` → `UnitView`: цилиндр (r 0,28), **белая мини-стрелка у ребра гекса** в направлении взгляда с тёмной обводкой (видна всегда, не только при выделении), тор выделения, красный «!» при остановке, жёлтый «?» у юнита без взгляда, подпись имени оперативника; позиция интерполируется между центрами гексов. «Призрак» карточки — полупрозрачный цилиндр над клеткой под курсором (зелёный/красный) |
 | 3+ | Курсорный гекс | `HexFillLayer` с белой заливкой α = 0.22, `render_priority = 3` |
-| UI | HUD | `CanvasLayer` слева, масштабируется по высоте окна |
+| UI | HUD, ростер | `CanvasLayer` слева (HUD) и снизу (`RosterBar`, пять карточек); оба масштабируются по высоте окна |
 
 - **Границы клеток** рисует шейдер `tile.gdshader`: UV.x вершины верхней грани = расстояние до края
   гекса в мировых единицах (апофема в центре, 0 на ребре). Ширина линии задаётся в мировых
@@ -227,7 +245,7 @@ tests/*  ──► соответствующие сборки
 
 `CameraRig`: ортографическая `Camera3D`, поворот `-60°` вокруг X — **возвышение 60° над плоскостью**
 (90° = строго сверху). При каждом изменении размера окна/HUD камера вписывает AABB поля (с запасом
-по высоте под юниты) в свободную область окна справа от HUD: `Camera.Size = k·H`, где `k` — мировых единиц на
+по высоте под юниты) в свободную область окна справа от HUD и над панелью ростера: `Camera.Size = k·H`, где `k` — мировых единиц на
 пиксель; затем камера сдвигается в своей плоскости так, чтобы поле было по центру свободной области.
 
 ## 10. Ввод: экран → карта
@@ -259,13 +277,18 @@ tests/*  ──► соответствующие сборки
 черновик выбранного юнита). Проверки: `expect:draft:none|N`, `expect:units:N`, `expect:cell:ID:c,r`, `expect:waypoints:ID:N`, `expect:facing:ID:Dir`,
 `expect:status:ID:Idle|Moving|Waiting|Blocked`, `expect:paused:true|false`, `expect:same-tick` (тик не изменился
 после `mark`). Итог печатается как `[automation] checks passed: N` или `FAILED k of N`.
-Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07` для v0.7+). Точка `P` — `c,r` (центр гекса) или
+Шаги v0.8: `roster:N>P1>P2…` — нажать настоящую карточку N панели ростера, протянуть через точки и отпустить на
+последней (`bar` — обратно над карточкой; `roster:N` — клик по карточке; хвост `>hold` оставляет кнопку зажатой, затем
+`release:P`). Проверки: `expect:roster:N:AvailableInRoster|PlacementPreview|PlacedPendingFacing|Active`,
+`expect:lifecycle:ID:Active|PlacedPendingFacing`, `expect:mode:RosterDrag|SingleDraft|…`.
+Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
+для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.7.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.8.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

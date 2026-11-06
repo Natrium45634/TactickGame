@@ -54,6 +54,12 @@ public partial class PointerInput : Node
     /// <summary>Builds a sample for an arbitrary screen position (also used by automation).</summary>
     public PointerSample Sample(Vector2 screen)
     {
+        if (_fsm.Mode == InputMode.RosterDrag && _isOverUi(screen))
+        {
+            // A roster card held over the panels is not over the map: dropping it there returns the card.
+            return new PointerSample(new ScreenPoint(screen.X, screen.Y), null, null);
+        }
+
         var camera = _camera();
         var pick = _picker.Pick(camera, screen);
         HexCoord? hex = null;
@@ -126,9 +132,9 @@ public partial class PointerInput : Node
 
         if (button.Pressed)
         {
-            // Presses over the HUD belong to the UI; releases are always forwarded so that
-            // a drag that ends over the panel is not left dangling.
-            if (_isOverUi(button.Position))
+            // Presses over the HUD / roster belong to the UI; releases are always forwarded so that
+            // a drag that ends over a panel is not left dangling. RMB cancels a held roster card anywhere.
+            if (_isOverUi(button.Position) && !(b == PointerButton.Secondary && _fsm.Mode == InputMode.RosterDrag))
             {
                 return;
             }
@@ -136,6 +142,13 @@ public partial class PointerInput : Node
             SetDown(b, true);
             _fsm.PointerDown(b, Sample(button.Position));
             GetViewport().SetInputAsHandled();
+        }
+        else if (b == PointerButton.Primary && _fsm.Mode == InputMode.RosterDrag)
+        {
+            // The press started on a roster card (UI); the release over the map drops the card. The event is not
+            // consumed so that the GUI also sees the release and drops its mouse focus on the card.
+            SetDown(b, false);
+            _fsm.PointerUp(b, Sample(button.Position));
         }
         else if (IsDown(b))
         {

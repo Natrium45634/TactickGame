@@ -37,6 +37,23 @@ public static class UiText
         _ => "прямое выставление",
     };
 
+    /// <summary>Why a dragged roster card went back to the panel (spec part 2 §5.5).</summary>
+    public static string RosterReturned(string name, PlacementError error, HexCoord? cell)
+    {
+        var where = cell is { } c ? $"клетка {Cell(c)}" : "вне поля";
+        var reason = error switch
+        {
+            PlacementError.None => "выставление отменено",
+            PlacementError.OutOfBounds => "курсор вне поля",
+            PlacementError.NotAllowedHere => $"{where} — не зона выставления (только зелёные клетки)",
+            PlacementError.NotWalkable => $"{where} непроходима",
+            PlacementError.Occupied => $"{where} занята",
+            PlacementError.EntryNotAvailable => "оперативник уже выставлен",
+            _ => error.ToString(),
+        };
+        return $"«{name}» вернулся в ростер: {reason}. Юнит не израсходован.";
+    }
+
     public static string Spawn(SpawnRequest request, SpawnResult result, MapDefinition map)
     {
         if (result.Success)
@@ -60,10 +77,10 @@ public static class UiText
         };
     }
 
-    public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false)
+    public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false, string? name = null)
     {
-        var text = $"Юнит {u.Id} · {SideName(u.Side)}\n" +
-                   $"клетка {Cell(u.Cell)} · взгляд: {Direction(u.Facing)} ({u.Facing.ShortName()})\n" +
+        var text = $"Юнит {u.Id}{(name is null ? string.Empty : $" «{name}»")} · {SideName(u.Side)}{(u.IsActive ? string.Empty : " · ожидает взгляда (не активен)")}\n" +
+                   $"клетка {Cell(u.Cell)} · взгляд: {(u.Facing is { } f ? $"{Direction(f)} ({f.ShortName()})" : "не задан — выберите сектор у ребра")}\n" +
                    $"скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД в очереди: {u.Orders.Count}\n" +
                    $"движение: {Motion(u)}{(paused && u.Motion.Status != MovementStatus.Idle ? " (пауза)" : string.Empty)}";
         if (!u.Orders.IsEmpty)

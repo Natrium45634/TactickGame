@@ -42,6 +42,11 @@ internal sealed class MovementSystem : ISimulationSystem
 
     private void TickUnit(UnitState unit, long tick, double dt)
     {
+        if (!unit.IsActive)
+        {
+            return; // placed from the roster, waiting for its facing: does not act
+        }
+
         var m = unit.Motion;
         if (!m.IsStepping && !TryStartStep(unit, tick))
         {

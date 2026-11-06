@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
+using HexTactics.Core.Roster;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
 
@@ -19,9 +20,9 @@ public sealed class GameSimulation
     private readonly SimulationClock _clock;
     private readonly SimulationContext _context;
 
-    public GameSimulation(MapDefinition map, SimulationSettings? settings = null)
+    public GameSimulation(MapDefinition map, SimulationSettings? settings = null, RosterState? roster = null)
     {
-        State = new GameState(map);
+        State = new GameState(map, roster);
         Settings = settings ?? SimulationSettings.Default;
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
@@ -125,6 +126,86 @@ public sealed class GameSimulation
         return new SpawnResult(unit.Id, cell, SpawnError.None, null);
     }
 
+    // ------------------------------------------------------------------ roster placement (spec part 2 §5)
+
+    /// <summary>The roster card starts being dragged over the map (<see cref="RosterEntryState.PlacementPreview"/>).</summary>
+    public CommandResult BeginRosterPlacement(int entryId)
+    {
+        var entry = State.Roster.Find(entryId);
+        if (entry is null || entry.State != RosterEntryState.AvailableInRoster)
+        {
+            return CommandResult.Fail("not available");
+        }
+
+        State.Roster.Set(entry, RosterEntryState.PlacementPreview);
+        return CommandResult.Ok;
+    }
+
+    /// <summary>The drag was cancelled or dropped on a forbidden hex: the card returns to the roster unchanged.</summary>
+    public void CancelRosterPlacement(int entryId)
+    {
+        if (State.Roster.Find(entryId) is { State: RosterEntryState.PlacementPreview } entry)
+        {
+            State.Roster.Set(entry, RosterEntryState.AvailableInRoster);
+        }
+    }
+
+    /// <summary>
+    /// Places the roster card's unit on an allowed hex (player base or deploy zone, walkable, free). The unit appears
+    /// WITHOUT facing (<see cref="UnitLifecycle.PlacedPendingFacing"/>): it does nothing until its first order with a
+    /// final facing is applied. On rejection nothing is created and the card is available again.
+    /// </summary>
+    public PlacementResult PlaceFromRoster(int entryId, HexCoord cell)
+    {
+        var entry = State.Roster.Find(entryId);
+        PlacementError error;
+        if (entry is null)
+        {
+            error = PlacementError.UnknownEntry;
+        }
+        else if (entry.State is not (RosterEntryState.AvailableInRoster or RosterEntryState.PlacementPreview))
+        {
+            error = PlacementError.EntryNotAvailable;
+        }
+        else
+        {
+            error = PlacementRules.ValidateCell(State, cell);
+        }
+
+        if (error != PlacementError.None)
+        {
+            if (entry is not null)
+            {
+                CancelRosterPlacement(entry.Id);
+            }
+
+            _events.Add(new PlacementRejected(Tick, entryId, cell, error));
+            return new PlacementResult(null, cell, error);
+        }
+
+        var unit = State.CreateUnit(Side.Player, cell, null, Settings.DefaultUnitSpeed, UnitLifecycle.PlacedPendingFacing, entryId);
+        State.Roster.Set(entry!, RosterEntryState.PlacedPendingFacing, unit.Id);
+        _events.Add(new UnitPlacedFromRoster(Tick, entryId, unit.Id, cell));
+        return new PlacementResult(unit.Id, cell, PlacementError.None);
+    }
+
+    /// <summary>Gives a pending unit its first facing; it becomes active (and its roster card too).</summary>
+    private void ActivateIfPending(UnitState unit, HexDirection facing)
+    {
+        if (unit.IsActive)
+        {
+            return;
+        }
+
+        State.Activate(unit.Id, facing);
+        if (State.Roster.FindByUnit(unit.Id) is { } entry)
+        {
+            State.Roster.Set(entry, RosterEntryState.Active);
+        }
+
+        _events.Add(new UnitActivated(Tick, unit.Id, facing));
+    }
+
     /// <summary>Turns a unit in place to one of the six directions.</summary>
     public CommandResult SetFacing(UnitId id, HexDirection facing)
     {
@@ -137,6 +218,13 @@ public sealed class GameSimulation
         if (!Enum.IsDefined(facing))
         {
             return CommandResult.Fail($"Invalid facing {(int)facing}.");
+        }
+
+        if (!unit.IsActive)
+        {
+            ActivateIfPending(unit, facing);
+            _events.Add(new FacingChanged(Tick, id, facing));
+            return CommandResult.Ok;
         }
 
         if (unit.Facing != facing)
@@ -215,6 +303,19 @@ public sealed class GameSimulation
         {
             _events.Add(new OrderApplyRejected(Tick, order.Unit, failed, error));
             return new OrderApplyResult(false, failed, error);
+        }
+
+        var unit = State.GetUnit(order.Unit);
+        if (!unit.IsActive)
+        {
+            // First order of a placed unit: it gets a facing right away (first step of the route, or the chosen one).
+            var initial = order.FinalFacing;
+            if (order.Waypoints.Count > 0 && Core.Pathfinding.Pathfinder.FindPath(State.Grid, unit.Cell, order.Waypoints[0], State.ObstaclesFor(unit.Id)) is { Count: > 1 } path)
+            {
+                initial = unit.Cell.DirectionTo(path[1]) ?? order.FinalFacing;
+            }
+
+            ActivateIfPending(unit, initial);
         }
 
         State.ClearWaypoints(order.Unit);

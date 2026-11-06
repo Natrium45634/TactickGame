@@ -70,7 +70,9 @@ public partial class DebugHud : CanvasLayer
         {
             Name = "Scroll",
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
-            VerticalScrollMode = ScrollContainer.ScrollMode.Auto,
+            // Wheel scrolling still works; a visible scrollbar would narrow the labels, re-wrap them and make
+            // the content taller than the height computed for it (flip-flop at full height).
+            VerticalScrollMode = ScrollContainer.ScrollMode.ShowNever,
         };
         _panel.AddChild(_scroll);
 

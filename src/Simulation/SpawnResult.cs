@@ -35,3 +35,9 @@ public readonly record struct OrderApplyResult(bool Success, int FailedIndex, Wa
 {
     public static OrderApplyResult Ok { get; } = new(true, -1, WaypointError.None);
 }
+
+/// <summary>Result of placing a roster card on the map. On failure nothing changed and the card is available again.</summary>
+public readonly record struct PlacementResult(UnitId? Unit, HexCoord? Cell, Core.Spawning.PlacementError Error)
+{
+    public bool Success => Error == Core.Spawning.PlacementError.None && Unit is not null;
+}

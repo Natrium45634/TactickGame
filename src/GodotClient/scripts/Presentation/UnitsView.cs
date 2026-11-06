@@ -10,6 +10,8 @@ public partial class UnitsView : Node3D
 {
     private readonly Dictionary<UnitId, UnitView> _views = new();
     private HexLayout _layout = null!;
+    private MeshInstance3D? _ghost;
+    private StandardMaterial3D? _ghostMaterial;
 
     public void Initialize(HexLayout layout) => _layout = layout;
 
@@ -27,7 +29,7 @@ public partial class UnitsView : Node3D
             {
                 view = new UnitView();
                 AddChild(view);
-                view.Build(unit);
+                view.Build(unit, state.Roster.FindByUnit(unit.Id)?.Name);
                 _views.Add(unit.Id, view);
             }
 
@@ -44,6 +46,39 @@ public partial class UnitsView : Node3D
                 _views[id].QueueFree();
                 _views.Remove(id);
             }
+        }
+    }
+
+    /// <summary>
+    /// Roster drag preview (spec part 2 §5.2): a translucent body over the hex under the cursor, green where the
+    /// operative can be placed and red elsewhere. Hidden when <paramref name="cell"/> is null.
+    /// </summary>
+    public void SyncGhost(HexCoord? cell, bool valid)
+    {
+        if (_ghost is null)
+        {
+            _ghostMaterial = new StandardMaterial3D
+            {
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                Roughness = 0.75f,
+                RenderPriority = 6,
+            };
+            _ghost = new MeshInstance3D
+            {
+                Name = "PlacementGhost",
+                Mesh = new CylinderMesh { TopRadius = UnitView.BodyRadius, BottomRadius = UnitView.BodyRadius, Height = UnitView.BodyHeight, RadialSegments = 32 },
+                MaterialOverride = _ghostMaterial,
+                CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+                Visible = false,
+            };
+            AddChild(_ghost);
+        }
+
+        _ghost.Visible = cell is not null;
+        if (cell is { } c)
+        {
+            _ghost.Position = _layout.HexToPlane(c).ToWorld(UnitView.BodyHeight * 0.5f);
+            _ghostMaterial!.AlbedoColor = valid ? VisualConfig.GhostValid : VisualConfig.GhostInvalid;
         }
     }
 
