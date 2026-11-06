@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
@@ -38,3 +39,15 @@ public sealed record MovementFinished(long Tick, UnitId Unit, HexCoord Cell) : S
 public sealed record TerrainChanged(long Tick, HexCoord Cell, TileType Type) : SimulationEvent(Tick);
 
 public sealed record PauseChanged(long Tick, bool Paused) : SimulationEvent(Tick);
+
+/// <summary>A complete order (waypoints + final facing) replaced the unit's queue atomically.</summary>
+public sealed record OrderApplied(long Tick, UnitId Unit, IReadOnlyList<HexCoord> Waypoints, HexDirection FinalFacing) : SimulationEvent(Tick);
+
+/// <summary>An order was rejected as a whole; the previous queue is unchanged.</summary>
+public sealed record OrderApplyRejected(long Tick, UnitId Unit, int FailedIndex, WaypointError Error) : SimulationEvent(Tick);
+
+/// <summary>A waypoint and all following ones were removed from the unit's queue.</summary>
+public sealed record OrdersTruncated(long Tick, UnitId Unit, int RemovedFromSequence, int Remaining) : SimulationEvent(Tick);
+
+/// <summary>The mandatory final facing of a completed order was applied.</summary>
+public sealed record FinalFacingApplied(long Tick, UnitId Unit, HexDirection Facing) : SimulationEvent(Tick);

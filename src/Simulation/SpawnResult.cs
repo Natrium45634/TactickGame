@@ -28,3 +28,10 @@ public readonly record struct OrderResult(Waypoint? Waypoint, WaypointError Erro
 {
     public bool Success => Error == WaypointError.None && Waypoint is not null;
 }
+
+/// <summary>Result of applying a complete order. On failure the previous queue is unchanged.</summary>
+/// <param name="FailedIndex">Index of the first invalid waypoint (-1 if none / not applicable).</param>
+public readonly record struct OrderApplyResult(bool Success, int FailedIndex, WaypointError Error)
+{
+    public static OrderApplyResult Ok { get; } = new(true, -1, WaypointError.None);
+}

@@ -173,4 +173,8 @@ public sealed class GameState
     public void ClearWaypoints(UnitId id) => GetUnit(id).Orders.Clear();
 
     public Waypoint CompleteCurrentWaypoint(UnitId id) => GetUnit(id).Orders.Dequeue();
+
+    public void SetFinalFacing(UnitId id, HexDirection? facing) => GetUnit(id).Orders.SetFinalFacing(facing);
+
+    public void TruncateWaypoints(UnitId id, int index) => GetUnit(id).Orders.TruncateFrom(index);
 }

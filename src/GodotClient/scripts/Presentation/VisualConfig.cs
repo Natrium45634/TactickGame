@@ -54,6 +54,9 @@ public static class VisualConfig
     public static readonly Color ArrowIdle = new(0.75f, 0.77f, 0.80f, 0.55f);
     public static readonly Color ArrowInvalid = new(0.95f, 0.36f, 0.30f, 0.80f);
 
+    /// <summary>Live arrow over an enemy unit: reserved future attack order (not executed yet).</summary>
+    public static readonly Color ArrowAttack = new(1.0f, 0.55f, 0.20f, 0.85f);
+
     /// <summary>Committed order chains (straight thick arrows between order points).</summary>
     /// <summary>Personal order chains are WHITE (spec part 2 §3.1); command chains will be cyan.</summary>
     public static readonly Color ChainSelected = new(1.0f, 1.0f, 1.0f, 0.72f);
@@ -62,6 +65,17 @@ public static class VisualConfig
     public static readonly Color WaypointOtherUnit = new(0.80f, 0.82f, 0.86f, 0.85f);
     public static readonly Color WaypointSelectedRing = new(0.15f, 0.17f, 0.22f, 0.95f);
     public static readonly Color WaypointRim = new(0.13f, 0.14f, 0.18f, 0.95f);
+
+    /// <summary>Draft (not yet confirmed) arrows and waypoint rims; the confirmed route of the same unit is ghosted.</summary>
+    public static readonly Color DraftChain = new(1.0f, 1.0f, 1.0f, 0.85f);
+    public static readonly Color DraftRim = new(0.95f, 0.66f, 0.18f, 1.0f);
+    public static readonly Color ChainGhost = new(1.0f, 1.0f, 1.0f, 0.16f);
+
+    /// <summary>Stored final facing of a confirmed order (small white arrow at the edge of the last ТД).</summary>
+    public static readonly Color FinalFacingMark = new(1.0f, 1.0f, 1.0f, 0.95f);
+
+    /// <summary>Facing-sector preview (mini arrow at the edge of the source hex).</summary>
+    public static readonly Color FacingPreview = new(1.0f, 1.0f, 1.0f, 0.9f);
 
     /// <summary>Thin lines of computed routes (around obstacles).</summary>
     public static readonly Color PathSelected = new(0.14f, 0.16f, 0.22f, 0.88f);

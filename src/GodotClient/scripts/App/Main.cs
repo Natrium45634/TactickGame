@@ -125,13 +125,12 @@ public partial class Main : Node3D
 
         _fsm.Validate();
         _fsm.Refresh();
-        var drag = _fsm.Drag;
+        var draft = _fsm.Draft;
         var interpolation = _sim.InterpolationAlpha * _sim.Settings.TickDuration;
-        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, drag?.Unit, drag?.FacingPreview);
-        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, drag);
-        _orders.SyncPaths(_sim.State, _fsm.SelectedUnit, drag, _units.VisualPlanePosition);
+        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview);
+        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
         UpdateHover();
-        UpdateFills(drag);
+        UpdateFills(draft);
         UpdateHud();
     }
 
@@ -165,14 +164,14 @@ public partial class Main : Node3D
 
     /// <summary>
     /// Passability layer. Placement mode: every cell shows whether a unit can be placed there.
-    /// Order drag: the source hex gets a neutral marker and the hex under the cursor green/red.
+    /// Order draft: all 120 cells are green/red, the source hex (facing sectors) neutral.
     /// </summary>
-    private void UpdateFills(DragPreview? drag)
+    private void UpdateFills(DraftView? drag)
     {
         string stamp;
         if (drag is not null)
         {
-            stamp = $"drag:{drag.Unit}:{drag.Mode}:{drag.SourceCell}:{_sim.State.TopologyVersion}";
+            stamp = $"draft:{drag.Unit}:{drag.Source}:{_sim.State.TopologyVersion}";
         }
         else if (_fsm.Mode == InputMode.Placement)
         {
@@ -196,13 +195,13 @@ public partial class Main : Node3D
             // or isolated, neutral = the source hex (rotate-in-place area).
             foreach (var cell in _map.Grid.Coords)
             {
-                if (cell == drag.SourceCell)
+                if (cell == drag.Source)
                 {
                     _fillLayer.SetFill(cell, VisualConfig.FillNeutral);
                     continue;
                 }
 
-                var ok = WaypointRules.ValidateTarget(_sim.State, drag.Unit, drag.SourceCell, cell, drag.Reachable) == WaypointError.None;
+                var ok = WaypointRules.ValidateTarget(_sim.State, drag.Unit, drag.Source, cell, drag.Reachable) == WaypointError.None;
                 _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
             }
         }
@@ -275,17 +274,33 @@ public partial class Main : Node3D
             case PlacementModeChanged { Active: true }:
                 ShowMessage("Режим выставления: щёлкните по зелёной клетке. Esc / ПКМ — выход.", false);
                 break;
-            case OrderCommitted c:
-                ShowMessage(UiText.Order(c), !c.Result.Success);
+            case DraftStarted d:
+                ShowMessage(d.IsEdit
+                    ? "Продолжение маршрута: клик — следующая ТД, сектор последней ТД — финальный взгляд. ПКМ/Esc — отмена."
+                    : "Прокладка: клик по зелёной клетке — ТД, клик у ребра исходной клетки — финальный взгляд. ПКМ/Esc — отмена.", false);
                 break;
-            case OrderNotCreated n:
-                ShowMessage(UiText.NotCreated(n), true);
+            case DraftWaypointAdded a:
+                ShowMessage($"ТД{a.Number} → {UiText.Cell(a.Cell)}. Дальше: клик — ТД{a.Number + 1}, сектор у ребра ТД{a.Number} — финальный взгляд.", false);
                 break;
-            case RotatedInPlace r:
-                ShowMessage($"Юнит {r.Unit} повернулся на месте: {UiText.Direction(r.Facing)} ({r.Facing.ShortName()}).", false);
+            case DraftTruncated t:
+                ShowMessage($"Удалены ТД{t.RemovedFromNumber} и следующие (осталось {t.Remaining}).", false);
                 break;
-            case DragCancelled d:
-                ShowMessage(d.ByUser ? "Стрелка отменена — очередь ТД не изменена." : "Отпущено на исходной клетке — без изменений.", false);
+            case DraftCommitted c:
+                ShowMessage(UiText.Committed(c), false);
+                break;
+            case DraftCancelled x:
+                ShowMessage(UiText.Cancelled(x), x.Reason != DraftCancelReason.ByUser);
+                break;
+            case DraftCommitFailed f:
+                ShowMessage(UiText.CommitFailed(f), true);
+                break;
+            case AttackTargetReserved r:
+                ShowMessage($"Атака юнита {r.Target} — будущий приказ AttackTarget (зарезервирован, в этой версии не выполняется).", true);
+                break;
+            case ConfirmedWaypointsRemoved removed:
+                ShowMessage(removed.Result.Success
+                    ? $"Юнит {removed.Unit}: удалены ТД{removed.From.Sequence} и следующие."
+                    : $"ТД не удалена: {removed.Result.Reason}", !removed.Result.Success);
                 break;
             case ChainContinueRefused refused:
                 ShowMessage($"Продолжить цепочку можно только из последней ТД (ТД{refused.Last.Sequence}).", true);
@@ -422,10 +437,10 @@ public partial class Main : Node3D
 
         _hud.AddHeader("Приказы");
         _hud.AddLabel(
-            "ЛКМ на юните + тянуть → ТД1 (заменяет очередь)\n" +
-            "ЛКМ на последней ТД + тянуть → следующая ТД\n" +
-            "короткий жест внутри клетки юнита → поворот\n" +
-            "Esc / ПКМ → отменить текущую стрелку",
+            "ЛКМ на юните + тянуть → ТД1, дальше клик → ТД2, ТД3…\n" +
+            "клик у ребра исходной клетки → финальный взгляд (приказ принят)\n" +
+            "выбранный юнит: клик у ребра его клетки → поворот на месте\n" +
+            "ПКМ / Esc → отмена черновика · ПКМ по ТД → удалить её и следующие",
             dim: true,
             fontSize: 12);
         _hud.AddSeparator();
@@ -545,7 +560,7 @@ public partial class Main : Node3D
 
             case "click":
                 {
-                    var p = HexScreen(ParseHex(arg));
+                    var p = PointScreen(arg);
                     InjectMotion(p);
                     InjectButton(p, MouseButton.Left, true);
                     InjectButton(p, MouseButton.Left, false);
@@ -554,7 +569,8 @@ public partial class Main : Node3D
 
             case "rclick":
                 {
-                    var p = HexScreen(ParseHex(arg));
+                    var p = PointScreen(arg);
+                    InjectMotion(p);
                     InjectButton(p, MouseButton.Right, true);
                     InjectButton(p, MouseButton.Right, false);
                     return 2;
@@ -589,6 +605,22 @@ public partial class Main : Node3D
                     Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
                     return 2;
                 }
+            case "draft":
+                if (_fsm.SelectedUnit is { } draftUnit)
+                {
+                    _fsm.StartDraft(draftUnit);
+                }
+
+                return 2;
+            case "rpress":
+                {
+                    var p = PointScreen(arg);
+                    InjectMotion(p);
+                    InjectButton(p, MouseButton.Right, true);
+                    InjectButton(p, MouseButton.Right, false);
+                    return 2;
+                }
+
             case "face":
                 if (_fsm.SelectedUnit is { } id)
                 {
@@ -669,7 +701,8 @@ public partial class Main : Node3D
 
     /// <summary>
     /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
-    /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked
+    /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
+    /// expect:draft:none|N (open draft with N waypoints)
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -705,6 +738,10 @@ public partial class Main : Node3D
                 break;
             case "paused":
                 actual = _sim.IsPaused ? "true" : "false";
+                ok = actual == a[1];
+                break;
+            case "draft":
+                actual = _fsm.Draft is null ? "none" : _fsm.Draft.Waypoints.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];
                 break;
             case "same-tick":

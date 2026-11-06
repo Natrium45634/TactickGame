@@ -17,12 +17,14 @@ public class SelectionAndPlacementTests
 
     public SelectionAndPlacementTests()
     {
-        _fsm = new InputStateMachine(_sim, new HexLayout(1.0));
+        _fsm = new InputStateMachine(_sim, Layout);
         _fsm.Feedback += f => _feedback.Add(f);
     }
 
+    private static readonly HexLayout Layout = new(1.0);
+
     private static PointerSample At(int col, int row, UnitId? unit = null, double sx = 100, double sy = 100) =>
-        new(new ScreenPoint(sx, sy), new PlaneVector(0, 0), HexCoord.FromOffset(col, row), unit);
+        new(new ScreenPoint(sx, sy), Layout.HexToPlane(HexCoord.FromOffset(col, row)), HexCoord.FromOffset(col, row), unit);
 
     private void Click(PointerSample s, PointerButton b = PointerButton.Primary)
     {
@@ -105,7 +107,7 @@ public class SelectionAndPlacementTests
         Assert.Equal(InputMode.Idle, _fsm.Mode);
 
         _fsm.EnterPlacementMode();
-        Click(At(4, 3), PointerButton.Secondary);
+        Click(At(4, 3), PointerButton.Secondary); // acts on press
         Assert.Equal(InputMode.Idle, _fsm.Mode);
         Assert.Equal(0, _sim.State.UnitCount);
     }

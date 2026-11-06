@@ -191,6 +191,68 @@ public sealed class GameSimulation
     }
 
     /// <summary>
+    /// Applies a complete confirmed order as one transaction (spec part 2 §4.3, §9.5): every segment of the chain
+    /// is validated from the unit's command anchor; if any is impossible the whole order is rejected and the
+    /// previous route stays untouched. Otherwise the pending queue is replaced and the mandatory final facing is
+    /// stored; it is applied when the last waypoint is reached (immediately at the next hex centre for a turn in
+    /// place). A running step is always completed first — no teleporting. While paused, the order simply waits.
+    /// </summary>
+    public OrderApplyResult ApplyOrder(IndividualOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        if (State.FindUnit(order.Unit) is null)
+        {
+            return new OrderApplyResult(false, 0, WaypointError.UnknownUnit);
+        }
+
+        if (!Enum.IsDefined(order.FinalFacing))
+        {
+            throw new ArgumentOutOfRangeException(nameof(order), "Invalid final facing.");
+        }
+
+        var (failed, error) = OrderDraftValidator.ValidateChain(State, order.Unit, CommandAnchor(order.Unit), order.Waypoints);
+        if (error != WaypointError.None)
+        {
+            _events.Add(new OrderApplyRejected(Tick, order.Unit, failed, error));
+            return new OrderApplyResult(false, failed, error);
+        }
+
+        State.ClearWaypoints(order.Unit);
+        foreach (var cell in order.Waypoints)
+        {
+            State.AppendWaypoint(order.Unit, cell);
+        }
+
+        State.SetFinalFacing(order.Unit, order.FinalFacing);
+        _events.Add(new OrderApplied(Tick, order.Unit, order.Waypoints, order.FinalFacing));
+        return OrderApplyResult.Ok;
+    }
+
+    /// <summary>
+    /// Removes the given waypoint and all following ones from the unit's queue (RMB on a confirmed ТД, spec part 2
+    /// §8.2). The remaining prefix of a valid chain stays valid; the final facing is kept and applied at the new end.
+    /// </summary>
+    public CommandResult TruncateOrders(UnitId id, int waypointId)
+    {
+        var unit = State.FindUnit(id);
+        if (unit is null)
+        {
+            return CommandResult.Fail($"Unit {id} does not exist.");
+        }
+
+        var index = unit.Orders.IndexOf(waypointId);
+        if (index < 0)
+        {
+            return CommandResult.Fail($"Waypoint {waypointId} is not in the queue of {id}.");
+        }
+
+        var sequence = unit.Orders.Items[index].Sequence;
+        State.TruncateWaypoints(id, index);
+        _events.Add(new OrdersTruncated(Tick, id, sequence, unit.Orders.Count));
+        return CommandResult.Ok;
+    }
+
+    /// <summary>
     /// Turns a unit that has no pending movement orders, without moving it (rotate-only gesture).
     /// </summary>
     public CommandResult RotateInPlace(UnitId id, HexDirection facing)

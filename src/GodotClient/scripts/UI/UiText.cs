@@ -98,29 +98,38 @@ public static class UiText
         return $"Юнит {b.Unit} остановлен: {reason}. Приказы сохранены, движение продолжится, когда путь появится.";
     }
 
-    public static string Order(OrderCommitted c)
+    public static string Committed(DraftCommitted c)
     {
-        if (!c.Result.Success)
+        var o = c.Order;
+        if (o.IsTurnInPlace)
         {
-            return $"ТД не создана: {Error(c.Result.Error, null)}.";
+            return $"Юнит {c.Unit}: поворот на месте — {Direction(o.FinalFacing)} ({o.FinalFacing.ShortName()}).";
         }
 
-        var wp = c.Result.Waypoint!;
-        return c.Mode == OrderMode.Replace
-            ? $"Юнит {c.Unit}: новый маршрут — ТД{wp.Sequence} → {Cell(wp.Cell)}."
-            : $"Юнит {c.Unit}: добавлена ТД{wp.Sequence} → {Cell(wp.Cell)}.";
+        var last = o.Waypoints[^1];
+        return $"Юнит {c.Unit}: приказ принят — {o.Waypoints.Count} ТД до {Cell(last)}, затем взгляд {Direction(o.FinalFacing)}.";
     }
 
-    public static string NotCreated(OrderNotCreated n)
+    public static string Cancelled(DraftCancelled c) => c.Reason switch
     {
-        var cell = n.Target is { } t ? Cell(t) : string.Empty;
-        return n.Status switch
+        DraftCancelReason.InvalidTarget => $"Черновик отменён: {Status(c.Status, c.Cell)}. Прежние приказы не изменены.",
+        DraftCancelReason.UnitLost => "Черновик отменён: юнита больше нет.",
+        _ => "Черновик приказа отменён. Прежние приказы не изменены.",
+    };
+
+    public static string CommitFailed(DraftCommitFailed f) =>
+        $"Приказ не принят: ТД{f.Result.FailedIndex + 1} — {Error(f.Result.Error, null)}. Прежний маршрут сохранён, черновик открыт.";
+
+    public static string Status(DraftTargetStatus status, HexCoord? cell)
+    {
+        var c = cell is { } h ? Cell(h) : string.Empty;
+        return status switch
         {
-            DragTargetStatus.OutOfBounds or DragTargetStatus.NoTarget => "ТД не создана: точка вне поля.",
-            DragTargetStatus.NotWalkable => $"ТД не создана: клетка {cell} непроходима.",
-            DragTargetStatus.Occupied => $"ТД не создана: клетка {cell} занята.",
-            DragTargetStatus.Unreachable => $"ТД не создана: до клетки {cell} нет пути.",
-            _ => "ТД не создана.",
+            DraftTargetStatus.OutOfBounds or DraftTargetStatus.NoTarget => "точка вне поля",
+            DraftTargetStatus.NotWalkable => $"клетка {c} непроходима",
+            DraftTargetStatus.Occupied => $"клетка {c} занята",
+            DraftTargetStatus.Unreachable => $"до клетки {c} нет пути",
+            _ => "недопустимая клетка",
         };
     }
 

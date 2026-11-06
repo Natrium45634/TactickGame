@@ -17,20 +17,30 @@ public sealed record SpawnAttempted(SpawnRequest Request, SpawnResult Result) : 
 
 public sealed record WaypointSelected(UnitId Unit, Waypoint Waypoint) : InteractionFeedback;
 
-public sealed record DragStarted(UnitId Unit, OrderMode Mode, HexCoord Source) : InteractionFeedback;
+/// <summary>An order draft was opened (from the unit, or continuing its confirmed route).</summary>
+public sealed record DraftStarted(UnitId Unit, bool IsEdit) : InteractionFeedback;
 
-/// <summary>A waypoint was created (TД appended or the queue replaced).</summary>
-public sealed record OrderCommitted(UnitId Unit, OrderMode Mode, OrderResult Result) : InteractionFeedback;
+public sealed record DraftWaypointAdded(UnitId Unit, int Number, HexCoord Cell) : InteractionFeedback;
 
-/// <summary>The drag was released on a hex where no waypoint can be created.</summary>
-public sealed record OrderNotCreated(UnitId Unit, DragTargetStatus Status, HexCoord? Target) : InteractionFeedback;
+/// <summary>RMB on a draft waypoint removed it and all following ones.</summary>
+public sealed record DraftTruncated(UnitId Unit, int RemovedFromNumber, int Remaining) : InteractionFeedback;
 
-public sealed record RotatedInPlace(UnitId Unit, HexDirection Facing) : InteractionFeedback;
+/// <summary>The whole draft was discarded; nothing was applied and earlier confirmed orders are untouched.</summary>
+public sealed record DraftCancelled(UnitId Unit, DraftCancelReason Reason, DraftTargetStatus Status, HexCoord? Cell) : InteractionFeedback;
 
-/// <summary>The drag ended without any change (Esc/RMB, or released on the source hex without a gesture).</summary>
-public sealed record DragCancelled(UnitId Unit, bool ByUser) : InteractionFeedback;
+/// <summary>The final facing was confirmed and the order was applied as a whole (no waypoints = turn in place).</summary>
+public sealed record DraftCommitted(UnitId Unit, IndividualOrder Order) : InteractionFeedback;
 
-/// <summary>Chains can only be continued from the last waypoint.</summary>
+/// <summary>Applying the draft failed because the game changed meanwhile; the draft stays open, the old route is kept.</summary>
+public sealed record DraftCommitFailed(UnitId Unit, OrderApplyResult Result) : InteractionFeedback;
+
+/// <summary>An enemy unit was clicked as a target: reserved <see cref="OrderKind.AttackTarget"/>, not executed yet.</summary>
+public sealed record AttackTargetReserved(UnitId Unit, UnitId Target) : InteractionFeedback;
+
+/// <summary>RMB on a confirmed waypoint of the selected unit removed it and the following ones.</summary>
+public sealed record ConfirmedWaypointsRemoved(UnitId Unit, Waypoint From, CommandResult Result) : InteractionFeedback;
+
+/// <summary>Continuing a confirmed chain is only possible from its last waypoint.</summary>
 public sealed record ChainContinueRefused(UnitId Unit, Waypoint Pressed, Waypoint Last) : InteractionFeedback;
 
 public sealed record ObstacleEditModeChanged(bool Active) : InteractionFeedback;

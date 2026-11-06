@@ -31,7 +31,7 @@ public class SpawnTests
         var r = sim.Spawn(SpawnRequest.AtZone(1));
         Assert.True(r.Success);
         Assert.Equal(HexCoord.FromOffset(0, 0), r.Cell);
-        Assert.Equal(TileTypeOf(sim, r.Cell!.Value), Core.Map.TileType.SpawnZone);
+        Assert.Equal(Core.Map.TileType.SpawnZone, TileTypeOf(sim, r.Cell!.Value));
     }
 
     [Fact]

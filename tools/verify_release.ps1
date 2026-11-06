@@ -21,8 +21,10 @@ param(
 
 . "$PSScriptRoot/common.ps1"
 
-# End-to-end scenario on the prototype map (see docs/ARCHITECTURE.md, "Автоматизация").
-$script:RegressionScenario = @(
+# End-to-end scenarios on the prototype map (see docs/ARCHITECTURE.md, "Автоматизация"). The input scheme changed
+# in v0.7.0 (spec part 2: continuous drafts + mandatory final facing), so each archive is checked with the scenario of
+# its own generation.
+$script:RegressionScenarioV05 = @(
     'spawn:base', 'expect:units:1',
     'drag:0,4>3,2', 'expect:waypoints:1:1',
     'key:Space', 'expect:paused:true', 'mark', 'wait:20', 'expect:same-tick',
@@ -32,6 +34,20 @@ $script:RegressionScenario = @(
     'drag:6,1>6,1@SouthWest:0.6', 'expect:facing:1:SouthWest',
     'place', 'click:9,8', 'expect:units:2',
     'drag:9,8>8,3', 'expect:waypoints:2:0',
+    'key:Escape'
+) -join ';'
+
+$script:RegressionScenarioV07 = @(
+    'spawn:base', 'expect:units:1', 'key:Space', 'expect:paused:true',
+    'drag:0,4>3,2', 'expect:draft:1', 'click:3,2@North:0.6', 'expect:draft:none', 'expect:waypoints:1:1',
+    'mark', 'wait:20', 'expect:same-tick',
+    'drag:3,2>6,1', 'expect:draft:2', 'click:6,1@SouthWest:0.6', 'expect:waypoints:1:2',
+    'key:Space', 'expect:paused:false',
+    'waitidle:1:3000', 'expect:cell:1:6,1', 'expect:waypoints:1:0', 'expect:status:1:Idle', 'expect:facing:1:SouthWest',
+    'click:6,1', 'click:6,1@North:0.6', 'wait:3', 'expect:facing:1:North', 'expect:cell:1:6,1',
+    'place', 'click:9,8', 'expect:units:2',
+    'drag:9,8>8,3', 'expect:draft:none', 'expect:waypoints:2:0',
+    'drag:9,8>9,6', 'expect:draft:1', 'rclick:0,0', 'expect:draft:none', 'expect:waypoints:2:0',
     'key:Escape'
 ) -join ';'
 
@@ -93,7 +109,10 @@ if ($Run -and $errors.Count -eq 0) {
         # unreachable target). Older builds get a plain smoke run.
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
-        if ($regression) { $smokeArgs += "--hx-script=$script:RegressionScenario" }
+        if ($regression) {
+            $scenario = if ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 } else { $script:RegressionScenarioV05 }
+            $smokeArgs += "--hx-script=$scenario"
+        }
         Write-Step ("{0}: {1}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $exe))
         if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }
         else { & $exe @smokeArgs *> $log }

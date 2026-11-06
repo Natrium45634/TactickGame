@@ -19,8 +19,35 @@ public sealed class OrderQueue
 
     public IReadOnlyList<Waypoint> Items => _items;
 
-    /// <summary>Incremented on every change of the queue.</summary>
+    /// <summary>Incremented on every change of the queue (including the final facing).</summary>
     public int Version { get; private set; }
+
+    /// <summary>
+    /// Mandatory facing applied when the unit has reached the last waypoint (or, for an order without
+    /// waypoints, as soon as it stands on a hex centre). Null once applied.
+    /// </summary>
+    public HexDirection? FinalFacing { get; private set; }
+
+    internal void SetFinalFacing(HexDirection? facing)
+    {
+        if (FinalFacing != facing)
+        {
+            FinalFacing = facing;
+            Version++;
+        }
+    }
+
+    /// <summary>Removes the waypoint at <paramref name="index"/> and all following ones.</summary>
+    internal void TruncateFrom(int index)
+    {
+        if (index < 0 || index >= _items.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        _items.RemoveRange(index, _items.Count - index);
+        Version++;
+    }
 
     public Waypoint? Peek() => _items.Count > 0 ? _items[0] : null;
 

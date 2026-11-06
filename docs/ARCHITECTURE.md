@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.6.0** (ТЗ ч.1 + ч.2: геометрия flat-top).
+Документ описывает фактическое устройство кода. Актуален для версии **v0.7.0** (ТЗ ч.1 + ч.2: flat-top, непрерывные черновики, обязательный финальный взгляд).
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -28,11 +28,12 @@ TactickGame/                     корень репозитория (логич
       Map/                       TileType, TileState, HexGrid, MapDefinition, MapParser
       Units/                     UnitId, Side, UnitState, UnitMotion, GameState (занятость + резервы)
       Pathfinding/               Pathfinder (A*, DistanceField, Reachable)
-      Orders/                    Waypoint, OrderQueue, WaypointRules, OrderMode
+      Orders/                    Waypoint (+OrderKind), OrderQueue (+FinalFacing), WaypointRules, OrderMode,
+                                 OrderDraft, OrderDraftValidator, IndividualOrder
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
-    Interaction/                 HexTactics.Interaction — InputStateMachine, DragPreview (без Godot)
+    Interaction/                 HexTactics.Interaction — InputStateMachine, DraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
       scripts/App/               Main (композиционный корень), BuildInfo
@@ -129,38 +130,43 @@ tests/*  ──► соответствующие сборки
 - `GameSimulation.Spawn/SetFacing` порождают события `UnitSpawned`, `SpawnRejected`, `FacingChanged`
   (`DrainEvents()`); будущие системы добавляют свои события, а не вмешиваются в обработчики ввода.
 
-## 7. Автомат ввода (`InputStateMachine`)
+## 7. Автомат ввода (`InputStateMachine`, с v0.7.0 — по ТЗ ч.2)
 
-`Idle → UnitSelected → DraggingFromUnit / DraggingFromWaypoint → (ТД / поворот / отмена) → UnitSelected`, плюс отладочный `Placement`.
+Режимы: `Idle`, `UnitSelected`, `SingleDraft` (открыт черновик), отладочные `Placement`, `ObstacleEdit`.
 
 | Состояние | Событие | Результат |
 |---|---|---|
-| `Idle` / `UnitSelected` | щелчок ЛКМ по юниту (корпус или клетка) | `UnitSelected(юнит)` |
-| `Idle` / `UnitSelected` | щелчок ЛКМ по маркеру ТД | `UnitSelected(владелец)`, `SelectedWaypointId` |
-| `Idle` / `UnitSelected` | щелчок ЛКМ по пустой клетке / вне поля | `Idle` |
-| `Idle` / `UnitSelected` | ЛКМ нажата на юните, смещение > 8 px | выбрать юнита → `DraggingFromUnit` (источник — `CommandAnchor`, режим Replace) |
-| `Idle` / `UnitSelected` | ЛКМ нажата на **последней** ТД, смещение > 8 px | `DraggingFromWaypoint` (источник — клетка ТД, режим Append) |
-| то же | ЛКМ нажата на непоследней ТД, смещение > 8 px | отказ `ChainContinueRefused`, остаётся `UnitSelected` |
-| `Dragging*` | движение | пересчёт `DragPreview` (цель, статус, предпросмотр направления) |
-| `Dragging*` | отпускание ЛКМ: статус `Valid` | `GameSimulation.IssueMoveOrder(Replace/Append)` → `UnitSelected` |
-| `DraggingFromUnit` | отпускание в исходной клетке, ≥ 0,25 от центра, у юнита нет ТД | `RotateInPlace(направление в плоскости)` → `UnitSelected` |
-| `Dragging*` | отпускание в мёртвой зоне / вне поля / на запрещённой клетке | ничего не создаётся, сообщение → `UnitSelected` |
-| `Dragging*` | Esc или нажатие ПКМ | отмена стрелки, очередь не меняется → `UnitSelected` |
-| любое | `EnterPlacementMode` (кнопка, P) | `Placement` (щелчок по клетке → `Spawn(AtCell)`; Esc/ПКМ — выход) |
+| `Idle` / `UnitSelected` | клик ЛКМ по юниту (корпус или его логическая клетка) | `UnitSelected` |
+| `UnitSelected` | клик ЛКМ в секторе текущей клетки выбранного юнита (вне нейтральной зоны) | `ApplyOrder(поворот на месте)` |
+| `Idle` / `UnitSelected` | ЛКМ на юните + смещение > 8 px | `SingleDraft` (`Held`), источник — `CommandAnchor` |
+| `Idle` / `UnitSelected` | ЛКМ на **последней** подтверждённой ТД + смещение | `SingleDraft` с оставшимися ТД (продолжение, D-042) |
+| `SingleDraft` | отпускание первого протягивания / клик ЛКМ: зелёная клетка | +ТД, черновик остаётся открытым, живая стрелка от новой ТД |
+| `SingleDraft` | … в секторе исходной клетки | `ApplyOrder(ТД…, финальный взгляд)` → `UnitSelected` |
+| `SingleDraft` | … в нейтральной зоне исходной клетки | ничего |
+| `SingleDraft` | … на клетке врага | `AttackTargetReserved` (резерв, D-044), черновик без изменений |
+| `SingleDraft` | … на красной клетке (вне поля, препятствие, занято, изолировано) | отмена черновика (`InvalidTarget`) |
+| `SingleDraft` | наведение на красную клетку | только показ (красная подсветка/стрелка) |
+| `SingleDraft` | ПКМ по ТД черновика | удалить её и следующие |
+| `SingleDraft` | ПКМ в другом месте / Esc | отмена черновика (`ByUser`) |
+| `UnitSelected` | ПКМ по подтверждённой ТД выбранного юнита | `TruncateOrders` (её и следующие) |
 
-- Приоритет попадания при нажатии: ТД выбранного юнита → юнит (корпус или клетка) → ТД другого юнита → земля.
-- `DragPreview`: `SourceCell`, `SourceCenter`, `Pointer` (конец стрелки — точка курсора на плоскости), `TargetHex`,
-  `Status` (`Valid`, `RotateOnly`, `SourceDeadZone`, `SourceHasOrders`, `OutOfBounds`, `NotWalkable`, `Occupied`, `NoTarget`),
-  `FacingPreview` (только для Replace: первый шаг кратчайшего пути), `Reachable` (достижимые клетки), `Path` (кратчайший путь к цели).
-- Валидность цели = `WaypointRules.ValidateTarget(..., reachable)` — те же правила, что в команде симуляции
-  (`ValidateTargetWithPath`): вне поля, препятствие, занято, исходная клетка, **нет пути**.
-- Множество достижимых клеток считается при начале протягивания и пересчитывается, если изменилась
-  `TopologyVersion` или источник (юнит, из которого тянут, движется). `Refresh()` вызывается каждый кадр.
+- `DraftView` (каждый кадр, `Refresh()`): `Waypoints`, `Anchor`, `Source`, `Pointer`, `TargetHex`, `Status`
+  (`Valid`, `FacingSector`, `Neutral`, `AttackTarget`, `OutOfBounds`, `NotWalkable`, `Occupied`, `Unreachable`, `NoTarget`),
+  `SectorFacing`, `UnitFacingPreview` (первый шаг пути или сектор поворота), `Reachable`, `Path`, `Held`, `IsEdit`.
+- `HoverTurnFacing` — сектор текущей клетки выбранного юнита под курсором (предпросмотр поворота без черновика).
+- Сектор = ближайшее из 6 направлений к вектору «центр → курсор» в плоскости карты; нейтральная зона r = 0,3 (D-040).
+- Валидность клетки = `WaypointRules.ValidateTarget(..., reachable)`; применение = `OrderDraftValidator.ValidateChain`
+  в `ApplyOrder` — одни и те же правила (зелёное на экране = будет принято).
 - Нажатия над HUD не попадают в автомат; отпускания передаются всегда, чтобы жест не «зависал».
-- Обратная связь (`OrderCommitted`, `OrderNotCreated`, `RotatedInPlace`, `DragCancelled`, `ChainContinueRefused`,
-  `WaypointSelected`, `SpawnAttempted`, …) → тексты формирует `UiText` в клиенте.
 
 ## 7.1. Приказы движения в модели
+
+- `IndividualOrder(Unit, Waypoints, FinalFacing)` — подтверждённый приказ; без ТД — поворот на месте.
+- `GameSimulation.ApplyOrder` — транзакция (D-038): вся цепочка от `CommandAnchor` проверяется, при ошибке
+  `OrderApplyRejected(FailedIndex, Error)` и старая очередь не меняется; иначе очередь заменяется, `FinalFacing` сохраняется.
+- `GameSimulation.TruncateOrders(unit, waypointId)` — ПКМ по подтверждённой ТД.
+- `MovementSystem`: когда очередь выполнена, применяется `FinalFacing` (`FinalFacingApplied`), D-043.
+
 
 - `OrderQueue` юнита: `Waypoint(Id, Sequence, Cell)` в порядке исполнения. Изменяется только через `GameState`
   (`AppendWaypoint`, `ClearWaypoints`, `CompleteCurrentWaypoint`), версия очереди растёт при каждом изменении.
@@ -249,16 +255,17 @@ tests/*  ──► соответствующие сборки
 `spawn:cell:c,r`, `place`, `obstacle:c,r` (переключить препятствие), `select:id`, `key:Escape`, `key:Space`,
 `face:NorthEast`, `wait:N`, `pause[:on|off]`, `mark`, `ticks:N`, `waitidle:ID[:maxFrames]` (ждать, пока юнит выполнит ТД).
 
-Проверки: `expect:units:N`, `expect:cell:ID:c,r`, `expect:waypoints:ID:N`, `expect:facing:ID:Dir`,
+Шаги v0.7: `click:P`/`rclick:P` принимают точку с `@Direction:dist` (клик в секторе), `rpress:P`, `draft` (открыть
+черновик выбранного юнита). Проверки: `expect:draft:none|N`, `expect:units:N`, `expect:cell:ID:c,r`, `expect:waypoints:ID:N`, `expect:facing:ID:Dir`,
 `expect:status:ID:Idle|Moving|Waiting|Blocked`, `expect:paused:true|false`, `expect:same-tick` (тик не изменился
 после `mark`). Итог печатается как `[automation] checks passed: N` или `FAILED k of N`.
-Регрессионный сценарий релиза — `tools/verify_release.ps1` (`$RegressionScenario`). Точка `P` — `c,r` (центр гекса) или
+Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07` для v0.7+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.6.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.7.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

@@ -159,6 +159,19 @@ internal sealed class MovementSystem : ISimulationSystem
             _events.Add(new WaypointReached(tick, unit.Id, wp));
         }
 
+        if (unit.Orders.IsEmpty && unit.Orders.FinalFacing is { } finalFacing)
+        {
+            // Mandatory final facing of the completed order, regardless of the direction of the last step.
+            _state.SetFinalFacing(unit.Id, null);
+            if (unit.Facing != finalFacing)
+            {
+                _state.SetFacing(unit.Id, finalFacing);
+                _events.Add(new FacingChanged(tick, unit.Id, finalFacing));
+            }
+
+            _events.Add(new FinalFacingApplied(tick, unit.Id, finalFacing));
+        }
+
         if (unit.Orders.IsEmpty && m.Status != MovementStatus.Idle)
         {
             m.Status = MovementStatus.Idle;
