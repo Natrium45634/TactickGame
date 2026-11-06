@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using HexTactics.Core.Hex;
+using HexTactics.Core.Motion;
 
 namespace HexTactics.Core.Units;
 
@@ -67,8 +69,63 @@ public sealed class UnitMotion
     /// <summary>Fraction of the current step, 0 ≤ progress &lt; 1.</summary>
     public double Progress { get; internal set; }
 
-    /// <summary>True once the logical cell moved to <see cref="StepTo"/> (progress ≥ 0.5).</summary>
+    /// <summary>True once the logical cell moved to <see cref="StepTo"/> (progress ≥ <see cref="SwitchAt"/>).</summary>
     public bool CellSwitched { get; internal set; }
+
+    /// <summary>
+    /// Step progress at which the body crosses the shared edge into <see cref="StepTo"/>: the single deterministic moment
+    /// the logical cell switches (spec part 3 §2.3). 0.5 for a straight step; depends on the curve otherwise.
+    /// </summary>
+    public double SwitchAt { get; internal set; } = 0.5;
+
+    /// <summary>
+    /// Continuous position on the map plane (hex size 1). Null means the centre of the logical cell (never moved).
+    /// Authoritative for the view: the body follows the step curves of the simulation, not a free-moving node.
+    /// </summary>
+    public PlaneVector? Position { get; internal set; }
+
+    /// <summary>Unit direction of travel while the unit moves on without stopping; null at rest.</summary>
+    public PlaneVector? Heading { get; internal set; }
+
+    internal double? HeadingControl { get; set; }
+
+    /// <summary>Geometry of the running step (null at rest).</summary>
+    public StepPlan? Plan { get; internal set; }
+
+    /// <summary>Step progress at which <see cref="Plan"/> starts (0, or the moment the step was re-planned).</summary>
+    internal double PlanProgressStart { get; set; }
+
+    /// <summary>The hex after <see cref="StepTo"/> the running step's curve turns towards, or null (stops there).</summary>
+    public HexCoord? StepLookahead { get; internal set; }
+
+    internal int StepOrdersVersion { get; set; }
+
+    /// <summary>Position on the running step's curve at step progress <paramref name="progress"/> (or the rest position).</summary>
+    public PlaneVector? PositionAtProgress(double progress)
+    {
+        if (Plan is not { } plan)
+        {
+            return Position;
+        }
+
+        var p0 = PlanProgressStart;
+        var span = 1.0 - p0;
+        var f = span < 1e-9 ? 1.0 : Math.Clamp((progress - p0) / span, 0, 1);
+        return plan.Curve.PointAtArc(f * plan.Curve.Length);
+    }
+
+    /// <summary>Unit tangent of the running step's curve at step progress <paramref name="progress"/>.</summary>
+    public PlaneVector TangentAtProgress(double progress)
+    {
+        if (Plan is not { } plan)
+        {
+            return Heading ?? default;
+        }
+
+        var span = 1.0 - PlanProgressStart;
+        var f = span < 1e-9 ? 1.0 : Math.Clamp((progress - PlanProgressStart) / span, 0, 1);
+        return plan.Curve.TangentAtArc(f * plan.Curve.Length);
+    }
 
     public bool IsStepping => StepTo is not null;
 

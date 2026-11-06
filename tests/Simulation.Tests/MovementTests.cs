@@ -52,7 +52,7 @@ public class MovementTests
     }
 
     [Fact]
-    public void Unit_moves_to_waypoint_at_two_hexes_per_second()
+    public void Unit_moves_to_waypoint_at_one_hex_per_second()
     {
         var sim = new GameSimulation(TestMaps.Empty());
         var id = Spawn(sim, C(2, 5));
@@ -65,14 +65,14 @@ public class MovementTests
             ticks++;
         }
 
-        // 4 hexes at 2 hexes/s = 2 s = 60 ticks of 1/30 s.
-        Assert.InRange(ticks, 59, 61);
+        // 4 hexes at 1 hex/s (spec part 3 §2.4) = 4 s = 120 ticks of 1/30 s.
+        Assert.InRange(ticks, 119, 121);
         Assert.Equal(C(6, 5), sim.State.GetUnit(id).Cell);
         Assert.Equal(MovementStatus.Idle, sim.State.GetUnit(id).Motion.Status);
     }
 
     [Fact]
-    public void Logical_cell_switches_exactly_at_the_middle_of_a_step()
+    public void Logical_cell_switches_exactly_when_the_body_crosses_the_shared_edge()
     {
         var sim = new GameSimulation(TestMaps.Empty());
         var id = Spawn(sim, C(2, 5));
@@ -81,13 +81,17 @@ public class MovementTests
         while (true)
         {
             sim.Step();
-            if (u.Motion.Progress < 0.5 && u.Motion.IsStepping)
+            Assert.Equal(0.5, u.Motion.SwitchAt, 6); // a straight step crosses the edge half-way
+            Assert.Equal(u.Cell, sim.Layout.PlaneToHex(sim.PositionOf(u))); // drawn position and logical cell agree
+            if (u.Motion.IsStepping && !u.Motion.CellSwitched)
             {
+                Assert.True(u.Motion.Progress < u.Motion.SwitchAt + 1e-6);
                 Assert.Equal(C(2, 5), u.Cell);
                 Assert.True(sim.State.IsReserved(C(3, 5)));
             }
             else if (u.Motion.IsStepping)
             {
+                Assert.True(u.Motion.Progress >= u.Motion.SwitchAt - 1e-6, "switched at the edge, not earlier");
                 Assert.Equal(C(3, 5), u.Cell);
                 Assert.True(sim.State.IsReserved(C(2, 5)), "origin stays reserved until the body has left");
             }
@@ -245,9 +249,9 @@ public class MovementTests
         var sim = new GameSimulation(TestMaps.Empty());
         var id = Spawn(sim, C(2, 5));
         sim.IssueMoveOrder(id, C(8, 5), OrderMode.Replace);
-        for (var i = 0; i < 20; i++)
+        for (var i = 0; i < 40; i++)
         {
-            sim.Step(); // 1 1/3 steps
+            sim.Step(); // 1 1/3 steps at 1 hex/s
         }
 
         var u = sim.State.GetUnit(id);

@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using HexTactics.Core.Hex;
+using HexTactics.Core.Motion;
 using HexTactics.Core.Pathfinding;
 using HexTactics.Core.Units;
 
@@ -23,12 +25,14 @@ internal sealed class MovementSystem : ISimulationSystem
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
     private readonly SimulationSettings _settings;
+    private readonly HexLayout _layout;
 
-    public MovementSystem(GameState state, List<SimulationEvent> events, SimulationSettings? settings = null)
+    public MovementSystem(GameState state, List<SimulationEvent> events, SimulationSettings? settings = null, HexLayout? layout = null)
     {
         _state = state;
         _events = events;
         _settings = settings ?? SimulationSettings.Default;
+        _layout = layout ?? new HexLayout(1.0);
     }
 
     public string Name => "Movement";
@@ -56,14 +60,26 @@ internal sealed class MovementSystem : ISimulationSystem
         var m = unit.Motion;
         if (!m.IsStepping && !TryStartStep(unit, tick))
         {
+            // At rest: the next step starts from standstill (no momentum carried over).
+            m.Heading = null;
+            m.HeadingControl = null;
             return;
         }
 
         var from = m.StepFrom!.Value;
         var to = m.StepTo!.Value;
-        m.Progress += unit.SpeedHexesPerSecond * dt;
+        if (unit.Orders.Version != m.StepOrdersVersion)
+        {
+            RetargetIfNeeded(unit, from, to); // a new order mid-step: re-plan the rest of the curve from here, no jump
+        }
 
-        if (!m.CellSwitched && m.Progress >= 0.5)
+        m.Progress = Math.Min(1.0, m.Progress + (unit.SpeedHexesPerSecond * dt));
+        var position = m.PositionAtProgress(m.Progress) ?? _layout.HexToPlane(from);
+        m.Position = position;
+
+        // One deterministic rule (spec part 3 §2.3): the logical cell switches when the body crosses the shared edge,
+        // i.e. as soon as its position lies in `to` — drawn position and occupancy never disagree.
+        if (!m.CellSwitched && (_layout.PlaneToHex(position) == to || m.Progress >= 1.0 - 1e-9))
         {
             // The one moment the logical cell changes: the destination reservation becomes occupancy,
             // the origin becomes a trailing reservation until the body has fully left it.
@@ -77,6 +93,15 @@ internal sealed class MovementSystem : ISimulationSystem
         if (m.Progress >= 1.0 - 1e-9)
         {
             _state.ReleaseReservation(from, unit.Id);
+            if (m.Plan is { } done)
+            {
+                m.Position = done.End;
+                m.Heading = done.EndTangent;
+                m.HeadingControl = done.EndControl;
+            }
+
+            m.Plan = null;
+            m.StepLookahead = null;
             m.StepFrom = null;
             m.StepTo = null;
             m.Progress = 0;
@@ -201,6 +226,17 @@ internal sealed class MovementSystem : ISimulationSystem
         m.CellSwitched = false;
         m.Status = MovementStatus.Moving;
 
+        // Smooth curve of this step (spec part 3 §2.2): it turns towards the next hex of the path unless the unit stops
+        // in `next` (a waypoint is a hard anchor — its centre is reached).
+        var lookahead = next != target.Cell && m.PathCells.Count >= 2 && m.PathCells[0] == next ? m.PathCells[1] : (HexCoord?)null;
+        var start = m.Position ?? _layout.HexToPlane(unit.Cell);
+        var plan = StepGeometry.Build(_layout, unit.Cell, next, start, m.Heading, m.HeadingControl, lookahead);
+        m.Plan = plan;
+        m.PlanProgressStart = 0;
+        m.SwitchAt = plan.Curve.Length < 1e-9 ? 0.5 : Math.Clamp(plan.SwitchArc / plan.Curve.Length, 0, 1);
+        m.StepLookahead = lookahead;
+        m.StepOrdersVersion = unit.Orders.Version;
+
         if (unit.Cell.DirectionTo(next) is { } dir && dir != unit.Facing)
         {
             _state.SetFacing(unit.Id, dir);
@@ -242,6 +278,38 @@ internal sealed class MovementSystem : ISimulationSystem
             m.PathWaypointId = null;
             _events.Add(new MovementFinished(tick, unit.Id, unit.Cell));
         }
+    }
+
+    /// <summary>
+    /// The unit's orders changed during a step: find the hex it will continue to after <paramref name="to"/> and, if that
+    /// differs from what the running curve turns towards, re-plan the rest of the curve from the current position.
+    /// </summary>
+    private void RetargetIfNeeded(UnitState unit, HexCoord from, HexCoord to)
+    {
+        var m = unit.Motion;
+        m.StepOrdersVersion = unit.Orders.Version;
+        HexCoord? lookahead = null;
+        if (unit.Orders.Peek() is { } target && target.Cell != to
+            && Pathfinder.FindPath(_state.Grid, to, target.Cell, _state.ObstaclesFor(unit.Id)) is { Count: > 1 } path)
+        {
+            lookahead = path[1];
+        }
+
+        if (lookahead == m.StepLookahead || m.Plan is null)
+        {
+            return;
+        }
+
+        var p = m.Progress;
+        var plan = StepGeometry.Retarget(_layout, from, to, m.PositionAtProgress(p) ?? _layout.HexToPlane(from), m.TangentAtProgress(p), m.CellSwitched, lookahead);
+        m.Plan = plan;
+        m.PlanProgressStart = p;
+        if (!m.CellSwitched)
+        {
+            m.SwitchAt = plan.Curve.Length < 1e-9 ? p : p + ((plan.SwitchArc / plan.Curve.Length) * (1.0 - p));
+        }
+
+        m.StepLookahead = lookahead;
     }
 
     /// <summary>True if <paramref name="cell"/> is occupied by a unit that is not a teammate in the same command order.</summary>

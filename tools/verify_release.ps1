@@ -85,6 +85,15 @@ $script:RegressionScenarioV10 = (($script:RegressionScenarioV09 -replace ';key:E
     'key:Escape'
 ) -join ';')
 
+# v0.11.0+ (spec part 3 §2): the v0.10 scenario plus a timed move — three transitions at 1 hex/s take 3 game seconds,
+# and the drawn body always lies in the unit's logical cell.
+$script:RegressionScenarioV11 = ($script:RegressionScenarioV10 -replace ';key:Escape$', '') + ';' + (@(
+    'spawn:cell:11,9', 'expect:units:5', 'pause:on', 'drag:11,9>11,6', 'click:11,6@North:0.6', 'expect:waypoints:5:1',
+    'mark', 'pause:off', 'wait:15', 'expect:in-cell:5', 'waitidle:5:3000', 'expect:arrived:5:3.0', 'expect:cell:5:11,6',
+    'expect:in-cell:5', 'expect:facing:5:North',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -144,7 +153,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }
+            $scenario = if ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }
+                        elseif ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }
                         elseif ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }

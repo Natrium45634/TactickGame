@@ -27,8 +27,14 @@ public sealed class GameSimulation
         Settings = settings ?? SimulationSettings.Default;
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
-        AddSystem(new MovementSystem(State, _events, Settings));
+        AddSystem(new MovementSystem(State, _events, Settings, Layout));
     }
+
+    /// <summary>Map-plane geometry of the simulation (hex size 1): unit positions and motion curves use it.</summary>
+    public HexLayout Layout { get; } = new(1.0);
+
+    /// <summary>Continuous position of a unit on the map plane (the centre of its cell until it has moved).</summary>
+    public PlaneVector PositionOf(UnitState unit) => unit.Motion.Position ?? Layout.HexToPlane(unit.Cell);
 
     /// <summary>Systems executed every tick, in order.</summary>
     public IReadOnlyList<ISimulationSystem> Systems => _systems;

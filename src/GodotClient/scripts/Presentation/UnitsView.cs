@@ -97,19 +97,18 @@ public partial class UnitsView : Node3D
     }
 
     /// <summary>
-    /// World position of a unit: the hex centre, or — during a step — the point between the two centres.
-    /// The model advances in fixed ticks; the view extrapolates within the current tick for smoothness.
+    /// World position of a unit, taken from the simulation (spec part 3 §2.3): the point of its current step curve — the
+    /// smoothed trajectory over its hex path — or its rest position. The view only extrapolates within the current tick
+    /// for smoothness; it never moves the body on its own.
     /// </summary>
     public Vector3 PositionOf(UnitState unit, double interpolationSeconds = 0)
     {
         var m = unit.Motion;
-        if (m.StepFrom is not { } from || m.StepTo is not { } to)
-        {
-            return _layout.HexToPlane(unit.Cell).ToWorld(0f);
-        }
-
-        var t = System.Math.Clamp(m.Progress + (unit.SpeedHexesPerSecond * interpolationSeconds), 0.0, 1.0);
-        return PlaneVector.Lerp(_layout.HexToPlane(from), _layout.HexToPlane(to), t).ToWorld(0f);
+        var plane = m.IsStepping
+            ? m.PositionAtProgress(System.Math.Min(1.0, m.Progress + (unit.SpeedHexesPerSecond * interpolationSeconds)))
+            : m.Position;
+        var p = plane ?? _layout.HexToPlane(unit.Cell) * (1.0 / _layout.Size);
+        return (p * _layout.Size).ToWorld(0f); // the simulation works with hex size 1
     }
 
     /// <summary>Current visual positions of all units on the plane (for path lines).</summary>

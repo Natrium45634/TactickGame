@@ -18,7 +18,7 @@ public class PauseTests
         var sim = new GameSimulation(TestMaps.Empty());
         var id = sim.Spawn(SpawnRequest.AtCell(C(2, 5))).Unit!.Value;
         sim.IssueMoveOrder(id, C(9, 5), OrderMode.Replace);
-        for (var i = 0; i < 20; i++)
+        for (var i = 0; i < 40; i++) // 1 1/3 steps at 1 hex/s: mid-step, before the cell switch
         {
             sim.Advance(1.0 / 30);
         }

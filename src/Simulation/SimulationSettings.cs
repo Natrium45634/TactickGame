@@ -6,8 +6,11 @@ public sealed record SimulationSettings
     /// <summary>Fixed simulation rate; rules never depend on render FPS.</summary>
     public int TicksPerSecond { get; init; } = 30;
 
-    /// <summary>Default unit speed in hex transitions per second (prototype value).</summary>
-    public double DefaultUnitSpeed { get; init; } = 2.0;
+    /// <summary>
+    /// Base unit speed in hex transitions per second (spec part 3 §2.4: 1 hex/s, replaces the 2 hex/s test value of
+    /// part 1). Time of a route = transitions / speed, independent of how much the curve shortens it.
+    /// </summary>
+    public double DefaultUnitSpeed { get; init; } = 1.0;
 
     /// <summary>
     /// Seed of the few deliberately random decisions (companion facings of command orders, spec part 2 §6.3, §10).

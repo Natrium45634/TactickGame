@@ -58,7 +58,7 @@ public class SpawnTests
         Assert.All(ids, id =>
         {
             var u = sim.State.GetUnit(id);
-            Assert.Equal(2.0, u.SpeedHexesPerSecond);
+            Assert.Equal(1.0, u.SpeedHexesPerSecond); // spec part 3 §2.4
             Assert.True(u.Orders.IsEmpty);
             Assert.Same(u, sim.State.UnitAt(u.Cell));
         });

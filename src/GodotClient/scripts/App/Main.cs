@@ -36,6 +36,7 @@ public partial class Main : Node3D
     private HexFillLayer _hoverLayer = null!;
     private UnitsView _units = null!;
     private OrdersView _orders = null!;
+    private MotionDebugView _motionDebug = null!;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
     private RosterBar _rosterBar = null!;
@@ -50,6 +51,7 @@ public partial class Main : Node3D
     private Button _pauseButton = null!;
     private Label _timeLabel = null!;
     private long _markedTick;
+    private readonly System.Collections.Generic.Dictionary<HexTactics.Core.Units.UnitId, long> _finishedTick = new();
     private readonly System.Collections.Generic.Dictionary<string, int> _pollCounts = new();
 
     private HexCoord? _hovered;
@@ -92,6 +94,10 @@ public partial class Main : Node3D
         _units = new UnitsView { Name = "Units" };
         _units.Initialize(_layout);
         AddChild(_units);
+
+        _motionDebug = new MotionDebugView { Name = "MotionDebug" };
+        AddChild(_motionDebug);
+        _motionDebug.Initialize(_layout);
 
         _cameraRig = new CameraRig { Name = "CameraRig" };
         AddChild(_cameraRig);
@@ -140,6 +146,7 @@ public partial class Main : Node3D
         var group = _fsm.Group;
         _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview, group?.Members);
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
+        _motionDebug.Sync(_sim.State, u => _units.PositionOf(u, interpolation));
         _rosterBar.SetCommandState(group is not null, group is null ? "клик — собрать"
             : group.IsCollecting ? $"сбор: {group.Members.Count} (ПКМ — выход)"
             : $"КТД: {group.Waypoints.Count} · взгляд у ребра");
@@ -454,6 +461,12 @@ public partial class Main : Node3D
             case Key.O:
                 _fsm.ToggleObstacleEditMode();
                 break;
+            case Key.F3:
+                _motionDebug.Enabled = !_motionDebug.Enabled;
+                ShowMessage(_motionDebug.Enabled
+                    ? "Отладка движения: жёлтые — технический путь (GraphPath), белый — логический гекс, розовая — кривая шага, оранжевая — пройденный след."
+                    : "Отладка движения выключена.", false);
+                break;
         }
     }
 
@@ -481,7 +494,7 @@ public partial class Main : Node3D
                 case GroupOrderFinished g:
                     ShowMessage($"Командный приказ #{g.GroupId} выполнен: команда на местах.", false);
                     break;
-                case MovementFinished f:
+                case MovementFinished f when RecordFinish(f):
                     ShowMessage($"Юнит {f.Unit} выполнил все ТД и стоит на {UiText.Cell(f.Cell)}.", false);
                     break;
                 case PauseChanged p:
@@ -492,6 +505,12 @@ public partial class Main : Node3D
                     break;
             }
         }
+    }
+
+    private bool RecordFinish(MovementFinished f)
+    {
+        _finishedTick[f.Unit] = f.Tick;
+        return true;
     }
 
     private void ShowMessage(string text, bool isError)
@@ -806,6 +825,9 @@ public partial class Main : Node3D
             case "pause":
                 _sim.SetPaused(arg switch { "on" => true, "off" => false, _ => !_sim.IsPaused });
                 return 2;
+            case "debug":
+                _motionDebug.Enabled = arg != "off";
+                return 1;
             case "mark":
                 _markedTick = _sim.Tick;
                 return 1;
@@ -878,7 +900,8 @@ public partial class Main : Node3D
     /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
     /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
     /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
-    /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no · expect:facing-near:ID:Dir
+    /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no · expect:facing-near:ID:Dir ·
+    /// expect:arrived:ID:SECONDS (game time from mark to the unit's arrival) · expect:in-cell:ID
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -959,6 +982,26 @@ public partial class Main : Node3D
                 actual = Unit(1)?.Orders.GroupId is null ? "no" : "yes";
                 ok = actual == a[2];
                 break;
+            case "arrived":
+                {
+                    // expect:arrived:ID:SECONDS — game time from `mark` to the unit's MovementFinished (±0.05 s)
+                    var finished = _finishedTick.TryGetValue(new HexTactics.Core.Units.UnitId(int.Parse(a[1], CultureInfo.InvariantCulture)), out var t) ? t : -1;
+                    var seconds = (finished - _markedTick) * _sim.Settings.TickDuration;
+                    actual = finished < 0 ? "not arrived" : seconds.ToString("0.000", CultureInfo.InvariantCulture);
+                    ok = finished >= 0 && Math.Abs(seconds - double.Parse(a[2], CultureInfo.InvariantCulture)) <= 0.05;
+                    break;
+                }
+
+            case "in-cell":
+                {
+                    // expect:in-cell:ID — the drawn body lies in the unit's logical cell (spec part 3 §2.3)
+                    var u = Unit(1);
+                    var hex = u is null ? (HexCoord?)null : _sim.Layout.PlaneToHex(_sim.PositionOf(u));
+                    actual = hex is { } h ? $"{h.ToOffset().Col},{h.ToOffset().Row}" : "none";
+                    ok = u is not null && hex == u.Cell;
+                    break;
+                }
+
             case "same-tick":
                 actual = $"{_markedTick} -> {_sim.Tick}";
                 ok = _markedTick == _sim.Tick;
