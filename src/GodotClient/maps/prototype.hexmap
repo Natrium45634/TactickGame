@@ -1,20 +1,23 @@
-// HexTactics prototype map, stage 1.
-// Format: see docs/ARCHITECTURE.md ("Формат карты").
-// 12 columns x 10 rows, pointy-top hexes, odd-r offset (odd rows are shifted right by half a hex).
-// Tokens: .  walkable    #  blocked    B  player base    1..9  spawn zone id (must lie on the map edge)
-@name Прототип 12×10
+// HexTactics prototype map (spec part 2): 12 columns x 10 rows of FLAT-TOP hexes, odd-q offsets
+// (odd columns lie half a hex lower than even ones). One text line per row, one token per column.
+// Tokens: .  walkable   #  blocked   B  player base   D  deploy zone (roster placement)
+//         1..9  spawn zone id (must lie on the map edge; used by simulation spawns, not by the roster)
+// Layout notes: column 5 rows 2..7 is a straight wall; (8,3) is a free hex enclosed by six obstacles
+// (an isolated "pocket" for reachability tests); (8,7)-(9,7) is a small rock.
+@layout flat-top odd-q
+@name Прототип 12×10 (flat-top)
 @size 12 10
 @base База игрока
 @zone 1 Северный край
 @zone 2 Восточный край
 
-. . . . . . . 1 1 1 . .
- . . . . . . . . . . . .
-. . . . # . . . # # . .
- . . . . # . . # . # . .
-B B . . # . . . # # . 2
- B B . . # . . . . . . 2
-B . . . # . . . . . . 2
- . . . . . . . . . . . .
-. . . . . . . # # . . .
- . . . . . . . . . . . .
+. . . . . . 1 1 1 . . .
+. . . . . . . . . . . .
+. . . . . # . # # # . .
+. . . . . # . # . # . .
+B B . . . # . . # . . 2
+B D . . . # . . . . . 2
+D . . . . # . . . . . 2
+. . . . . # . . # # . .
+. . . . . . . . . . . .
+. . . . . . . . . . . .

@@ -14,4 +14,10 @@ public enum TileType
 
     /// <summary>Passable tile that belongs to the player base.</summary>
     PlayerBase = 3,
+
+    /// <summary>
+    /// Passable tile where the player may additionally deploy units from the roster
+    /// (spec part 2 §5.6: extra direct-placement areas defined by the map).
+    /// </summary>
+    DeployZone = 4,
 }

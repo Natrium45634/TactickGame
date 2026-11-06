@@ -32,11 +32,12 @@ public class HexCoordTests
 
     [Theory]
     [InlineData(0, 0, 0, 0)]
-    [InlineData(1, 0, 1, 0)]
-    [InlineData(0, 1, 0, 1)] // odd row: column 0 is axial q = 0
-    [InlineData(1, 2, 0, 2)] // even row 2: q = col - 1
-    [InlineData(11, 9, 7, 9)]
-    public void Odd_r_conversion_matches_reference_values(int col, int row, int q, int r)
+    [InlineData(1, 0, 1, 0)]  // odd column: r = row - (col - 1) / 2
+    [InlineData(0, 1, 0, 1)]
+    [InlineData(2, 1, 2, 0)]  // even column 2: r = row - 1
+    [InlineData(3, 5, 3, 4)]
+    [InlineData(11, 9, 11, 4)]
+    public void Odd_q_conversion_matches_reference_values(int col, int row, int q, int r)
     {
         Assert.Equal(new HexCoord(q, r), HexCoord.FromOffset(col, row));
     }
@@ -71,15 +72,27 @@ public class HexCoordTests
     }
 
     [Fact]
-    public void Odd_r_neighbors_match_known_offset_neighbors()
+    public void Odd_q_neighbors_match_known_offset_neighbors_by_direction()
     {
-        // Even row (2): neighbours of (4,2)
-        var even = HexCoord.FromOffset(4, 2).Neighbors().Select(n => n.ToOffset()).ToHashSet();
-        Assert.Equal(new HashSet<OffsetCoord> { new(5, 2), new(3, 2), new(3, 1), new(4, 1), new(3, 3), new(4, 3) }, even);
+        // Even column (4,2): N, NE, SE, S, SW, NW
+        var even = HexDirections.All.Select(d => HexCoord.FromOffset(4, 2).Neighbor(d).ToOffset()).ToArray();
+        Assert.Equal(new OffsetCoord[] { new(4, 1), new(5, 1), new(5, 2), new(4, 3), new(3, 2), new(3, 1) }, even);
 
-        // Odd row (3): neighbours of (4,3)
-        var odd = HexCoord.FromOffset(4, 3).Neighbors().Select(n => n.ToOffset()).ToHashSet();
-        Assert.Equal(new HashSet<OffsetCoord> { new(5, 3), new(3, 3), new(4, 2), new(5, 2), new(4, 4), new(5, 4) }, odd);
+        // Odd column (5,3): N, NE, SE, S, SW, NW
+        var odd = HexDirections.All.Select(d => HexCoord.FromOffset(5, 3).Neighbor(d).ToOffset()).ToArray();
+        Assert.Equal(new OffsetCoord[] { new(5, 2), new(6, 3), new(6, 4), new(5, 4), new(4, 4), new(4, 3) }, odd);
+    }
+
+    [Fact]
+    public void North_and_south_neighbors_stay_in_the_same_column()
+    {
+        // Flat-top: the top edge faces North, so a column is a straight vertical line of hexes.
+        for (var col = 0; col < 12; col++)
+        {
+            var h = HexCoord.FromOffset(col, 5);
+            Assert.Equal(new OffsetCoord(col, 4), h.Neighbor(HexDirection.North).ToOffset());
+            Assert.Equal(new OffsetCoord(col, 6), h.Neighbor(HexDirection.South).ToOffset());
+        }
     }
 
     [Fact]
@@ -89,7 +102,7 @@ public class HexCoordTests
         Assert.Equal(0, a.DistanceTo(a));
         Assert.Equal(11, a.DistanceTo(HexCoord.FromOffset(11, 0)));
         Assert.Equal(9, a.DistanceTo(HexCoord.FromOffset(0, 9)));
-        Assert.Equal(16, a.DistanceTo(HexCoord.FromOffset(11, 9)));
+        Assert.Equal(15, a.DistanceTo(HexCoord.FromOffset(11, 9)));
         Assert.Equal(HexCoord.FromOffset(3, 7).DistanceTo(HexCoord.FromOffset(8, 1)), HexCoord.FromOffset(8, 1).DistanceTo(HexCoord.FromOffset(3, 7)));
     }
 
@@ -106,5 +119,21 @@ public class HexCoordTests
         var list = new List<HexCoord> { HexCoord.FromOffset(2, 1), HexCoord.FromOffset(0, 1), HexCoord.FromOffset(5, 0) };
         list.Sort();
         Assert.Equal(new[] { new OffsetCoord(5, 0), new OffsetCoord(0, 1), new OffsetCoord(2, 1) }, list.Select(h => h.ToOffset()));
+    }
+
+    [Fact]
+    public void Clockwise_rotation_cycles_through_all_six_directions()
+    {
+        var d = HexDirection.North;
+        var seen = new List<HexDirection>();
+        for (var i = 0; i < 6; i++)
+        {
+            seen.Add(d);
+            d = d.RotateClockwise();
+        }
+
+        Assert.Equal(HexDirections.All, seen);
+        Assert.Equal(HexDirection.North, d);
+        Assert.Equal(HexDirection.NorthWest, HexDirection.North.RotateClockwise(-1));
     }
 }

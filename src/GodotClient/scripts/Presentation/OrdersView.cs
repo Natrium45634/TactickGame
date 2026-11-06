@@ -22,6 +22,13 @@ public partial class OrdersView : Node3D
     public const float WaypointPickRadius = 0.42f;
 
     private const float ArrowLift = 0.035f;
+
+    // Render priorities of the top overlay (all without depth test): chains < drag arrow < route lines < markers.
+    private const int LayerChainOther = 20;
+    private const int LayerChainSelected = 21;
+    private const int LayerDragArrow = 22;
+    private const int LayerRouteLines = 23;
+    private const int LayerMarkers = 24;
     private const float PathLift = 0.05f;
     private const float PathWidth = 0.085f;
     private const float MarkerRadius = 0.24f;
@@ -46,7 +53,7 @@ public partial class OrdersView : Node3D
         AddChild(_committed);
 
         _dragMesh = new ImmediateMesh();
-        _dragMaterial = NewArrowMaterial(VisualConfig.ArrowValid, 4);
+        _dragMaterial = NewArrowMaterial(VisualConfig.ArrowValid, LayerDragArrow);
         _dragArrow = new MeshInstance3D
         {
             Name = "DragArrow",
@@ -69,7 +76,8 @@ public partial class OrdersView : Node3D
                 Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
                 CullMode = BaseMaterial3D.CullModeEnum.Disabled,
                 DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled,
-                RenderPriority = 6,
+                NoDepthTest = true,
+                RenderPriority = LayerRouteLines,
             },
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         };
@@ -293,7 +301,7 @@ public partial class OrdersView : Node3D
             {
                 Name = $"Chain{unit.Id.Value}",
                 Mesh = mesh,
-                MaterialOverride = NewArrowMaterial(color, isSelected ? 3 : 2),
+                MaterialOverride = NewArrowMaterial(color, isSelected ? LayerChainSelected : LayerChainOther),
                 CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
             });
 
@@ -310,24 +318,23 @@ public partial class OrdersView : Node3D
         _markers.Add((wp.Id, unit.Id, wp.Sequence, pos));
 
         var marker = new Node3D { Name = $"Waypoint{wp.Id}", Position = pos };
-        marker.AddChild(new MeshInstance3D
-        {
-            Mesh = new CylinderMesh { TopRadius = MarkerRadius, BottomRadius = MarkerRadius, Height = 0.05f, RadialSegments = 6 },
-            MaterialOverride = new StandardMaterial3D
-            {
-                AlbedoColor = unitSelected ? VisualConfig.WaypointSelectedUnit : VisualConfig.WaypointOtherUnit,
-                Roughness = 0.7f,
-            },
-            Position = new Vector3(0, 0.03f, 0),
-            Rotation = new Vector3(0, Mathf.Pi / 6f, 0),
-        });
+        // White flat-top hex with a dark rim (readable on the light board); drawn above scene objects.
+        marker.AddChild(MarkerDisc(MarkerRadius + 0.05f, VisualConfig.WaypointRim, LayerMarkers, 0.02f));
+        marker.AddChild(MarkerDisc(MarkerRadius, unitSelected ? VisualConfig.WaypointSelectedUnit : VisualConfig.WaypointOtherUnit, LayerMarkers + 1, 0.03f));
 
         if (waypointSelected)
         {
             marker.AddChild(new MeshInstance3D
             {
                 Mesh = new TorusMesh { InnerRadius = MarkerRadius + 0.05f, OuterRadius = MarkerRadius + 0.09f, Rings = 32, RingSegments = 6 },
-                MaterialOverride = new StandardMaterial3D { AlbedoColor = Colors.White, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded },
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoColor = VisualConfig.WaypointSelectedRing,
+                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                    Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                    NoDepthTest = true,
+                    RenderPriority = LayerMarkers + 2,
+                },
                 Scale = new Vector3(1, 0.3f, 1),
                 Position = new Vector3(0, 0.05f, 0),
                 CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
@@ -342,14 +349,30 @@ public partial class OrdersView : Node3D
             FontSize = 44,
             OutlineSize = 12,
             PixelSize = 0.006f,
-            Modulate = unitSelected ? new Color(1, 1, 1) : new Color(0.85f, 0.87f, 0.9f),
-            OutlineModulate = new Color(0.12f, 0.13f, 0.16f),
+            Modulate = unitSelected ? new Color(0.12f, 0.13f, 0.16f) : new Color(0.25f, 0.27f, 0.30f),
+            OutlineModulate = new Color(1f, 1f, 1f, 0.9f),
             Position = new Vector3(0, 0.34f, 0),
-            RenderPriority = 10,
-            OutlineRenderPriority = 9,
+            RenderPriority = LayerMarkers + 4,
+            OutlineRenderPriority = LayerMarkers + 3,
         });
         _committed.AddChild(marker);
     }
+
+    private static MeshInstance3D MarkerDisc(float radius, Color color, int priority, float height) => new()
+    {
+        Mesh = new CylinderMesh { TopRadius = radius, BottomRadius = radius, Height = 0.02f, RadialSegments = 6 },
+        MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = color,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            NoDepthTest = true,
+            RenderPriority = priority,
+        },
+        Position = new Vector3(0, height, 0),
+        Rotation = new Vector3(0, Mathf.Pi / 6f, 0), // flat-top like the board hexes
+        CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+    };
 
     private void DrawDrag(DragPreview? drag)
     {
@@ -449,8 +472,13 @@ public partial class OrdersView : Node3D
         mesh.SurfaceEnd();
     }
 
+    /// <summary>
+    /// Arrow material: drawn WITHOUT depth test in the transparent pass, i.e. on top of every scene object
+    /// (units, obstacles, future buildings) — spec part 2 §3.1. HUD (CanvasLayer) is still drawn above.
+    /// </summary>
     private static StandardMaterial3D NewArrowMaterial(Color color, int priority) => new()
     {
+        NoDepthTest = true,
         AlbedoColor = color,
         ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
         Transparency = BaseMaterial3D.TransparencyEnum.Alpha,

@@ -31,8 +31,9 @@ public static class VisualConfig
 
     public static readonly Color TileWalkable = new(0.80f, 0.80f, 0.81f);
     public static readonly Color TileBlocked = new(0.50f, 0.51f, 0.54f);
-    public static readonly Color TilePlayerBase = new(0.68f, 0.76f, 0.86f);
+    public static readonly Color TilePlayerBase = new(0.62f, 0.80f, 0.60f);
     public static readonly Color TileSpawnZone = new(0.86f, 0.79f, 0.64f);
+    public static readonly Color TileDeployZone = new(0.76f, 0.86f, 0.74f);
     public static readonly Color TileEdgeLine = new(0.58f, 0.59f, 0.61f);
 
     /// <summary>Hover fill (soft white). Spec: overlays are always translucent.</summary>
@@ -54,19 +55,23 @@ public static class VisualConfig
     public static readonly Color ArrowInvalid = new(0.95f, 0.36f, 0.30f, 0.80f);
 
     /// <summary>Committed order chains (straight thick arrows between order points).</summary>
-    public static readonly Color ChainSelected = new(1.0f, 0.80f, 0.36f, 0.55f);
-    public static readonly Color ChainOther = new(0.85f, 0.87f, 0.92f, 0.30f);
-    public static readonly Color WaypointSelectedUnit = new(0.98f, 0.70f, 0.22f);
-    public static readonly Color WaypointOtherUnit = new(0.62f, 0.65f, 0.70f);
+    /// <summary>Personal order chains are WHITE (spec part 2 §3.1); command chains will be cyan.</summary>
+    public static readonly Color ChainSelected = new(1.0f, 1.0f, 1.0f, 0.72f);
+    public static readonly Color ChainOther = new(1.0f, 1.0f, 1.0f, 0.30f);
+    public static readonly Color WaypointSelectedUnit = new(1.0f, 1.0f, 1.0f, 1.0f);
+    public static readonly Color WaypointOtherUnit = new(0.80f, 0.82f, 0.86f, 0.85f);
+    public static readonly Color WaypointSelectedRing = new(0.15f, 0.17f, 0.22f, 0.95f);
+    public static readonly Color WaypointRim = new(0.13f, 0.14f, 0.18f, 0.95f);
 
     /// <summary>Thin lines of computed routes (around obstacles).</summary>
-    public static readonly Color PathSelected = new(1.0f, 1.0f, 1.0f, 0.92f);
-    public static readonly Color PathOther = new(0.88f, 0.90f, 0.94f, 0.45f);
+    public static readonly Color PathSelected = new(0.14f, 0.16f, 0.22f, 0.88f);
+    public static readonly Color PathOther = new(0.14f, 0.16f, 0.22f, 0.38f);
     public static readonly Color PathPreview = new(0.30f, 0.95f, 0.50f, 0.95f);
 
     public static readonly Color UnitPlayer = new(0.30f, 0.50f, 0.80f);
     public static readonly Color UnitEnemy = new(0.78f, 0.34f, 0.30f);
-    public static readonly Color UnitFacingPointer = new(0.97f, 0.97f, 0.98f);
+    public static readonly Color UnitFacingPointer = new(0.98f, 0.98f, 0.99f);
+    public static readonly Color FacingIndicatorOutline = new(0.10f, 0.11f, 0.14f, 0.85f);
     public static readonly Color SelectionRing = new(1.0f, 0.90f, 0.55f, 0.85f);
 
     public static Color TileColor(TileType type) => type switch
@@ -74,6 +79,7 @@ public static class VisualConfig
         TileType.Blocked => TileBlocked,
         TileType.PlayerBase => TilePlayerBase,
         TileType.SpawnZone => TileSpawnZone,
+        TileType.DeployZone => TileDeployZone,
         _ => TileWalkable,
     };
 

@@ -30,6 +30,8 @@ public class MapTests
         Assert.True(map.SpawnZones.Count >= 1);
         Assert.Contains(map.Grid.Coords, c => map.Grid[c].Type == TileType.Blocked);
         Assert.All(map.SpawnZones.SelectMany(z => z.Cells), c => Assert.True(map.Grid.IsEdge(c)));
+        Assert.NotEmpty(map.DeployCells);
+        Assert.All(map.DeployCells, c => Assert.Equal(TileType.DeployZone, map.Grid[c].Type));
     }
 
     [Fact]
@@ -73,12 +75,13 @@ public class MapTests
     {
         const string text = """
             // test
+            @layout flat-top odd-q
             @name Test
             @size 3 2
             @zone 1 North
             @base Home
             1 . #
-            B . .
+            B D .
             """;
         var map = MapParser.Parse(text);
         Assert.Equal("Test", map.Name);
@@ -88,14 +91,18 @@ public class MapTests
         Assert.Equal(TileType.PlayerBase, map.Grid[HexCoord.FromOffset(0, 1)].Type);
         Assert.Equal("North", map.FindZone(1)!.Name);
         Assert.Equal("Home", map.PlayerBase!.Name);
+        Assert.Equal(TileType.DeployZone, map.Grid[HexCoord.FromOffset(1, 1)].Type);
+        Assert.Equal(new[] { HexCoord.FromOffset(1, 1) }, map.DeployCells);
     }
 
     [Theory]
-    [InlineData("@size 2 1\n. . .")]
-    [InlineData("@size 2 2\n. .")]
-    [InlineData("@size 2 1\n. X")]
-    [InlineData(". .")]
-    [InlineData("@size 3 3\n. . .\n. 1 .\n. . .")] // zone not on the edge
+    [InlineData("@layout flat-top odd-q\n@size 2 1\n. . .")]
+    [InlineData("@layout flat-top odd-q\n@size 2 2\n. .")]
+    [InlineData("@layout flat-top odd-q\n@size 2 1\n. X")]
+    [InlineData("@layout flat-top odd-q\n. .")]
+    [InlineData("@layout flat-top odd-q\n@size 3 3\n. . .\n. 1 .\n. . .")] // zone not on the edge
+    [InlineData("@size 2 1\n. .")]                                           // layout missing
+    [InlineData("@layout pointy-top odd-r\n@size 2 1\n. .")]                // old orientation is forbidden
     public void Parser_rejects_malformed_maps(string text)
     {
         Assert.Throws<MapFormatException>(() => MapParser.Parse(text));

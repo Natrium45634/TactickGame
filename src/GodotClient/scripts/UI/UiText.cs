@@ -19,12 +19,12 @@ public static class UiText
 
     public static string Direction(HexDirection d) => d switch
     {
-        HexDirection.East => "восток",
+        HexDirection.North => "север",
         HexDirection.NorthEast => "северо-восток",
-        HexDirection.NorthWest => "северо-запад",
-        HexDirection.West => "запад",
-        HexDirection.SouthWest => "юго-запад",
         HexDirection.SouthEast => "юго-восток",
+        HexDirection.South => "юг",
+        HexDirection.SouthWest => "юго-запад",
+        HexDirection.NorthWest => "северо-запад",
         _ => d.ToString(),
     };
 

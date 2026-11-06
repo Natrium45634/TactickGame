@@ -18,21 +18,28 @@ public sealed class MapFormatException : Exception
 
 /// <summary>
 /// Parses the plain-text <c>.hexmap</c> format (see docs/ARCHITECTURE.md, "Формат карты").
+/// Grids are flat-top with odd-q offsets: one text line per row, one token per column, odd columns
+/// lie half a hex lower than even ones.
 /// <code>
 /// // comment
+/// @layout flat-top odd-q  required: the only supported layout (pointy-top maps are rejected)
 /// @name Прототип
 /// @size 12 10            columns rows
 /// @zone 1 Север          spawn zone id and display name
 /// @base База игрока      display name of the player base
 /// . . # B 1 ...          one line per row, one token per column
 /// </code>
-/// Tokens: <c>.</c> walkable, <c>#</c> blocked, <c>B</c> player base, <c>1</c>..<c>9</c> spawn zone id.
+/// Tokens: <c>.</c> walkable, <c>#</c> blocked, <c>B</c> player base, <c>D</c> deploy zone (roster placement),
+/// <c>1</c>..<c>9</c> spawn zone id.
 /// </summary>
 public static class MapParser
 {
+    public const string SupportedLayout = "flat-top odd-q";
+
     public static MapDefinition Parse(string text)
     {
         ArgumentNullException.ThrowIfNull(text);
+        string? layout = null;
 
         var name = "Unnamed map";
         var baseName = "Base";
@@ -57,6 +64,14 @@ public static class MapParser
                 var arg = parts.Length > 1 ? parts[1].Trim() : string.Empty;
                 switch (parts[0])
                 {
+                    case "@layout":
+                        layout = string.Join(' ', arg.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                        if (layout != SupportedLayout)
+                        {
+                            throw new MapFormatException(lineNo, $"Unsupported layout '{arg}'. Only '{SupportedLayout}' is supported.");
+                        }
+
+                        break;
                     case "@name":
                         name = arg;
                         break;
@@ -98,6 +113,11 @@ public static class MapParser
             gridLines.Add((lineNo, line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)));
         }
 
+        if (layout is null)
+        {
+            throw new MapFormatException(1, $"Missing '@layout {SupportedLayout}' directive.");
+        }
+
         if (columns is null || rows is null)
         {
             throw new MapFormatException(lines.Length, "Missing @size directive.");
@@ -111,6 +131,7 @@ public static class MapParser
         var grid = new HexGrid(columns.Value, rows.Value);
         var zoneCells = new SortedDictionary<int, List<HexCoord>>();
         var baseCells = new List<HexCoord>();
+        var deployCells = new List<HexCoord>();
 
         for (var row = 0; row < gridLines.Count; row++)
         {
@@ -134,6 +155,10 @@ public static class MapParser
                     case "B":
                         grid.SetTile(coord, TileType.PlayerBase);
                         baseCells.Add(coord);
+                        break;
+                    case "D":
+                        grid.SetTile(coord, TileType.DeployZone);
+                        deployCells.Add(coord);
                         break;
                     default:
                         if (token.Length == 1 && token[0] >= '1' && token[0] <= '9')
@@ -174,7 +199,7 @@ public static class MapParser
         }
 
         var playerBase = baseCells.Count > 0 ? new PlayerBaseDefinition(baseName, baseCells) : null;
-        return new MapDefinition(name, grid, zones, playerBase);
+        return new MapDefinition(name, grid, zones, playerBase, deployCells);
     }
 
     private static bool TryParsePositive(string s, out int value) =>

@@ -24,7 +24,7 @@ public class OrderDragTests
     {
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += f => _feedback.Add(f);
-        _unit = _sim.Spawn(SpawnRequest.AtCell(C(3, 4), facing: HexDirection.East)).Unit!.Value;
+        _unit = _sim.Spawn(SpawnRequest.AtCell(C(3, 4), facing: HexDirection.NorthEast)).Unit!.Value;
     }
 
     private static HexCoord C(int col, int row) => HexCoord.FromOffset(col, row);
@@ -125,12 +125,12 @@ public class OrderDragTests
     }
 
     [Theory]
-    [InlineData(HexDirection.East)]
+    [InlineData(HexDirection.North)]
     [InlineData(HexDirection.NorthEast)]
-    [InlineData(HexDirection.NorthWest)]
-    [InlineData(HexDirection.West)]
-    [InlineData(HexDirection.SouthWest)]
     [InlineData(HexDirection.SouthEast)]
+    [InlineData(HexDirection.South)]
+    [InlineData(HexDirection.SouthWest)]
+    [InlineData(HexDirection.NorthWest)]
     public void Short_directional_drag_inside_source_hex_rotates_without_moving(HexDirection dir)
     {
         _sim.SetFacing(_unit, dir.Opposite());
@@ -144,14 +144,16 @@ public class OrderDragTests
     [Fact]
     public void Rotation_uses_map_plane_direction_and_snaps_to_nearest_of_six()
     {
-        // 20° above east on the plane is still East; 40° is NorthEast.
+        // Flat-top sectors are centred on the edges: NE at 30°, N at 90° (measured on the map plane).
+        // 50° is still NorthEast, 70° is North, -20° is SouthEast.
         var center = _layout.HexToPlane(C(3, 4));
-        var e20 = new PlaneVector(System.Math.Cos(0.349), -System.Math.Sin(0.349)) * 0.6;
-        var e40 = new PlaneVector(System.Math.Cos(0.698), -System.Math.Sin(0.698)) * 0.6;
-        Drag(AtHex(C(3, 4), _unit), AtPlane(center + e20));
-        Assert.Equal(HexDirection.East, Unit.Facing);
-        Drag(AtHex(C(3, 4), _unit), AtPlane(center + e40));
+        PlaneVector At(double degrees) => new PlaneVector(System.Math.Cos(degrees * System.Math.PI / 180), -System.Math.Sin(degrees * System.Math.PI / 180)) * 0.6;
+        Drag(AtHex(C(3, 4), _unit), AtPlane(center + At(50)));
         Assert.Equal(HexDirection.NorthEast, Unit.Facing);
+        Drag(AtHex(C(3, 4), _unit), AtPlane(center + At(70)));
+        Assert.Equal(HexDirection.North, Unit.Facing);
+        Drag(AtHex(C(3, 4), _unit), AtPlane(center + At(-20)));
+        Assert.Equal(HexDirection.SouthEast, Unit.Facing);
     }
 
     [Fact]
@@ -166,8 +168,8 @@ public class OrderDragTests
     public void Release_near_source_centre_does_nothing()
     {
         // Drag starts (screen distance > threshold) but ends within the dead zone of the source hex.
-        Drag(AtHex(C(3, 4), _unit), AtHexOffset(C(3, 4), HexDirection.West, 0.1), AtHex(C(6, 2)));
-        Assert.Equal(HexDirection.East, Unit.Facing);
+        Drag(AtHex(C(3, 4), _unit), AtHexOffset(C(3, 4), HexDirection.SouthWest, 0.1), AtHex(C(6, 2)));
+        Assert.Equal(HexDirection.NorthEast, Unit.Facing);
         Assert.True(Unit.Orders.IsEmpty);
         Assert.Contains(_feedback, f => f is DragCancelled { ByUser: false });
     }
@@ -177,10 +179,10 @@ public class OrderDragTests
     {
         Drag(AtHex(C(3, 4), _unit), AtHex(C(6, 2)));
         _fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), _unit));
-        _fsm.PointerMove(AtHexOffset(C(3, 4), HexDirection.West, 0.6));
+        _fsm.PointerMove(AtHexOffset(C(3, 4), HexDirection.SouthWest, 0.6));
         Assert.Equal(DragTargetStatus.SourceHasOrders, _fsm.Drag!.Status);
-        _fsm.PointerUp(PointerButton.Primary, AtHexOffset(C(3, 4), HexDirection.West, 0.6));
-        Assert.Equal(HexDirection.East, Unit.Facing);
+        _fsm.PointerUp(PointerButton.Primary, AtHexOffset(C(3, 4), HexDirection.SouthWest, 0.6));
+        Assert.Equal(HexDirection.NorthEast, Unit.Facing);
         Assert.Single(Unit.Orders.Items);
     }
 
@@ -195,7 +197,7 @@ public class OrderDragTests
         _fsm.PointerUp(PointerButton.Primary, jitter);
         Assert.Equal(_unit, _fsm.SelectedUnit);
         Assert.True(Unit.Orders.IsEmpty);
-        Assert.Equal(HexDirection.East, Unit.Facing);
+        Assert.Equal(HexDirection.NorthEast, Unit.Facing);
     }
 
     [Theory]
@@ -290,7 +292,7 @@ public class OrderDragTests
         var path = Core.Pathfinding.Pathfinder.FindPath(_sim.State.Grid, C(3, 4), C(3, 1))!;
         Assert.Equal(C(3, 4).DirectionTo(path[1]), _fsm.Drag!.FacingPreview);
         Assert.Equal(path, _fsm.Drag.Path);
-        Assert.Equal(HexDirection.East, Unit.Facing);
+        Assert.Equal(HexDirection.NorthEast, Unit.Facing);
         _fsm.Cancel();
     }
 
@@ -299,14 +301,15 @@ public class OrderDragTests
     {
         var sim = new GameSimulation(TestMaps.LoadPrototype());
         var fsm = new InputStateMachine(sim, _layout);
-        var u = sim.Spawn(SpawnRequest.AtCell(C(3, 4), facing: HexDirection.West)).Unit!.Value;
-        fsm.PointerDown(PointerButton.Primary, AtHex(C(3, 4), u));
-        fsm.PointerMove(AtHex(C(5, 4))); // directly behind the wall at column 4
+        var u = sim.Spawn(SpawnRequest.AtCell(C(4, 4), facing: HexDirection.SouthWest)).Unit!.Value;
+        fsm.PointerDown(PointerButton.Primary, AtHex(C(4, 4), u));
+        fsm.PointerMove(AtHex(C(6, 4))); // directly behind the straight wall at column 5
         var preview = fsm.Drag!;
         Assert.Equal(DragTargetStatus.Valid, preview.Status);
-        var straight = HexLine.FirstStepDirection(C(3, 4), C(5, 4));
-        Assert.NotEqual(straight, preview.FacingPreview); // the straight line would walk into the wall
-        Assert.Equal(C(3, 4).DirectionTo(preview.Path![1]), preview.FacingPreview);
+        var straight = HexLine.FirstStepDirection(C(4, 4), C(6, 4));
+        Assert.False(sim.State.Grid.IsWalkable(C(4, 4).Neighbor(straight!.Value))); // the straight line walks into the wall
+        Assert.NotEqual(straight, preview.FacingPreview);
+        Assert.Equal(C(4, 4).DirectionTo(preview.Path![1]), preview.FacingPreview);
         Assert.True(sim.State.Grid.IsWalkable(preview.Path[1]));
     }
 

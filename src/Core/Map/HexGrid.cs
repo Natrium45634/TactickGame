@@ -5,7 +5,7 @@ using HexTactics.Core.Hex;
 namespace HexTactics.Core.Map;
 
 /// <summary>
-/// Rectangular odd-r map of <see cref="Columns"/> × <see cref="Rows"/> pointy-top hexes.
+/// Rectangular odd-q map of <see cref="Columns"/> × <see cref="Rows"/> flat-top hexes.
 /// Holds the authoritative tile data. Neighbourhood always comes from cube/axial math,
 /// never from how cells are laid out on screen.
 /// </summary>

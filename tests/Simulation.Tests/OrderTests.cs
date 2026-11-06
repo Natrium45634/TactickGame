@@ -108,7 +108,7 @@ public class OrderTests
         Assert.Equal(C(1, 1), _sim.State.GetUnit(_unit).Cell);
 
         _sim.IssueMoveOrder(_unit, C(4, 2), OrderMode.Replace);
-        Assert.False(_sim.RotateInPlace(_unit, HexDirection.East).Success);
+        Assert.False(_sim.RotateInPlace(_unit, HexDirection.NorthEast).Success);
         Assert.Equal(HexDirection.SouthWest, _sim.State.GetUnit(_unit).Facing);
     }
 

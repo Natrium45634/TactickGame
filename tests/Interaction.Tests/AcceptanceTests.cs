@@ -70,7 +70,7 @@ public class AcceptanceTests
         {
             foreach (var n in _map.Grid.NeighborsInBounds(c))
             {
-                Assert.Equal(_layout.HexWidth, _layout.HexToPlane(c).DistanceTo(_layout.HexToPlane(n)), 9);
+                Assert.Equal(_layout.NeighborDistance, _layout.HexToPlane(c).DistanceTo(_layout.HexToPlane(n)), 9);
             }
         }
     }
@@ -96,7 +96,7 @@ public class AcceptanceTests
         Assert.True(_sim.Spawn(SpawnRequest.AtCell(C(6, 6))).Success);
         var before = _sim.State.Units.Select(u => (u.Id, u.Cell)).ToList();
         Assert.False(_sim.Spawn(SpawnRequest.AtCell(C(6, 6))).Success);
-        Assert.False(_sim.Spawn(SpawnRequest.AtCell(C(4, 4))).Success);
+        Assert.False(_sim.Spawn(SpawnRequest.AtCell(C(5, 4))).Success);
         Assert.False(_sim.Spawn(SpawnRequest.AtCell(C(20, 20))).Success);
         Assert.Equal(before, _sim.State.Units.Select(u => (u.Id, u.Cell)).ToList());
     }
@@ -174,7 +174,7 @@ public class AcceptanceTests
 
         var id = Spawn(C(6, 6));
         var other = Spawn(C(7, 6));
-        foreach (var target in new[] { C(-5, 3), C(30, 30), C(7, 6), C(4, 4) })
+        foreach (var target in new[] { C(-5, 3), C(30, 30), C(7, 6), C(5, 4) })
         {
             Drag(AtHex(C(6, 6), id), AtHex(target));
         }

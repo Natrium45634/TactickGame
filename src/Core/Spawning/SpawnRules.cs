@@ -131,7 +131,7 @@ public static class SpawnRules
         var (min, max) = grid.PlaneBounds(UnitLayout);
         var center = new PlaneVector((min.X + max.X) / 2.0, (min.Z + max.Z) / 2.0);
         var d = center - UnitLayout.HexToPlane(cell);
-        return HexDirections.FromPlaneVector(d.X, d.Z, 0.25) ?? HexDirection.East;
+        return HexDirections.FromPlaneVector(d.X, d.Z, 0.25) ?? HexDirection.North;
     }
 
     private static SpawnResolution ResolveInZone(GameState state, IReadOnlyList<HexCoord> zoneCells, HexCoord? requested, SpawnError fullError)

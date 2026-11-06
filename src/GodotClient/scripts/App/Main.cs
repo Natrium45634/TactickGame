@@ -238,6 +238,7 @@ public partial class Main : Node3D
             TileType.Blocked => "непроходимая",
             TileType.PlayerBase => _map.PlayerBase?.Name ?? "база",
             TileType.SpawnZone => _map.FindZone(tile.ZoneId)?.Name ?? $"зона {tile.ZoneId}",
+            TileType.DeployZone => "зона выставления",
             _ => "проходимая",
         };
         var occupant = _sim.State.UnitAt(h) is { } u ? $" · юнит {u.Id}" : string.Empty;
@@ -260,7 +261,7 @@ public partial class Main : Node3D
     {
         if (_fsm.SelectedUnit is { } id && _sim.State.FindUnit(id) is { } unit)
         {
-            _sim.SetFacing(id, unit.Facing.RotateCounterClockwise(steps));
+            _sim.SetFacing(id, unit.Facing.RotateClockwise(steps));
         }
     }
 
@@ -308,10 +309,10 @@ public partial class Main : Node3D
         switch (key)
         {
             case Key.Q:
-                RotateSelected(+1);
+                RotateSelected(-1); // counter-clockwise
                 break;
             case Key.E:
-                RotateSelected(-1);
+                RotateSelected(+1); // clockwise
                 break;
             case Key.P:
                 _fsm.TogglePlacementMode();
@@ -450,6 +451,7 @@ public partial class Main : Node3D
         _hud.AddLegendItem(VisualConfig.TileWalkable, "Проходимая");
         _hud.AddLegendItem(VisualConfig.TileBlocked, "Препятствие");
         _hud.AddLegendItem(VisualConfig.TilePlayerBase, _map.PlayerBase?.Name ?? "База игрока");
+        _hud.AddLegendItem(VisualConfig.TileDeployZone, "Зона выставления");
         _hud.AddLegendItem(VisualConfig.TileSpawnZone, "Зона появления (край)");
         _hud.AddSeparator();
         _statusLabel = _hud.AddLabel(string.Empty, dim: true, fontSize: 12);

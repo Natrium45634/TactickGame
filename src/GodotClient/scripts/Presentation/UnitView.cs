@@ -5,15 +5,21 @@ using HexTactics.Core.Units;
 namespace HexTactics.Client.Presentation;
 
 /// <summary>
-/// Visual of one unit built from primitive shapes: a cylinder body with a white arrow on its top cap
-/// and a flat arrow on the ground in front of it showing the facing; a thin ring marks selection.
+/// Visual of one unit built from primitive shapes: a cylinder body and — as the facing indicator — a
+/// small white arrow at the edge of its hex in the direction it looks; a thin ring marks selection.
 /// Purely visual: position and facing come from <see cref="UnitState"/>.
 /// </summary>
 public partial class UnitView : Node3D
 {
-    public const float BodyRadius = 0.32f;
+    public const float BodyRadius = 0.28f;
     public const float BodyHeight = 0.5f;
     public const float PickRadius = 0.42f;
+
+    // Edge indicator geometry (local +X = facing); the hex edge is at the apothem ≈ 0.866.
+    private const float IndicatorTip = 0.80f;
+    private const float IndicatorBack = 0.58f;
+    private const float IndicatorNotch = 0.64f;
+    private const float IndicatorHalfWidth = 0.15f;
 
     private Node3D _facingPivot = null!;
     private MeshInstance3D _selectionRing = null!;
@@ -47,30 +53,37 @@ public partial class UnitView : Node3D
         _facingPivot = new Node3D { Name = "Facing" };
         AddChild(_facingPivot);
 
-        var pointerMaterial = new StandardMaterial3D
-        {
-            AlbedoColor = VisualConfig.UnitFacingPointer,
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-        };
-
-        // Arrow painted on the top cap: visible from the 60° camera for all six directions.
+        // Facing indicator (spec part 2 §3.2): a small white arrow lying on the ground right at the
+        // edge of the unit's hex it looks at, with a thin dark outline for readability. Always visible,
+        // much smaller than the wide movement arrows.
         _facingPivot.AddChild(new MeshInstance3D
         {
-            Name = "TopPointer",
-            Mesh = BuildDart(tip: 0.28f, back: -0.22f, notch: -0.09f, halfWidth: 0.14f),
-            MaterialOverride = pointerMaterial,
-            Position = new Vector3(0, BodyHeight + 0.004f, 0),
+            Name = "EdgeIndicatorOutline",
+            Mesh = BuildDart(tip: IndicatorTip + 0.05f, back: IndicatorBack - 0.045f, notch: IndicatorNotch - 0.03f, halfWidth: IndicatorHalfWidth + 0.05f),
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = VisualConfig.FacingIndicatorOutline,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                RenderPriority = 4,
+            },
+            Position = new Vector3(0, 0.010f, 0),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
-
-        // Flat arrow on the ground in front of the unit, pointing at the neighbouring hex.
         _facingPivot.AddChild(new MeshInstance3D
         {
-            Name = "GroundPointer",
-            Mesh = BuildDart(tip: 0.86f, back: 0.56f, notch: 0.63f, halfWidth: 0.17f),
-            MaterialOverride = pointerMaterial,
-            Position = new Vector3(0, 0.012f, 0),
+            Name = "EdgeIndicator",
+            Mesh = BuildDart(tip: IndicatorTip, back: IndicatorBack, notch: IndicatorNotch, halfWidth: IndicatorHalfWidth),
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = VisualConfig.UnitFacingPointer,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                RenderPriority = 5,
+            },
+            Position = new Vector3(0, 0.014f, 0),
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         });
 

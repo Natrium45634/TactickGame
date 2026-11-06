@@ -4,19 +4,19 @@ using System.Collections.Generic;
 namespace HexTactics.Core.Hex;
 
 /// <summary>
-/// The six discrete directions of a pointy-top hex, counter-clockwise starting from East
-/// (screen "north" = up = decreasing row). This is also the unit facing type
-/// (the spec's <c>FacingDirection</c>): a unit can only face one of these six neighbours.
-/// The numeric order is the fixed neighbour processing order used by path finding.
+/// The six discrete directions of a <b>flat-top</b> hex. Each direction points from the hex centre to
+/// the middle of one of its six edges (and to the neighbour behind that edge): the flat top edge is
+/// <see cref="North"/>. Order: clockwise starting at North. This is also the unit facing type (the
+/// spec's <c>FacingDirection</c>) and the fixed neighbour processing order used by path finding.
 /// </summary>
 public enum HexDirection
 {
-    East = 0,
+    North = 0,
     NorthEast = 1,
-    NorthWest = 2,
-    West = 3,
+    SouthEast = 2,
+    South = 3,
     SouthWest = 4,
-    SouthEast = 5,
+    NorthWest = 5,
 }
 
 public static class HexDirections
@@ -25,29 +25,30 @@ public static class HexDirections
 
     public static readonly IReadOnlyList<HexDirection> All = new[]
     {
-        HexDirection.East,
+        HexDirection.North,
         HexDirection.NorthEast,
-        HexDirection.NorthWest,
-        HexDirection.West,
-        HexDirection.SouthWest,
         HexDirection.SouthEast,
+        HexDirection.South,
+        HexDirection.SouthWest,
+        HexDirection.NorthWest,
     };
 
     public static HexDirection Opposite(this HexDirection direction) => (HexDirection)(((int)direction + 3) % Count);
 
-    public static HexDirection RotateCounterClockwise(this HexDirection direction, int steps = 1) =>
+    /// <summary>Rotates by <paramref name="steps"/> × 60° clockwise (negative = counter-clockwise).</summary>
+    public static HexDirection RotateClockwise(this HexDirection direction, int steps = 1) =>
         (HexDirection)((((int)direction + steps) % Count + Count) % Count);
 
     /// <summary>
-    /// Angle of the direction on the map plane in degrees, counter-clockwise from East,
-    /// with "north" (towards row 0) being +90°.
+    /// Angle of the direction on the map plane in degrees, counter-clockwise from East with "north"
+    /// (towards row 0, the top edge) being +90°: N 90°, NE 30°, SE −30°, S −90°, SW −150°, NW 150°.
     /// </summary>
-    public static double AngleDegrees(this HexDirection direction) => (int)direction * 60.0;
+    public static double AngleDegrees(this HexDirection direction) => 90.0 - ((int)direction * 60.0);
 
     /// <summary>
-    /// Quantises an arbitrary vector on the map plane into one of the six directions.
+    /// Quantises an arbitrary vector on the map plane into one of the six edge directions.
     /// <paramref name="x"/> points east, <paramref name="z"/> points south (towards higher rows),
-    /// matching <see cref="PlaneVector"/>. This uses map-plane geometry, never screen angles.
+    /// matching <see cref="PlaneVector"/>. Uses map-plane geometry, never screen angles.
     /// Returns null for a (near) zero vector.
     /// </summary>
     public static HexDirection? FromPlaneVector(double x, double z, double epsilon = 1e-9)
@@ -58,18 +59,18 @@ public static class HexDirections
         }
 
         var angle = Math.Atan2(-z, x) * 180.0 / Math.PI; // north (negative z) is +90°
-        var sector = (int)Math.Round(angle / 60.0, MidpointRounding.AwayFromZero);
+        var sector = (int)Math.Round((90.0 - angle) / 60.0, MidpointRounding.AwayFromZero);
         return (HexDirection)(((sector % Count) + Count) % Count);
     }
 
     public static string ShortName(this HexDirection direction) => direction switch
     {
-        HexDirection.East => "E",
+        HexDirection.North => "N",
         HexDirection.NorthEast => "NE",
-        HexDirection.NorthWest => "NW",
-        HexDirection.West => "W",
-        HexDirection.SouthWest => "SW",
         HexDirection.SouthEast => "SE",
+        HexDirection.South => "S",
+        HexDirection.SouthWest => "SW",
+        HexDirection.NorthWest => "NW",
         _ => direction.ToString(),
     };
 }

@@ -4,23 +4,23 @@ using System.Collections.Generic;
 namespace HexTactics.Core.Hex;
 
 /// <summary>
-/// Axial hex coordinate (pointy-top). The implicit third cube coordinate is
-/// <see cref="S"/> = -Q - R. All game rules (neighbours, distance, path finding)
-/// work in this space; offset coordinates are only used for storage / display.
+/// Axial hex coordinate of a <b>flat-top</b> grid. The implicit third cube coordinate is
+/// <see cref="S"/> = -Q - R. All game rules (neighbours, distance, path finding) work in this space;
+/// offset coordinates (odd-q) are only used for storage / display.
 /// </summary>
 public readonly record struct HexCoord(int Q, int R) : IComparable<HexCoord>
 {
     public int S => -Q - R;
 
-    /// <summary>Axial offsets for the six neighbours, indexed by <see cref="HexDirection"/>.</summary>
+    /// <summary>Axial offsets for the six neighbours, indexed by <see cref="HexDirection"/> (flat-top).</summary>
     private static readonly HexCoord[] DirectionOffsets =
     {
-        new(+1, 0),  // East
+        new(0, -1),  // North
         new(+1, -1), // NorthEast
-        new(0, -1),  // NorthWest
-        new(-1, 0),  // West
+        new(+1, 0),  // SouthEast
+        new(0, +1),  // South
         new(-1, +1), // SouthWest
-        new(0, +1),  // SouthEast
+        new(-1, 0),  // NorthWest
     };
 
     public static HexCoord operator +(HexCoord a, HexCoord b) => new(a.Q + b.Q, a.R + b.R);
@@ -64,19 +64,19 @@ public readonly record struct HexCoord(int Q, int R) : IComparable<HexCoord>
         return null;
     }
 
-    /// <summary>Converts odd-r offset coordinates (odd rows shifted right by half a hex).</summary>
+    /// <summary>Converts odd-q offset coordinates (flat-top; odd columns shifted down by half a hex).</summary>
     public static HexCoord FromOffset(OffsetCoord offset)
     {
-        var q = offset.Col - ((offset.Row - (offset.Row & 1)) / 2);
-        return new HexCoord(q, offset.Row);
+        var r = offset.Row - ((offset.Col - (offset.Col & 1)) / 2);
+        return new HexCoord(offset.Col, r);
     }
 
     public static HexCoord FromOffset(int col, int row) => FromOffset(new OffsetCoord(col, row));
 
     public OffsetCoord ToOffset()
     {
-        var col = Q + ((R - (R & 1)) / 2);
-        return new OffsetCoord(col, R);
+        var row = R + ((Q - (Q & 1)) / 2);
+        return new OffsetCoord(Q, row);
     }
 
     /// <summary>Rounds fractional cube coordinates to the nearest hex.</summary>

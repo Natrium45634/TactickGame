@@ -17,7 +17,7 @@ public class MovementTests
 {
     private static HexCoord C(int col, int row) => HexCoord.FromOffset(col, row);
 
-    private static UnitId Spawn(GameSimulation sim, HexCoord cell, HexDirection facing = HexDirection.East) =>
+    private static UnitId Spawn(GameSimulation sim, HexCoord cell, HexDirection facing = HexDirection.NorthEast) =>
         sim.Spawn(SpawnRequest.AtCell(cell, facing: facing)).Unit!.Value;
 
     /// <summary>Steps until the unit has no orders (or the limit), checking invariants on every tick.</summary>
@@ -139,7 +139,7 @@ public class MovementTests
     public void Facing_follows_each_step()
     {
         var sim = new GameSimulation(TestMaps.LoadPrototype());
-        var id = Spawn(sim, C(2, 4), HexDirection.West);
+        var id = Spawn(sim, C(2, 4), HexDirection.SouthWest);
         sim.IssueMoveOrder(id, C(6, 4), OrderMode.Replace);
         var u = sim.State.GetUnit(id);
         for (var i = 0; i < 600 && !u.Orders.IsEmpty; i++)
@@ -293,7 +293,7 @@ public class MovementTests
         var id = Spawn(sim, C(2, 5));
         sim.IssueMoveOrder(id, C(3, 5), OrderMode.Replace);
         sim.Step();
-        Assert.False(sim.RotateInPlace(id, HexDirection.West).Success);
+        Assert.False(sim.RotateInPlace(id, HexDirection.SouthWest).Success);
     }
 
     [Fact]

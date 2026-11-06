@@ -36,17 +36,17 @@ public class FacingTests
     public void Invalid_facing_or_unit_is_rejected()
     {
         var sim = new GameSimulation(TestMaps.Empty());
-        var id = sim.Spawn(SpawnRequest.AtCell(HexCoord.FromOffset(1, 1), facing: HexDirection.West)).Unit!.Value;
+        var id = sim.Spawn(SpawnRequest.AtCell(HexCoord.FromOffset(1, 1), facing: HexDirection.SouthWest)).Unit!.Value;
         Assert.False(sim.SetFacing(id, (HexDirection)6).Success);
-        Assert.False(sim.SetFacing(new Core.Units.UnitId(999), HexDirection.East).Success);
-        Assert.Equal(HexDirection.West, sim.State.GetUnit(id).Facing);
+        Assert.False(sim.SetFacing(new Core.Units.UnitId(999), HexDirection.NorthEast).Success);
+        Assert.Equal(HexDirection.SouthWest, sim.State.GetUnit(id).Facing);
     }
 
     [Fact]
     public void Facing_change_emits_event_once()
     {
         var sim = new GameSimulation(TestMaps.Empty());
-        var id = sim.Spawn(SpawnRequest.AtCell(HexCoord.FromOffset(1, 1), facing: HexDirection.East)).Unit!.Value;
+        var id = sim.Spawn(SpawnRequest.AtCell(HexCoord.FromOffset(1, 1), facing: HexDirection.NorthEast)).Unit!.Value;
         sim.DrainEvents();
         sim.SetFacing(id, HexDirection.SouthWest);
         sim.SetFacing(id, HexDirection.SouthWest);
@@ -55,8 +55,9 @@ public class FacingTests
     }
 
     [Theory]
-    [InlineData(0, 5, HexDirection.East)]   // left edge looks east
-    [InlineData(11, 4, HexDirection.West)]  // right edge looks west
+    [InlineData(0, 0, HexDirection.SouthEast)]  // top-left corner looks towards the centre
+    [InlineData(11, 9, HexDirection.NorthWest)] // bottom-right corner
+    [InlineData(6, 0, HexDirection.South)]      // top edge, middle
     public void Default_facing_points_towards_map_center(int col, int row, HexDirection expected)
     {
         var sim = new GameSimulation(TestMaps.Empty());

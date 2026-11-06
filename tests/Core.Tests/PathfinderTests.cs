@@ -75,8 +75,8 @@ public class PathfinderTests
     public void Shortest_detour_around_wall_on_prototype_map()
     {
         var grid = TestMaps.LoadPrototype().Grid;
-        // The wall at column 4 (rows 2..6) lies between these hexes.
-        var a = C(2, 4);
+        // The straight wall at column 5 (rows 2..7) lies between these hexes.
+        var a = C(4, 4);
         var b = C(6, 4);
         var path = Pathfinder.FindPath(grid, a, b)!;
         AssertValidPath(grid, path, a, b);
@@ -99,7 +99,7 @@ public class PathfinderTests
     public void Blocked_or_outside_goal_returns_null()
     {
         var grid = TestMaps.LoadPrototype().Grid;
-        Assert.Null(Pathfinder.FindPath(grid, C(0, 0), C(4, 4)));
+        Assert.Null(Pathfinder.FindPath(grid, C(0, 0), C(5, 4)));
         Assert.Null(Pathfinder.FindPath(grid, C(0, 0), C(12, 4)));
         Assert.Null(Pathfinder.FindPath(grid, C(0, 0), C(-1, -1)));
     }
@@ -136,9 +136,24 @@ public class PathfinderTests
     public void Equal_length_alternatives_prefer_the_straight_line()
     {
         var grid = TestMaps.Empty().Grid;
-        // Straight east along a row: the unique straight path is preferred among many equal-length zig-zags.
-        var path = Pathfinder.FindPath(grid, C(1, 4), C(9, 4))!;
-        Assert.All(path, c => Assert.Equal(4, c.ToOffset().Row));
+        // Straight south along a column (flat-top: N/S neighbours share the column).
+        var path = Pathfinder.FindPath(grid, C(4, 1), C(4, 8))!;
+        Assert.All(path, c => Assert.Equal(4, c.ToOffset().Col));
+
+        // A long diagonal: among many equal-length paths the one hugging the straight line wins
+        // (no hex of the path is farther than one hex from the line).
+        var layout = new HexLayout(1.0);
+        var a = C(0, 9);
+        var b = C(11, 0);
+        var diag = Pathfinder.FindPath(grid, a, b)!;
+        var pa = layout.HexToPlane(a);
+        var line = layout.HexToPlane(b) - pa;
+        foreach (var c in diag)
+        {
+            var p = layout.HexToPlane(c) - pa;
+            var deviation = System.Math.Abs((p.X * line.Z) - (p.Z * line.X)) / line.Length;
+            Assert.True(deviation <= layout.NeighborDistance, $"{c} deviates {deviation:0.00}");
+        }
     }
 
     [Fact]

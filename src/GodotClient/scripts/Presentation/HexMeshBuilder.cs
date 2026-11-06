@@ -43,10 +43,11 @@ public static class HexMeshBuilder
 
             for (var i = 0; i < 6; i++)
             {
-                // Clockwise when seen from above (Godot front faces are clockwise).
+                // Corners run counter-clockwise on screen (flat-top layout), Godot front faces are
+                // clockwise when seen from above: emit (centre, next corner, corner).
                 indices.Add(baseIndex);
-                indices.Add(baseIndex + 1 + i);
                 indices.Add(baseIndex + 1 + ((i + 1) % 6));
+                indices.Add(baseIndex + 1 + i);
             }
 
             // Side faces (hidden ones between neighbours are fully enclosed and never visible).
@@ -61,12 +62,13 @@ public static class HexMeshBuilder
                 AddVertex(a.ToWorld(top), n, sideColor, new Vector2(NoLine, 0));
                 AddVertex(a.ToWorld(bottom), n, sideColor, new Vector2(NoLine, 0));
                 AddVertex(b.ToWorld(bottom), n, sideColor, new Vector2(NoLine, 0));
+                // Outward-facing quad for counter-clockwise corner order.
                 indices.Add(s);
+                indices.Add(s + 2);
                 indices.Add(s + 1);
-                indices.Add(s + 2);
                 indices.Add(s);
-                indices.Add(s + 2);
                 indices.Add(s + 3);
+                indices.Add(s + 2);
             }
         }
 
@@ -101,8 +103,8 @@ public static class HexMeshBuilder
         for (var i = 0; i < 6; i++)
         {
             indices.Add(0);
-            indices.Add(1 + i);
             indices.Add(1 + ((i + 1) % 6));
+            indices.Add(1 + i);
         }
 
         return Commit(verts, normals, colors, uvs, indices);

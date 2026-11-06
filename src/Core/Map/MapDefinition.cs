@@ -12,13 +12,17 @@ public sealed record PlayerBaseDefinition(string Name, IReadOnlyList<HexCoord> C
 /// <summary>Everything a level contributes: terrain plus named spawn locations.</summary>
 public sealed class MapDefinition
 {
-    public MapDefinition(string name, HexGrid grid, IReadOnlyList<SpawnZoneDefinition> spawnZones, PlayerBaseDefinition? playerBase)
+    public MapDefinition(string name, HexGrid grid, IReadOnlyList<SpawnZoneDefinition> spawnZones, PlayerBaseDefinition? playerBase, IReadOnlyList<HexCoord>? deployCells = null)
     {
         Name = name;
         Grid = grid;
         SpawnZones = spawnZones;
         PlayerBase = playerBase;
+        DeployCells = deployCells ?? System.Array.Empty<HexCoord>();
     }
+
+    /// <summary>Extra hexes where the player may deploy units from the roster (besides the base), row-major.</summary>
+    public IReadOnlyList<HexCoord> DeployCells { get; }
 
     public string Name { get; }
 

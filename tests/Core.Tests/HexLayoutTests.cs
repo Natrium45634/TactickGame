@@ -20,22 +20,41 @@ public class HexLayoutTests
     }
 
     [Fact]
-    public void Odd_rows_are_shifted_right_by_half_width()
+    public void Odd_columns_are_shifted_down_by_half_a_hex_height()
     {
         var a = _layout.HexToPlane(HexCoord.FromOffset(0, 0));
-        var b = _layout.HexToPlane(HexCoord.FromOffset(0, 1));
-        Assert.Equal(_layout.HexWidth / 2.0, b.X - a.X, 9);
-        Assert.Equal(_layout.RowSpacing, b.Z - a.Z, 9);
+        var b = _layout.HexToPlane(HexCoord.FromOffset(1, 0));
+        var c = _layout.HexToPlane(HexCoord.FromOffset(0, 1));
+        Assert.Equal(_layout.ColumnSpacing, b.X - a.X, 9);
+        Assert.Equal(_layout.HexHeight / 2.0, b.Z - a.Z, 9);
+        Assert.Equal(0.0, c.X - a.X, 9);
+        Assert.Equal(_layout.HexHeight, c.Z - a.Z, 9);
     }
 
     [Fact]
-    public void Adjacent_centers_are_exactly_one_hex_width_apart_so_there_are_no_gaps()
+    public void Adjacent_centers_are_equally_spaced_so_there_are_no_gaps()
     {
         var c = HexCoord.FromOffset(5, 4);
         foreach (var n in c.Neighbors())
         {
-            Assert.Equal(_layout.HexWidth, _layout.HexToPlane(c).DistanceTo(_layout.HexToPlane(n)), 9);
+            Assert.Equal(_layout.NeighborDistance, _layout.HexToPlane(c).DistanceTo(_layout.HexToPlane(n)), 9);
         }
+
+        Assert.Equal(2 * _layout.Apothem, _layout.NeighborDistance, 9);
+    }
+
+    [Fact]
+    public void Flat_top_hex_has_horizontal_top_and_bottom_edges()
+    {
+        var h = new HexCoord(0, 0);
+        // Corners 1-2 form the top edge, 4-5 the bottom edge: equal Z within each pair.
+        Assert.Equal(_layout.Corner(h, 1).Z, _layout.Corner(h, 2).Z, 9);
+        Assert.Equal(_layout.Corner(h, 4).Z, _layout.Corner(h, 5).Z, 9);
+        Assert.Equal(-_layout.Apothem, _layout.Corner(h, 1).Z, 9);
+        // Corner 0 is the east vertex, corner 3 the west vertex.
+        Assert.Equal(new PlaneVector(1, 0), _layout.Corner(h, 0));
+        Assert.Equal(-1.0, _layout.Corner(h, 3).X, 9);
+        Assert.Equal(0.0, _layout.Corner(h, 3).Z, 9);
     }
 
     [Fact]
@@ -45,43 +64,50 @@ public class HexLayoutTests
         var center = _layout.HexToPlane(hex);
         for (var i = 0; i < 6; i++)
         {
-            // 95% of the way to every corner is still inside this hex.
             var corner = _layout.Corner(hex, i);
-            var inside = PlaneVector.Lerp(center, corner, 0.95);
-            Assert.Equal(hex, _layout.PlaneToHex(inside));
+            Assert.Equal(hex, _layout.PlaneToHex(PlaneVector.Lerp(center, corner, 0.95)));
 
-            // 5% beyond an edge midpoint is in the neighbour.
             var dir = HexDirections.All[i];
             var beyond = center + (HexLayout.DirectionVector(dir) * (_layout.Apothem * 1.05));
             Assert.Equal(hex.Neighbor(dir), _layout.PlaneToHex(beyond));
+            Assert.Equal(hex, _layout.PlaneToHex(center + (HexLayout.DirectionVector(dir) * (_layout.Apothem * 0.95))));
         }
     }
 
     [Fact]
-    public void Corner_zero_is_the_top_vertex_for_pointy_top_hexes()
+    public void Each_direction_points_at_the_middle_of_one_edge()
     {
-        var c = _layout.Corner(new HexCoord(0, 0), 0);
-        Assert.Equal(0.0, c.X, 9);
-        Assert.Equal(-1.0, c.Z, 9);
+        var hex = HexCoord.FromOffset(4, 4);
+        for (var i = 0; i < 6; i++)
+        {
+            // Edge between corners i and i+1 faces direction NE, N, NW, SW, S, SE respectively.
+            var mid = PlaneVector.Lerp(_layout.Corner(hex, i), _layout.Corner(hex, (i + 1) % 6), 0.5);
+            var d = mid - _layout.HexToPlane(hex);
+            var dir = HexDirections.FromPlaneVector(d.X, d.Z)!.Value;
+            Assert.Equal(_layout.EdgeMidpoint(hex, dir).X, mid.X, 9);
+            Assert.Equal(_layout.EdgeMidpoint(hex, dir).Z, mid.Z, 9);
+        }
+
+        Assert.Equal(HexDirection.North, HexDirections.FromPlaneVector(0, -1)); // the flat top edge
     }
 
     [Fact]
-    public void Map_bounds_are_compact_rectangle_about_12_5_by_15_5()
+    public void Map_bounds_are_compact_rectangle_18_5_by_10_5_sqrt3()
     {
         var grid = new HexGrid(12, 10);
         var (min, max) = grid.PlaneBounds(_layout);
-        Assert.Equal(12.5 * Math.Sqrt(3), max.X - min.X, 6);
-        Assert.Equal(15.5, max.Z - min.Z, 6);
+        Assert.Equal(18.5, max.X - min.X, 6);
+        Assert.Equal(10.5 * Math.Sqrt(3), max.Z - min.Z, 6);
     }
 
     [Theory]
-    [InlineData(1, 0, HexDirection.East)]
-    [InlineData(1, -1.7, HexDirection.NorthEast)]
-    [InlineData(-1, -1.7, HexDirection.NorthWest)]
-    [InlineData(-1, 0.1, HexDirection.West)]
-    [InlineData(-1, 1.7, HexDirection.SouthWest)]
-    [InlineData(1, 1.7, HexDirection.SouthEast)]
-    public void Plane_vector_quantises_to_six_directions(double x, double z, HexDirection expected)
+    [InlineData(0, -1, HexDirection.North)]
+    [InlineData(1, -0.5, HexDirection.NorthEast)]
+    [InlineData(1, 0.5, HexDirection.SouthEast)]
+    [InlineData(0.1, 1, HexDirection.South)]
+    [InlineData(-1, 0.5, HexDirection.SouthWest)]
+    [InlineData(-1, -0.5, HexDirection.NorthWest)]
+    public void Plane_vector_quantises_to_six_edge_directions(double x, double z, HexDirection expected)
     {
         Assert.Equal(expected, HexDirections.FromPlaneVector(x, z));
     }
