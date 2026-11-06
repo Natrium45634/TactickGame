@@ -46,6 +46,7 @@ public partial class Main : Node3D
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
     private RosterBar _rosterBar = null!;
+    private WaypointMenuPanel _waypointMenu = null!;
     private AutomationRunner _automation = null!;
 
     private Label _cellLabel = null!;
@@ -140,6 +141,10 @@ public partial class Main : Node3D
         _rosterBar.Initialize(_sim.State.Roster);
         _rosterBar.CardPressed += OnRosterCardPressed;
         _rosterBar.CommandPressed += () => _fsm.ToggleGroupMode();
+        _waypointMenu = new WaypointMenuPanel { Name = "WaypointMenu" };
+        _waypointMenu.SkillPressed += () => _fsm.BeginWaypointSkillAim(HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
+        _waypointMenu.ClearPressed += () => _fsm.ClearWaypointSkillFromMenu();
+        AddChild(_waypointMenu);
         AddChild(_rosterBar);
 
         _input = new PointerInput { Name = "PointerInput" };
@@ -177,6 +182,8 @@ public partial class Main : Node3D
         _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview, group?.Members);
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition, _fsm.SkillAim);
         UpdateSkillAreas();
+        _waypointMenu.UiScale = _hud.UiScale;
+        _waypointMenu.Sync(_fsm.WaypointMenu, _cameraRig.Camera, _layout);
         _motionDebug.Sync(_sim.State, u => _units.PositionOf(u, interpolation));
         _healthBars.UiScale = _hud.UiScale;
         _healthBars.Sync(_sim.State, _cameraRig.Camera, u => _units.PositionOf(u, interpolation), _fsm.SelectedUnit);
@@ -312,23 +319,66 @@ public partial class Main : Node3D
     }
 
     /// <summary>
-    /// Grey hit areas (spec part 3 §5.2): the area being aimed (stronger) and the planned, not yet fired skill uses of all
-    /// units (lighter, computed from where they will fire). Fired actions disappear at once.
+    /// Grey hit areas (spec part 3 §5.2, §6.4) — on their own layer, never mixed into the green/red movement fills:
+    /// <list type="bullet">
+    /// <item>the area being aimed (stronger grey);</item>
+    /// <item>planned, not yet fired uses (lighter): immediate uses of all units; the waypoint skills of the selected
+    /// unit's route — the selected / menu waypoint brighter;</item>
+    /// <item>while a draft shows the movement fills, only the skill of the waypoint under the cursor or with its menu open.</item>
+    /// </list>
+    /// Areas of waypoint skills are computed from the waypoint, not from the unit walking to it. Fired actions vanish.
     /// </summary>
     private void UpdateSkillAreas()
     {
-        var aim = _fsm.SkillAim;
-        var planned = new System.Collections.Generic.List<HexCoord>();
-        foreach (var unit in _sim.State.Units)
+        var strong = new System.Collections.Generic.List<HexCoord>();
+        var dim = new System.Collections.Generic.List<HexCoord>();
+        var skills = _sim.Settings.Skills;
+        void Add(System.Collections.Generic.List<HexCoord> into, string skillId, HexCoord origin, HexDirection direction)
         {
-            if (unit.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } action
-                && _sim.Settings.Skills.TryGetValue(action.SkillId, out var skill))
+            if (skills.TryGetValue(skillId, out var skill))
             {
-                planned.AddRange(skill.Area(_sim.CommandAnchor(unit.Id), action.Direction, _map.Grid));
+                into.AddRange(skill.Area(origin, direction, _map.Grid));
             }
         }
 
-        var stamp = $"{string.Join(';', aim?.Area ?? System.Array.Empty<HexCoord>())}|{string.Join(';', planned)}";
+        if (_fsm.SkillAim is { } aim)
+        {
+            strong.AddRange(aim.Area);
+        }
+
+        foreach (var unit in _sim.State.Units)
+        {
+            if (unit.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } action)
+            {
+                Add(dim, action.SkillId, _sim.CommandAnchor(unit.Id), action.Direction);
+            }
+        }
+
+        var menu = _fsm.WaypointMenu;
+        if (_fsm.Draft is { Skills: { } draftSkills } draftView)
+        {
+            foreach (var (index, spec) in draftSkills)
+            {
+                var focused = draftView.HoverMarker == index || menu?.DraftIndex == index;
+                if (focused && index < draftView.Waypoints.Count && _fsm.SkillAim is null)
+                {
+                    Add(strong, spec.SkillId, draftView.Waypoints[index], spec.Direction);
+                }
+            }
+        }
+        else if (_fsm.SelectedUnit is { } selectedId && _sim.State.FindUnit(selectedId) is { } selected)
+        {
+            foreach (var wp in selected.Orders.Items)
+            {
+                if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } planned)
+                {
+                    var focused = wp.Id == _fsm.SelectedWaypointId || wp.Id == menu?.WaypointId;
+                    Add(focused && _fsm.SkillAim is null ? strong : dim, planned.SkillId, wp.Cell, planned.Direction);
+                }
+            }
+        }
+
+        var stamp = $"{string.Join(';', strong)}|{string.Join(';', dim)}";
         if (stamp == _skillStamp)
         {
             return;
@@ -336,12 +386,12 @@ public partial class Main : Node3D
 
         _skillStamp = stamp;
         _skillLayer.ClearAll();
-        foreach (var cell in planned)
+        foreach (var cell in dim)
         {
             _skillLayer.SetFill(cell, VisualConfig.SkillAreaPlanned);
         }
 
-        foreach (var cell in aim?.Area ?? System.Array.Empty<HexCoord>())
+        foreach (var cell in strong)
         {
             _skillLayer.SetFill(cell, VisualConfig.SkillAreaAim);
         }
@@ -422,7 +472,7 @@ public partial class Main : Node3D
         }
     }
 
-    private bool IsOverUi(Vector2 position) => _hud.IsOverUi(position) || _rosterBar.IsOverUi(position);
+    private bool IsOverUi(Vector2 position) => _hud.IsOverUi(position) || _rosterBar.IsOverUi(position) || _waypointMenu.IsOverUi(position);
 
     /// <summary>
     /// Test stand of spec part 3 §9: static enemy targets (no AI) next to the wall corner and in the open, so attacks,
@@ -539,6 +589,20 @@ public partial class Main : Node3D
                 break;
             case RosterUnitPlaced r:
                 ShowMessage($"«{RosterName(r.RosterEntry)}» на {UiText.Cell(r.Cell)}. Клик по зелёной — ТД1, у ребра клетки — взгляд (обязателен).", false);
+                break;
+            case WaypointMenuOpened m:
+                ShowMessage($"ТД{m.Number}: действие в точке — ✦ навык (ПКМ/Esc — закрыть).", false);
+                break;
+            case WaypointSkillPlanned p:
+                ShowMessage(p.InDraft
+                    ? $"ТД{p.Number}: «Линейный удар» {UiText.Direction(p.Direction)} — применится вместе с приказом. Дальше — ТД или взгляд у ребра последней ТД."
+                    : $"ТД{p.Number}: «Линейный удар» {UiText.Direction(p.Direction)} — юнит ударит, дойдя до ТД, и пойдёт дальше.", false);
+                break;
+            case WaypointSkillCleared c:
+                ShowMessage($"ТД{c.Number}: навык убран, точка осталась.", false);
+                break;
+            case SkillAimStarted when _fsm.SkillAim?.FromWaypoint == true:
+                ShowMessage("Навык в ТД: красная стрелка от ТД — выберите направление, ЛКМ — подтвердить, ПКМ/Esc — отменить только навык.", false);
                 break;
             case SkillAimStarted:
                 ShowMessage("Линейный удар: наведите курсор в сторону удара — серые две клетки будут поражены. ЛКМ — применить, ПКМ/Esc — отмена.", false);
@@ -991,6 +1055,17 @@ public partial class Main : Node3D
                     return 2;
                 }
 
+            case "menu-skill":
+            case "menu-clear":
+                {
+                    // Presses the real button of the open waypoint menu.
+                    var p = parts[0] == "menu-skill" ? _waypointMenu.SkillButtonCenter : _waypointMenu.ClearButtonCenter;
+                    InjectMotion(p);
+                    InjectButton(p, MouseButton.Left, true);
+                    InjectButton(p, MouseButton.Left, false);
+                    return 2;
+                }
+
             case "command":
                 {
                     // Presses the real "Команда" card in the bottom bar.
@@ -1106,7 +1181,8 @@ public partial class Main : Node3D
     /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
     /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no · expect:facing-near:ID:Dir ·
     /// expect:arrived:ID:SECONDS (game time from mark to the unit's arrival) · expect:in-cell:ID · expect:hp:ID:N ·
-    /// expect:alive:ID:yes|no · expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable
+    /// expect:alive:ID:yes|no · expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable ·
+    /// expect:menu:none|open[:N] · expect:wpskills:ID:N · expect:draft-skills:N
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -1200,6 +1276,23 @@ public partial class Main : Node3D
             case "hp":
                 actual = Unit(1)?.CurrentHealth.ToString(CultureInfo.InvariantCulture) ?? "none";
                 ok = actual == a[2];
+                break;
+            case "menu":
+                actual = _fsm.WaypointMenu is { } openMenu ? $"open:{openMenu.Number}" : "none";
+                ok = a[1] == "none" ? actual == "none" : actual.StartsWith("open", StringComparison.Ordinal) && (a.Length < 3 || actual == $"open:{a[2]}");
+                break;
+            case "wpskills":
+                {
+                    // expect:wpskills:ID:N — planned skills on the unit's waypoints
+                    var u = Unit(1);
+                    actual = u is null ? "none" : System.Linq.Enumerable.Count(u.Orders.Items, w => w.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned }).ToString(CultureInfo.InvariantCulture);
+                    ok = actual == a[2];
+                    break;
+                }
+
+            case "draft-skills":
+                actual = _fsm.Draft?.Skills?.Count.ToString(CultureInfo.InvariantCulture) ?? "none";
+                ok = actual == a[1];
                 break;
             case "pending-skill":
                 actual = Unit(1)?.PendingSkill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } ? "yes" : "no";

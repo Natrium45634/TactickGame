@@ -50,6 +50,9 @@ public enum WaitReason
 
     /// <summary>Command order: stepped aside and waits until the teammate it made way for has passed.</summary>
     Yielding = 4,
+
+    /// <summary>At a waypoint with a planned skill: fires it (one tick), then continues (spec part 3 §6.1, §7).</summary>
+    Skill = 5,
 }
 
 /// <summary>

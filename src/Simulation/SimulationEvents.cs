@@ -101,7 +101,10 @@ public enum AttackLostReason
 }
 
 /// <summary>A skill use was planned (immediate use or, later, at a waypoint).</summary>
-public sealed record SkillPlanned(long Tick, UnitId Unit, int ActionId, string SkillId, HexDirection Direction) : SimulationEvent(Tick);
+public sealed record SkillPlanned(long Tick, UnitId Unit, int ActionId, string SkillId, HexDirection Direction, int? WaypointId = null) : SimulationEvent(Tick);
+
+/// <summary>The skill planned at a waypoint was removed (by the player or with its waypoint).</summary>
+public sealed record WaypointSkillRemoved(long Tick, UnitId Unit, int WaypointId) : SimulationEvent(Tick);
 
 /// <summary>
 /// A skill fired once (spec part 3 §5.1, §8): from <paramref name="Origin"/> towards <paramref name="Direction"/> on the

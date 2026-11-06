@@ -262,6 +262,55 @@ public sealed class GameSimulation
         return CommandResult.Ok;
     }
 
+    /// <summary>
+    /// Plans a skill at a confirmed, not yet reached waypoint of the unit (spec part 3 §6.2: the edit of a confirmed route
+    /// is applied only on confirmation — cancelling the aiming leaves the route as it was). Replaces a skill planned there.
+    /// </summary>
+    public CommandResult AssignWaypointSkill(UnitId id, int waypointId, string skillId, HexDirection direction)
+    {
+        var unit = State.FindUnit(id);
+        if (unit is not { IsAlive: true, IsActive: true })
+        {
+            return CommandResult.Fail($"Unit {id} cannot plan skills.");
+        }
+
+        var index = unit.Orders.IndexOf(waypointId);
+        if (index < 0 || unit.Orders.Items[index].IsDetour)
+        {
+            return CommandResult.Fail($"Waypoint {waypointId} is not in the route of {id}.");
+        }
+
+        if (unit.Orders.GroupId is not null)
+        {
+            return CommandResult.Fail($"Unit {id} follows a command order: its waypoints carry no skills.");
+        }
+
+        if (!Enum.IsDefined(direction) || !Settings.Skills.ContainsKey(skillId) || !unit.Skills.Contains(skillId))
+        {
+            return CommandResult.Fail($"Unit {id} has no skill {skillId}.");
+        }
+
+        var action = State.NewSkillAction(skillId, direction, waypointId);
+        State.SetWaypointSkill(id, waypointId, action);
+        _events.Add(new SkillPlanned(Tick, id, action.Id, skillId, direction, waypointId));
+        return CommandResult.Ok;
+    }
+
+    /// <summary>Removes the skill planned at one of the unit's waypoints (the waypoint itself stays).</summary>
+    public CommandResult RemoveWaypointSkill(UnitId id, int waypointId)
+    {
+        var unit = State.FindUnit(id);
+        var index = unit?.Orders.IndexOf(waypointId) ?? -1;
+        if (unit is null || index < 0 || unit.Orders.Items[index].Skill is null)
+        {
+            return CommandResult.Fail("No skill planned there.");
+        }
+
+        State.SetWaypointSkill(id, waypointId, null);
+        _events.Add(new WaypointSkillRemoved(Tick, id, waypointId));
+        return CommandResult.Ok;
+    }
+
     /// <summary>Drops the unit's unfired immediate skill use.</summary>
     public void CancelPendingSkill(UnitId id)
     {
@@ -375,6 +424,18 @@ public sealed class GameSimulation
             }
         }
 
+        if (order.WaypointSkills is { } planned)
+        {
+            foreach (var (index, spec) in planned)
+            {
+                if (index < 0 || index >= order.Waypoints.Count || !Settings.Skills.ContainsKey(spec.SkillId) || !unit.Skills.Contains(spec.SkillId))
+                {
+                    _events.Add(new OrderApplyRejected(Tick, order.Unit, index, WaypointError.InvalidSkill));
+                    return new OrderApplyResult(false, index, WaypointError.InvalidSkill);
+                }
+            }
+        }
+
         var (failed, error) = OrderDraftValidator.ValidateChain(State, order.Unit, CommandAnchor(order.Unit), order.Waypoints);
         if (error != WaypointError.None)
         {
@@ -402,9 +463,16 @@ public sealed class GameSimulation
         }
 
         State.ClearWaypoints(order.Unit);
-        foreach (var cell in order.Waypoints)
+        for (var i = 0; i < order.Waypoints.Count; i++)
         {
-            State.AppendWaypoint(order.Unit, cell);
+            var wp = State.AppendWaypoint(order.Unit, order.Waypoints[i]);
+            if (order.WaypointSkills is { } skills && skills.TryGetValue(i, out var spec))
+            {
+                // Each planned use gets its own stable id; it fires once when the unit reaches this waypoint.
+                var action = State.NewSkillAction(spec.SkillId, spec.Direction, wp.Id);
+                State.SetWaypointSkill(order.Unit, wp.Id, action);
+                _events.Add(new SkillPlanned(Tick, order.Unit, action.Id, spec.SkillId, spec.Direction, wp.Id));
+            }
         }
 
         State.SetFinalFacing(order.Unit, target is null ? order.FinalFacing : null);

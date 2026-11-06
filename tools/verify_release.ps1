@@ -113,6 +113,24 @@ $script:RegressionScenarioV13 = ($script:RegressionScenarioV12 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.14.0+ (spec part 3 §6): a skill planned at a waypoint with the real menu button on pause. Short click on the
+# ТД1 marker opens the menu (no new waypoint; Esc closes only the menu); the icon starts the red arrow from ТД1; the
+# direction click plans it in the draft; the ✕ button removes it; planned again, the edge sector of ТД2 confirms the
+# order with the final facing. After resuming the unit stops at ТД1, strikes once (enemy 7 −20, enemy 8 beyond the two
+# hexes untouched), walks on to ТД2 and turns to the final facing; the skill never fires again.
+$script:RegressionScenarioV14 = ($script:RegressionScenarioV13 -replace ';key:Escape$', '') + ';' + (@(
+    'select:5', 'pause:on', 'drag:11,5>11,6', 'click:11,7', 'expect:draft:2',
+    'click:11,6', 'expect:menu:open:1', 'expect:draft:2', 'key:Escape', 'expect:menu:none', 'expect:draft:2',
+    'click:11,6', 'expect:menu:open:1', 'menu-skill', 'expect:mode:SkillAim', 'expect:menu:none',
+    'move:11,4', 'click:11,4', 'expect:mode:SingleDraft', 'expect:draft-skills:1',
+    'click:11,6', 'expect:menu:open:1', 'menu-clear', 'expect:draft-skills:0', 'expect:menu:none',
+    'click:11,6', 'menu-skill', 'move:11,4', 'click:11,4', 'expect:draft-skills:1', 'expect:draft:2',
+    'click:11,7@North:0.6', 'expect:draft:none', 'expect:wpskills:5:1', 'wait:10', 'expect:hp:7:80', 'expect:hp:8:80',
+    'pause:off', 'waitidle:5:4000', 'expect:cell:5:11,7', 'expect:facing:5:North', 'expect:wpskills:5:0',
+    'expect:hp:7:60', 'expect:hp:8:80', 'expect:hp:5:100', 'wait:30', 'expect:hp:7:60',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -172,7 +190,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
+            $scenario = if ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
+                        elseif ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
                         elseif ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
                         elseif ([version]$Version -ge [version]'0.11.0') { $script:RegressionScenarioV11 }
                         elseif ([version]$Version -ge [version]'0.10.0') { $script:RegressionScenarioV10 }

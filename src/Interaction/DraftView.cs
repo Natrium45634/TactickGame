@@ -57,6 +57,8 @@ public enum DraftCancelReason
 /// <param name="Held">True while the initial LMB drag is still held.</param>
 /// <param name="IsEdit">True if the draft continues the unit's confirmed route.</param>
 /// <param name="AttackTarget">Enemy unit under the pointer when <see cref="DraftTargetStatus.AttackTarget"/>.</param>
+/// <param name="Skills">Skills planned at draft waypoints (index → skill and direction, spec part 3 §6).</param>
+/// <param name="HoverMarker">Index of the draft waypoint whose central marker is under the pointer (a click opens its menu).</param>
 public sealed record DraftView(
     UnitId Unit,
     IReadOnlyList<HexCoord> Waypoints,
@@ -72,4 +74,6 @@ public sealed record DraftView(
     IReadOnlyList<HexCoord>? Path,
     bool Held,
     bool IsEdit,
-    UnitId? AttackTarget = null);
+    UnitId? AttackTarget = null,
+    IReadOnlyDictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>? Skills = null,
+    int? HoverMarker = null);

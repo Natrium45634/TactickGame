@@ -82,6 +82,9 @@ public static class SkillCatalog
     };
 }
 
+/// <summary>A skill chosen for a waypoint in a draft or an order (spec part 3 §6): which skill and its direction.</summary>
+public sealed record WaypointSkillSpec(string SkillId, HexDirection Direction);
+
 public enum SkillActionStatus
 {
     Planned = 0,

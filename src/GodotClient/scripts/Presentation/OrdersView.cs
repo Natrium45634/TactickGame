@@ -245,6 +245,11 @@ public partial class OrdersView : Node3D
                     continue;
                 }
 
+                if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned })
+                {
+                    _committed.AddChild(SkillBadge($"Skill{wp.Id}", pos, ghost));
+                }
+
                 _committed.AddChild(Marker(
                     $"Waypoint{wp.Id}",
                     pos,
@@ -261,7 +266,8 @@ public partial class OrdersView : Node3D
 
     private void RebuildDraftMarkers(DraftView? draft)
     {
-        var signature = draft is null ? string.Empty : $"{draft.Unit}:{string.Join(';', draft.Waypoints)}";
+        var signature = draft is null ? string.Empty
+            : $"{draft.Unit}:{string.Join(';', draft.Waypoints)}:{string.Join(';', System.Linq.Enumerable.Select(draft.Skills ?? new Dictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>(), k => $"{k.Key}{k.Value.Direction}"))}";
         if (signature == _draftSignature)
         {
             return;
@@ -280,7 +286,12 @@ public partial class OrdersView : Node3D
 
         for (var i = 0; i < draft.Waypoints.Count; i++)
         {
-            _draftMarkers.AddChild(Marker($"Draft{i + 1}", _layout.HexToPlane(draft.Waypoints[i]).ToWorld(0f), i + 1, VisualConfig.WaypointSelectedUnit, VisualConfig.DraftRim, false, false));
+            var pos = _layout.HexToPlane(draft.Waypoints[i]).ToWorld(0f);
+            _draftMarkers.AddChild(Marker($"Draft{i + 1}", pos, i + 1, VisualConfig.WaypointSelectedUnit, VisualConfig.DraftRim, false, false));
+            if (draft.Skills is { } skills && skills.ContainsKey(i))
+            {
+                _draftMarkers.AddChild(SkillBadge($"DraftSkill{i + 1}", pos, false));
+            }
         }
     }
 
@@ -840,6 +851,33 @@ public partial class OrdersView : Node3D
             OutlineRenderPriority = LayerMarkers + 3,
         });
         return marker;
+    }
+
+    /// <summary>
+    /// Red hexagonal badge with the skill symbol and the count "1" (spec part 3 §6.1 step 5, §6.4): sits up-right of the
+    /// waypoint marker — readable above it without covering the marker or its neighbours.
+    /// </summary>
+    private static Node3D SkillBadge(string name, Vector3 markerPosition, bool ghost)
+    {
+        var alpha = ghost ? 0.35f : 1f;
+        var badge = new Node3D { Name = name, Position = markerPosition + new Vector3(0.38f, 0f, -0.34f) };
+        badge.AddChild(MarkerDisc(0.26f, VisualConfig.WaypointRim with { A = VisualConfig.WaypointRim.A * alpha }, LayerMarkers + 5, 0.05f));
+        badge.AddChild(MarkerDisc(0.22f, VisualConfig.SkillBadge with { A = VisualConfig.SkillBadge.A * alpha }, LayerMarkers + 6, 0.06f));
+        badge.AddChild(new Label3D
+        {
+            Text = "✦1",
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            NoDepthTest = true,
+            FontSize = 44,
+            OutlineSize = 8,
+            PixelSize = 0.0062f,
+            Modulate = new Color(1f, 0.97f, 0.95f, alpha),
+            OutlineModulate = new Color(0.35f, 0.04f, 0.04f, alpha),
+            Position = new Vector3(0, 0.12f, 0),
+            RenderPriority = LayerMarkers + 8,
+            OutlineRenderPriority = LayerMarkers + 7,
+        });
+        return badge;
     }
 
     /// <summary>Small cyan hex marker of a companion's slot (no number: the КТД number belongs to the captain).</summary>

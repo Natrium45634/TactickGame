@@ -110,6 +110,7 @@ public static class VisualConfig
     public static readonly Color SkillAreaPlanned = new(0.16f, 0.17f, 0.21f, 0.2f);
     public static readonly Color ArrowSkill = new(0.92f, 0.20f, 0.18f, 0.88f);
     public static readonly Color SkillFlash = new(1.0f, 0.42f, 0.25f, 0.55f);
+    public static readonly Color SkillBadge = new(0.86f, 0.16f, 0.14f, 1.0f);
 
     /// <summary>Translucent body of a roster card held over the map (spec part 2 §5.2).</summary>
     public static readonly Color GhostValid = new(0.30f, 0.82f, 0.42f, 0.55f);

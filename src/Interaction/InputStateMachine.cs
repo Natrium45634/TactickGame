@@ -198,12 +198,23 @@ public sealed partial class InputStateMachine
                     {
                         // Continue the confirmed route: the draft starts with the remaining confirmed waypoints.
                         var cells = new List<HexCoord>();
+                        var skills = new Dictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>();
                         foreach (var item in unit.Orders.Items)
                         {
+                            if (item.IsDetour)
+                            {
+                                continue;
+                            }
+
+                            if (item.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } planned)
+                            {
+                                skills[cells.Count] = new HexTactics.Core.Skills.WaypointSkillSpec(planned.SkillId, planned.Direction);
+                            }
+
                             cells.Add(item.Cell);
                         }
 
-                        BeginDraft(new OrderDraft(w.Unit, DraftKind.Single, cells, isEdit: true), held: true);
+                        BeginDraft(new OrderDraft(w.Unit, DraftKind.Single, cells, isEdit: true, skills), held: true);
                         UpdateDraftView(sample);
                     }
                     else if (unit.Orders.Last is { } lastWp)
@@ -224,6 +235,14 @@ public sealed partial class InputStateMachine
         _press = null;
         if (button != PointerButton.Primary)
         {
+            return;
+        }
+
+        if (WaypointMenu is not null && !IsAimingSkill)
+        {
+            // A click outside the menu's icon (the icon itself is UI) closes the menu and does nothing else —
+            // never creates a waypoint by accident (spec part 3 §6.2).
+            CloseWaypointMenu();
             return;
         }
 
@@ -263,7 +282,13 @@ public sealed partial class InputStateMachine
             }
             else if (press is not null)
             {
-                Confirm(sample);
+                // Short click on a waypoint's central marker → its menu; otherwise the usual click (spec part 3 §6.2:
+                // icon > marker centre > facing sector > hex).
+                var isClick = press.Value.Sample.Screen.DistanceTo(sample.Screen) <= Settings.DragThresholdPixels;
+                if (!(isClick && TryOpenDraftWaypointMenu(_draft!, sample)))
+                {
+                    Confirm(sample);
+                }
             }
 
             return;
@@ -284,6 +309,12 @@ public sealed partial class InputStateMachine
     public void Cancel()
     {
         _press = null;
+        if (WaypointMenu is not null && !IsAimingSkill)
+        {
+            CloseWaypointMenu();
+            return;
+        }
+
         if (Mode == InputMode.RosterDrag)
         {
             CancelRosterDrag(PlacementError.None, null);
@@ -316,17 +347,17 @@ public sealed partial class InputStateMachine
     /// </summary>
     public void Refresh()
     {
-        if (IsDrafting && Pointer is { } pointer)
+        if (IsAimingSkill && Pointer is { } aimPointer)
+        {
+            UpdateSkillAim(aimPointer); // a draft under a waypoint aim stays frozen
+        }
+        else if (IsDrafting && Pointer is { } pointer)
         {
             UpdateDraftView(pointer);
         }
         else if (IsGrouping && Pointer is { } groupPointer)
         {
             UpdateGroupView(groupPointer);
-        }
-        else if (IsAimingSkill && Pointer is { } aimPointer)
-        {
-            UpdateSkillAim(aimPointer);
         }
     }
 
@@ -351,6 +382,7 @@ public sealed partial class InputStateMachine
             CancelSkillAim();
         }
 
+        CloseWaypointMenu();
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -387,6 +419,7 @@ public sealed partial class InputStateMachine
             CancelSkillAim();
         }
 
+        CloseWaypointMenu();
         if (IsGrouping)
         {
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
@@ -518,6 +551,8 @@ public sealed partial class InputStateMachine
             CancelSkillAim();
         }
 
+        CloseWaypointMenu();
+
         PlacementSide = side;
         if (Mode == InputMode.Placement)
         {
@@ -573,6 +608,8 @@ public sealed partial class InputStateMachine
             CancelSkillAim();
         }
 
+        CloseWaypointMenu();
+
         if (IsGrouping)
         {
             CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
@@ -623,6 +660,8 @@ public sealed partial class InputStateMachine
             CancelSkillAim();
         }
 
+        CloseWaypointMenu();
+
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -644,6 +683,13 @@ public sealed partial class InputStateMachine
     /// <summary>Drops selections that no longer exist (call once per frame).</summary>
     public void Validate()
     {
+        if (WaypointMenu is { } menu && (_sim.State.FindUnit(menu.Unit) is not { } owner
+            || menu.WaypointId is { } menuWp && owner.Orders.IndexOf(menuWp) < 0
+            || menu.DraftIndex is { } menuIndex && (_draft is null || menuIndex >= _draft.Waypoints.Count)))
+        {
+            CloseWaypointMenu(); // the waypoint was reached, removed or its unit is gone
+        }
+
         if (IsAimingSkill && (SelectedUnit is not { } aimer || _sim.State.FindUnit(aimer) is null))
         {
             EndSkillAim();
@@ -698,6 +744,7 @@ public sealed partial class InputStateMachine
                 var wp = unit.Orders.Items[i];
                 SelectInternal(w.Unit, wp.Id);
                 Feedback?.Invoke(new WaypointSelected(w.Unit, wp));
+                OpenConfirmedWaypointMenu(unit, wp); // spec part 3 §6.1: short click on a ТД → its action menu
                 break;
             case PressTarget.UnitTarget u:
                 SelectInternal(u.Unit, null);
@@ -711,6 +758,12 @@ public sealed partial class InputStateMachine
 
     private void OnSecondaryPress(PointerSample sample)
     {
+        if (WaypointMenu is not null && !IsAimingSkill)
+        {
+            CloseWaypointMenu(); // RMB closes the menu first, the next one the draft (spec part 3 §6.2)
+            return;
+        }
+
         if (Mode == InputMode.RosterDrag)
         {
             CancelRosterDrag(PlacementError.None, null);
@@ -908,7 +961,7 @@ public sealed partial class InputStateMachine
         var anchor = _sim.CommandAnchor(draft.Owner);
         var targetCell = _sim.State.FindUnit(target)?.Cell ?? anchor;
         var facing = HexDirections.Toward(draft.SourceFor(anchor), targetCell) ?? HexDirection.North;
-        var order = IndividualOrder.Attack(draft.Owner, draft.Waypoints, target, facing);
+        var order = draft.ToAttackOrder(target, facing);
         var result = _sim.ApplyOrder(order);
         if (!result.Success)
         {
@@ -1005,7 +1058,7 @@ public sealed partial class InputStateMachine
         }
 
         draft.PreviewFacing = sector;
-        Draft = new DraftView(draft.Owner, draft.Waypoints, anchor, source, sourceCenter, sample.Plane, sample.Hex, status, sector, unitFacing, reachable, path, _held, draft.IsEdit, attack);
+        Draft = new DraftView(draft.Owner, draft.Waypoints, anchor, source, sourceCenter, sample.Plane, sample.Hex, status, sector, unitFacing, reachable, path, _held, draft.IsEdit, attack, draft.Skills, DraftMarkerAt(draft, sample));
     }
 
     /// <summary>A living enemy of <paramref name="owner"/> under the pointer: its body, or the unit on the hex.</summary>

@@ -1,6 +1,7 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.7.0** (ТЗ ч.1 + ч.2: flat-top, непрерывные черновики, обязательный финальный взгляд).
+Документ описывает фактическое устройство кода. Актуален для версии **v0.14.0** (ТЗ ч.1 + ч.2 + ч.3: flat-top, непрерывные
+черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД).
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -34,7 +35,7 @@ TactickGame/                     корень репозитория (логич
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
       Motion/                    CubicSegment, MotionCurve, StepGeometry, StepPlan, MotionCorridor (с v0.11.0)
       Combat/                    UnitStats, LifeState, AttackStatus, CombatState (с v0.12.0)
-      Skills/                    SkillDefinition, SkillCatalog, SkillAction (с v0.13.0)
+      Skills/                    SkillDefinition, SkillCatalog, SkillAction, WaypointSkillSpec (с v0.13.0/v0.14.0)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
@@ -47,7 +48,8 @@ TactickGame/                     корень репозитория (логич
                                  OrdersView (стрелки и ТД), VisualConfig
       scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат),
                                  InputBindings (действия InputMap: пробел — пауза, Esc — отмена)
-      scripts/UI/                DebugHud, RosterBar (нижняя панель ростера), UiText (русские тексты сообщений)
+      scripts/UI/                DebugHud, RosterBar (нижняя панель ростера), WaypointMenuPanel (меню ТД, v0.14.0),
+                                 UiText (русские тексты сообщений)
       scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки)
       shaders/                   tile.gdshader (границы клеток), overlay.gdshader (подсветки)
       maps/prototype.hexmap      данные карты 12×10
@@ -148,7 +150,8 @@ tests/*  ──► соответствующие сборки
 ## 7. Автомат ввода (`InputStateMachine`, с v0.7.0 — по ТЗ ч.2)
 
 Режимы: `Idle`, `UnitSelected`, `SingleDraft` (открыт черновик), `RosterDrag` (перетаскивается карточка ростера, v0.8.0),
-`GroupCollect` / `GroupDraft` (режим «Команда», v0.9.0), отладочные `Placement`, `ObstacleEdit`.
+`GroupCollect` / `GroupDraft` (режим «Команда», v0.9.0), `SkillAim` (прицеливание навыка, v0.13.0; от ТД — v0.14.0),
+отладочные `Placement`, `ObstacleEdit`. Меню ТД (v0.14.0) — не отдельный режим, а `WaypointMenu` поверх `SingleDraft`/`UnitSelected`.
 
 | Состояние | Событие | Результат |
 |---|---|---|
@@ -159,12 +162,20 @@ tests/*  ──► соответствующие сборки
 | `SingleDraft` | отпускание первого протягивания / клик ЛКМ: зелёная клетка | +ТД, черновик остаётся открытым, живая стрелка от новой ТД |
 | `SingleDraft` | … в секторе исходной клетки | `ApplyOrder(ТД…, финальный взгляд)` → `UnitSelected` |
 | `SingleDraft` | … в нейтральной зоне исходной клетки | ничего |
-| `SingleDraft` | … на клетке врага | `AttackTargetReserved` (резерв, D-044), черновик без изменений |
+| `SingleDraft` | … на живом враге (тело или клетка) | `ApplyOrder(ТД…, AttackTarget)` — приказ атаки (v0.12.0, D-070) |
+| `SingleDraft` | короткий клик по центру маркера ТД черновика (r 0,3) | `WaypointMenu` этой ТД, ТД не добавляется (v0.14.0) |
 | `SingleDraft` | … на красной клетке (вне поля, препятствие, занято, изолировано) | отмена черновика (`InvalidTarget`) |
 | `SingleDraft` | наведение на красную клетку | только показ (красная подсветка/стрелка) |
 | `SingleDraft` | ПКМ по ТД черновика | удалить её и следующие |
 | `SingleDraft` | ПКМ в другом месте / Esc | отмена черновика (`ByUser`) |
 | `UnitSelected` | ПКМ по подтверждённой ТД выбранного юнита | `TruncateOrders` (её и следующие) |
+| `UnitSelected` | короткий клик по подтверждённой ТД выбранного юнита | `WaypointMenu` этой ТД (v0.14.0) |
+| меню ТД открыто | «✦ Линейный удар» (`BeginWaypointSkillAim`) / «✕» (`ClearWaypointSkillFromMenu`) | `SkillAim` от ТД / навык снят |
+| меню ТД открыто | ЛКМ мимо меню, ПКМ, Esc | закрыть только меню |
+| `UnitSelected` | «✦ Линейный удар (R)» (`BeginSkillAim`) | `SkillAim` от юнита (v0.13.0) |
+| `SkillAim` | движение | `SkillAimView`: направление (1 из 6 или нет в центре), две клетки области |
+| `SkillAim` | ЛКМ вне нейтрального центра | от юнита — `UseSkill`; от ТД черновика — `OrderDraft.SetSkill`, возврат в `SingleDraft`; от подтверждённой ТД — `AssignWaypointSkill` |
+| `SkillAim` | ПКМ / Esc | отменить только прицеливание (черновик и маршрут не меняются) |
 | любой | ЛКМ на доступной карточке ростера (`BeginRosterDrag`) | `RosterDrag`, открытый черновик отменяется |
 | `RosterDrag` | движение | `PlacementView` (клетка под курсором, ошибка, разрешённые клетки) |
 | `RosterDrag` | отпускание на разрешённой свободной клетке | `PlaceFromRoster` → сразу `SingleDraft` нового юнита |
@@ -274,11 +285,19 @@ tests/*  ──► соответствующие сборки
 
 - `SkillDefinition` (Core/Skills): относительные шаги клеток, урон, правила попадания, поля стоимости/перезарядки/каста;
   `Area(origin, direction, grid)` — две клетки «Линейного удара», без клеток за краем.
-- `SkillAction` — запланированное применение: id, навык, направление, ТД-источник (с v0.14.0), статус.
+- `SkillAction` — запланированное применение: устойчивый id, навык, направление, ТД-источник (с v0.14.0), статус
+  `Planned/Executed/Cancelled`; исполняется не более одного раза.
 - `GameSimulation.UseSkill` → `UnitState.PendingSkill`; `SkillSystem` (после движения, до атак) исполняет его один раз,
   когда юнит стоит в центре клетки: поворот в направление удара, снимок врагов в области на этом тике, урон, `SkillActivated`.
 - Ввод: `InputMode.SkillAim` / `SkillAimView` (`InputStateMachine.Skill.cs`). Клиент: серый слой `SkillAreaLayer`
   (отдельный от зелёно-красного), красная стрелка `OrdersView.DrawSkillAim`, вспышка `CombatFxView.SkillFlash`.
+- **Навык в ТД (v0.14.0, ТЗ ч.3 §6, D-076–D-078).** `Waypoint.Skill` (`SkillAction` с `OriginWaypointId`); черновик —
+  `OrderDraft.Skills` (индекс ТД → `WaypointSkillSpec`), применяется вместе с приказом (`IndividualOrder.WaypointSkills`);
+  подтверждённый маршрут — `AssignWaypointSkill/RemoveWaypointSkill`. ТД с навыком — якорь кривой; `MovementSystem` держит
+  юнита в её центре один тик (`WaitReason.Skill`), `SkillSystem` в этом тике исполняет навык от ТД, со следующего тика
+  маршрут продолжается. Удаление ТД отменяет её навык. Ввод: `WaypointMenuView` (короткий клик по маркеру ТД),
+  `BeginWaypointSkillAim`; клиент: `WaypointMenuPanel` (CanvasLayer над стрелками), красный шестиугольник «✦1» у маркера
+  (`OrdersView.SkillBadge`), ярко/приглушённо серые области (`Main.UpdateSkillAreas`).
 
 ## 8. Визуальные слои
 
@@ -351,10 +370,13 @@ tests/*  ──► соответствующие сборки
 Шаги/проверки v0.12: `spawn:enemy:c,r` (неподвижная мишень), `waitdead:ID[:max]`, `expect:hp:ID:N`,
 `expect:alive:ID:yes|no`, `expect:attack:ID:None|FollowingRoute|Approaching|Attacking|TargetUnreachable`.
 Проверка v0.13: `expect:pending-skill:ID:yes|no` (навык запланирован и ещё не сработал).
+Шаги/проверки v0.14: `menu-skill`, `menu-clear` (нажать настоящие кнопки открытого меню ТД), `expect:menu:none|open[:N]`,
+`expect:wpskills:ID:N` (запланированные навыки на ТД юнита), `expect:draft-skills:N` (навыки в открытом черновике).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
-для v0.12, `$RegressionScenarioV13` = V12 + «Линейный удар» для v0.13+). Точка `P` — `c,r` (центр гекса) или
+для v0.12, `$RegressionScenarioV13` = V12 + «Линейный удар» для v0.13, `$RegressionScenarioV14` = V13 + навык в ТД через
+меню для v0.14+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка

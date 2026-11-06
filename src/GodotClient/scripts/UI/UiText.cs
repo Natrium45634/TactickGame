@@ -105,7 +105,8 @@ public static class UiText
                 }
 
                 var mark = wp.Id == selectedWaypoint ? "▸" : string.Empty;
-                parts.Add($"{mark}{wp.Sequence}{Cell(wp.Cell)}");
+                var skill = wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } ? "✦" : string.Empty;
+                parts.Add($"{mark}{wp.Sequence}{skill}{Cell(wp.Cell)}");
             }
 
             text += "\nмаршрут: " + string.Join(" → ", parts);

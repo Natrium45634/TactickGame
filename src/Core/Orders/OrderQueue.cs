@@ -83,7 +83,7 @@ public sealed class OrderQueue
         }
     }
 
-    /// <summary>Removes the waypoint at <paramref name="index"/> and all following ones.</summary>
+    /// <summary>Removes the waypoint at <paramref name="index"/> and all following ones (their planned skills are cancelled).</summary>
     internal void TruncateFrom(int index)
     {
         if (index < 0 || index >= _items.Count)
@@ -91,8 +91,40 @@ public sealed class OrderQueue
             throw new ArgumentOutOfRangeException(nameof(index));
         }
 
+        for (var i = index; i < _items.Count; i++)
+        {
+            CancelSkill(_items[i]);
+        }
+
         _items.RemoveRange(index, _items.Count - index);
         Version++;
+    }
+
+    /// <summary>Attaches (or with null removes) the skill use planned at a waypoint; a replaced one is cancelled.</summary>
+    internal bool SetSkill(int waypointId, HexTactics.Core.Skills.SkillAction? action)
+    {
+        var i = IndexOf(waypointId);
+        if (i < 0)
+        {
+            return false;
+        }
+
+        if (_items[i].Skill is { } old && !ReferenceEquals(old, action))
+        {
+            CancelSkill(_items[i]);
+        }
+
+        _items[i] = _items[i] with { Skill = action };
+        Version++;
+        return true;
+    }
+
+    private static void CancelSkill(Waypoint wp)
+    {
+        if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } action)
+        {
+            action.Status = HexTactics.Core.Skills.SkillActionStatus.Cancelled;
+        }
     }
 
     public Waypoint? Peek() => _items.Count > 0 ? _items[0] : null;
@@ -158,6 +190,11 @@ public sealed class OrderQueue
 
     internal void Clear()
     {
+        foreach (var wp in _items)
+        {
+            CancelSkill(wp);
+        }
+
         if (_items.Count > 0)
         {
             _items.Clear();

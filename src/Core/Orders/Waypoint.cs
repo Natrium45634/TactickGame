@@ -24,4 +24,7 @@ public enum OrderKind
 /// A temporary step inserted by the simulation (a team member stepping aside to let a teammate pass, spec part 2 §6.2).
 /// Not an order of the player: not drawn, not numbered, never held back by the team's stage synchronisation.
 /// </param>
-public sealed record Waypoint(int Id, int Sequence, HexCoord Cell, OrderKind Kind = OrderKind.MoveToTile, bool IsDetour = false);
+/// <param name="Skill">
+/// At most one skill use planned at this waypoint (spec part 3 §6): the unit reaches the hex, fires it once, then goes on.
+/// </param>
+public sealed record Waypoint(int Id, int Sequence, HexCoord Cell, OrderKind Kind = OrderKind.MoveToTile, bool IsDetour = false, HexTactics.Core.Skills.SkillAction? Skill = null);

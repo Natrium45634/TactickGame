@@ -208,6 +208,10 @@ public sealed class GameState
         unit.PendingSkill = action;
     }
 
+    /// <summary>Attaches (null: removes) the skill use planned at one of the unit's waypoints.</summary>
+    public bool SetWaypointSkill(UnitId id, int waypointId, HexTactics.Core.Skills.SkillAction? action) =>
+        GetUnit(id).Orders.SetSkill(waypointId, action);
+
     /// <summary>Marks a skill action as executed at <paramref name="tick"/> (it never fires again).</summary>
     public void MarkExecuted(HexTactics.Core.Skills.SkillAction action, long tick)
     {

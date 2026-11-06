@@ -48,6 +48,7 @@ public sealed partial class InputStateMachine
             return;
         }
 
+        CloseWaypointMenu();
         Cancel(); // roster card, draft, debug modes
         _press = null;
         SelectInternal(null, null);

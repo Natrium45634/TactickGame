@@ -28,6 +28,9 @@ public enum WaypointError
 
     /// <summary>The attack target does not exist, is dead or is not an enemy (spec part 3 §4.1).</summary>
     InvalidTarget,
+
+    /// <summary>A planned waypoint skill is unknown to the unit or refers to no waypoint (spec part 3 §6.5).</summary>
+    InvalidSkill,
 }
 
 /// <summary>

@@ -30,7 +30,19 @@ internal sealed class SkillSystem : ISimulationSystem
     {
         foreach (var unit in new List<UnitState>(_state.Units))
         {
-            if (unit.IsAlive && unit.IsActive && unit.PendingSkill is { Status: SkillActionStatus.Planned } action && !unit.Motion.IsStepping)
+            if (!unit.IsAlive || !unit.IsActive || unit.Motion.IsStepping)
+            {
+                continue;
+            }
+
+            // Spec part 3 §6.1, §7 step 3: the skill planned at the waypoint the unit stands on fires once, from the waypoint
+            // hex itself (never from another hex, e.g. when the waypoint became unreachable).
+            if (unit.Orders.Peek() is { Skill: { Status: SkillActionStatus.Planned } planned } wp && wp.Cell == unit.Cell)
+            {
+                Execute(unit, planned, wp.Cell, context.Tick);
+            }
+
+            if (unit.PendingSkill is { Status: SkillActionStatus.Planned } action)
             {
                 Execute(unit, action, unit.Cell, context.Tick);
                 _state.SetPendingSkill(unit.Id, null);

@@ -125,6 +125,13 @@ internal sealed class MovementSystem : ISimulationSystem
             return false;
         }
 
+        if (target.Cell == unit.Cell && target.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned })
+        {
+            m.Status = MovementStatus.Waiting; // one tick at the waypoint: its skill fires, then the route goes on
+            m.WaitReason = WaitReason.Skill;
+            return false;
+        }
+
         // Stepped aside for a teammate: stay there until it has gone past (no ping-pong back into its way).
         if (m.YieldFor is not null && unit.Cell != m.YieldVacated && !YieldReleased(unit, tick))
         {
@@ -252,6 +259,11 @@ internal sealed class MovementSystem : ISimulationSystem
         var m = unit.Motion;
         while (unit.Orders.Peek() is { } wp && wp.Cell == unit.Cell)
         {
+            if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned })
+            {
+                break; // spec part 3 §7: the skill of this waypoint fires (skill system, same tick) before going on
+            }
+
             _state.CompleteCurrentWaypoint(unit.Id);
             m.PathCells.Clear();
             _events.Add(new WaypointReached(tick, unit.Id, wp));

@@ -12,7 +12,13 @@ namespace HexTactics.Core.Orders;
 /// is a turn in place. Applied atomically by the simulation.
 /// </summary>
 /// <param name="FinalFacing">Final facing of a move order; for an attack order the facing towards the target at confirmation.</param>
-public sealed record IndividualOrder(UnitId Unit, IReadOnlyList<HexCoord> Waypoints, HexDirection FinalFacing, UnitId? AttackTarget = null)
+/// <param name="WaypointSkills">Skills planned at waypoints (index → skill and direction, spec part 3 §6), or null.</param>
+public sealed record IndividualOrder(
+    UnitId Unit,
+    IReadOnlyList<HexCoord> Waypoints,
+    HexDirection FinalFacing,
+    UnitId? AttackTarget = null,
+    IReadOnlyDictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>? WaypointSkills = null)
 {
     public OrderKind Kind => AttackTarget is null ? OrderKind.MoveToTile : OrderKind.AttackTarget;
 

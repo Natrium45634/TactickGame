@@ -35,8 +35,14 @@ public enum DraftState
 public sealed class OrderDraft
 {
     private readonly List<HexCoord> _waypoints = new();
+    private readonly Dictionary<int, HexTactics.Core.Skills.WaypointSkillSpec> _skills = new();
 
-    public OrderDraft(UnitId owner, DraftKind kind = DraftKind.Single, IEnumerable<HexCoord>? initialWaypoints = null, bool isEdit = false)
+    public OrderDraft(
+        UnitId owner,
+        DraftKind kind = DraftKind.Single,
+        IEnumerable<HexCoord>? initialWaypoints = null,
+        bool isEdit = false,
+        IReadOnlyDictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>? initialSkills = null)
     {
         Owner = owner;
         Kind = kind;
@@ -44,6 +50,39 @@ public sealed class OrderDraft
         if (initialWaypoints is not null)
         {
             _waypoints.AddRange(initialWaypoints);
+        }
+
+        if (initialSkills is not null)
+        {
+            foreach (var (index, spec) in initialSkills)
+            {
+                _skills[index] = spec;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Skills planned at draft waypoints (index → skill and direction, spec part 3 §6.2): part of the same transaction,
+    /// applied together with the final facing; at most one per waypoint.
+    /// </summary>
+    public IReadOnlyDictionary<int, HexTactics.Core.Skills.WaypointSkillSpec> Skills => _skills;
+
+    /// <summary>Plans (or with null removes) the skill at draft waypoint <paramref name="index"/>.</summary>
+    public void SetSkill(int index, HexTactics.Core.Skills.WaypointSkillSpec? spec)
+    {
+        EnsureDrafting();
+        if (index < 0 || index >= _waypoints.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        if (spec is null)
+        {
+            _skills.Remove(index);
+        }
+        else
+        {
+            _skills[index] = spec;
         }
     }
 
@@ -81,9 +120,20 @@ public sealed class OrderDraft
         }
 
         _waypoints.RemoveRange(index, _waypoints.Count - index);
+        foreach (var key in new List<int>(_skills.Keys))
+        {
+            if (key >= index)
+            {
+                _skills.Remove(key); // a removed waypoint takes its skill with it (spec part 3 §6.5)
+            }
+        }
     }
 
-    public IndividualOrder ToOrder(HexDirection finalFacing) => new(Owner, _waypoints.ToArray(), finalFacing);
+    public IndividualOrder ToOrder(HexDirection finalFacing) =>
+        new(Owner, _waypoints.ToArray(), finalFacing, null, new Dictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>(_skills));
+
+    public IndividualOrder ToAttackOrder(UnitId target, HexDirection facing) =>
+        new(Owner, _waypoints.ToArray(), facing, target, new Dictionary<int, HexTactics.Core.Skills.WaypointSkillSpec>(_skills));
 
     public void MarkCommitted()
     {
