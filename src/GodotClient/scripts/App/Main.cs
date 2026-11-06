@@ -104,6 +104,7 @@ public partial class Main : Node3D
         _rosterBar = new RosterBar { Name = "Roster" };
         _rosterBar.Initialize(_sim.State.Roster);
         _rosterBar.CardPressed += OnRosterCardPressed;
+        _rosterBar.CommandPressed += () => _fsm.ToggleGroupMode();
         AddChild(_rosterBar);
 
         _input = new PointerInput { Name = "PointerInput" };
@@ -136,13 +137,17 @@ public partial class Main : Node3D
         _fsm.Refresh();
         var draft = _fsm.Draft;
         var interpolation = _sim.InterpolationAlpha * _sim.Settings.TickDuration;
-        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview);
-        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
+        var group = _fsm.Group;
+        _units.Sync(_sim.State, _fsm.SelectedUnit, (float)delta, interpolation, draft?.Unit, draft?.UnitFacingPreview, group?.Members);
+        _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition);
+        _rosterBar.SetCommandState(group is not null, group is null ? "клик — собрать"
+            : group.IsCollecting ? $"сбор: {group.Members.Count} (ПКМ — выход)"
+            : $"КТД: {group.Waypoints.Count} · взгляд у ребра");
         var placement = _fsm.Placement;
         var ghostCell = placement?.TargetHex is { } target && _map.Grid.Contains(target) ? target : (HexCoord?)null;
         _units.SyncGhost(ghostCell, placement?.CanPlace ?? false);
         UpdateHover();
-        UpdateFills(draft);
+        UpdateFills(draft, group);
         UpdateHud();
     }
 
@@ -178,10 +183,14 @@ public partial class Main : Node3D
     /// Passability layer. Placement mode: every cell shows whether a unit can be placed there.
     /// Order draft: all 120 cells are green/red, the source hex (facing sectors) neutral.
     /// </summary>
-    private void UpdateFills(DraftView? drag)
+    private void UpdateFills(DraftView? drag, GroupDraftView? group)
     {
         string stamp;
-        if (drag is not null)
+        if (group?.NextStage is not null)
+        {
+            stamp = $"group:{string.Join(',', group.Members)}:{string.Join(',', group.Sources)}:{string.Join(',', group.Waypoints)}:{_sim.State.TopologyVersion}";
+        }
+        else if (drag is not null)
         {
             stamp = $"draft:{drag.Unit}:{drag.Source}:{_sim.State.TopologyVersion}";
         }
@@ -212,7 +221,22 @@ public partial class Main : Node3D
 
         _fillStamp = stamp;
         _fillLayer.ClearAll();
-        if (drag is not null)
+        if (group?.NextStage is { } next)
+        {
+            // Command mode: green = the whole team fits around this hex as the next КТД (spec part 2 §6.2), red = not;
+            // the last КТД (captain's facing sectors) is neutral.
+            foreach (var cell in _map.Grid.Coords)
+            {
+                if (cell == group.Source)
+                {
+                    _fillLayer.SetFill(cell, VisualConfig.FillNeutral);
+                    continue;
+                }
+
+                _fillLayer.SetFill(cell, next.Evaluate(cell).IsValid ? VisualConfig.FillValid : VisualConfig.FillInvalid);
+            }
+        }
+        else if (drag is not null)
         {
             // All 120 cells: green = a waypoint can be placed (reachable and free), red = blocked, occupied
             // or isolated, neutral = the source hex (rotate-in-place area).
@@ -375,6 +399,37 @@ public partial class Main : Node3D
             case RosterUnitPlaced r:
                 ShowMessage($"«{RosterName(r.RosterEntry)}» на {UiText.Cell(r.Cell)}. Клик по зелёной — ТД1, у ребра клетки — взгляд (обязателен).", false);
                 break;
+            case GroupModeChanged { Active: true }:
+                ShowMessage("Команда: кликните своего юнита — он капитан; затем остальных участников. Клик по клетке — КТД1. ПКМ/Esc — выход.", false);
+                break;
+            case GroupMemberAdded m:
+                ShowMessage(m.IsCaptain
+                    ? $"Капитан — юнит {m.Unit}. Добавьте участников кликом или кликните клетку — КТД1."
+                    : $"Юнит {m.Unit} в команде (участников: {m.Count}). Клик по клетке — КТД1.", false);
+                break;
+            case GroupMemberRefused r:
+                ShowMessage(r.Reason == GroupTargetStatus.TeamFull
+                    ? $"В команде уже {HexTactics.Core.Orders.GroupRoutePlanner.MaxMembers} участников — больше нельзя."
+                    : $"Юнит {r.Unit} уже в команде (капитан не меняется).", true);
+                break;
+            case GroupNeedsCaptain:
+                ShowMessage("Сначала кликните своего юнита — он станет капитаном.", true);
+                break;
+            case GroupWaypointAdded k:
+                ShowMessage($"КТД{k.Number} → {UiText.Cell(k.Cell)}: капитан в центр, остальные рядом. Клик — КТД{k.Number + 1}, у ребра КТД{k.Number} — взгляд капитана.", false);
+                break;
+            case GroupDraftTruncated t:
+                ShowMessage(t.Remaining == 0 ? "КТД удалены — снова сбор команды." : $"Удалены КТД{t.RemovedFromNumber} и следующие (осталось {t.Remaining}).", false);
+                break;
+            case GroupCommitted g:
+                ShowMessage($"Команда принята: {g.Order.Members.Count} юнит(а/ов), КТД: {g.Order.GroupWaypoints.Count}, взгляд капитана — {UiText.Direction(g.Order.FinalCaptainFacing)}.", false);
+                break;
+            case GroupCancelled x:
+                ShowMessage(UiText.GroupCancelled(x), x.Reason != DraftCancelReason.ByUser);
+                break;
+            case GroupCommitFailed f:
+                ShowMessage(UiText.GroupCommitFailed(f), true);
+                break;
             case WaypointSelected w:
                 ShowMessage($"Выбрана ТД{w.Waypoint.Sequence} юнита {w.Unit}: клетка {UiText.Cell(w.Waypoint.Cell)}.", false);
                 break;
@@ -417,6 +472,9 @@ public partial class Main : Node3D
                     break;
                 case UnitUnblocked u:
                     ShowMessage($"Юнит {u.Unit}: путь найден, движение продолжается.", false);
+                    break;
+                case GroupOrderFinished g:
+                    ShowMessage($"Командный приказ #{g.GroupId} выполнен: команда на местах.", false);
                     break;
                 case MovementFinished f:
                     ShowMessage($"Юнит {f.Unit} выполнил все ТД и стоит на {UiText.Cell(f.Cell)}.", false);
@@ -501,10 +559,10 @@ public partial class Main : Node3D
 
         _hud.AddHeader("Приказы");
         _hud.AddLabel(
-            "ЛКМ на юните + тянуть → ТД1, дальше клик → ТД2, ТД3…\n" +
-            "клик у ребра исходной клетки → финальный взгляд (приказ принят)\n" +
-            "выбранный юнит: клик у ребра его клетки → поворот на месте\n" +
-            "ПКМ / Esc → отмена черновика · ПКМ по ТД → удалить её и следующие",
+            "тянуть от юнита → ТД1, клики → ТД2…\n" +
+            "клик у ребра последней ТД → взгляд, приказ принят\n" +
+            "ПКМ / Esc → отмена · ПКМ по ТД → удалить её и дальше\n" +
+            "«Команда»: клик по своим, затем по клетке → КТД",
             dim: true,
             fontSize: 12);
         _hud.AddSeparator();
@@ -723,6 +781,16 @@ public partial class Main : Node3D
                     return 2;
                 }
 
+            case "command":
+                {
+                    // Presses the real "Команда" card in the bottom bar.
+                    var p = _rosterBar.CommandCenter;
+                    InjectMotion(p);
+                    InjectButton(p, MouseButton.Left, true);
+                    InjectButton(p, MouseButton.Left, false);
+                    return 2;
+                }
+
             case "face":
                 if (_fsm.SelectedUnit is { } id)
                 {
@@ -805,7 +873,7 @@ public partial class Main : Node3D
     /// expect:units:N · expect:cell:ID:c,r · expect:waypoints:ID:N · expect:facing:ID:Dir ·
     /// expect:paused:true|false · expect:same-tick (no tick since <c>mark</c>) · expect:status:ID:Idle|Moving|Blocked ·
     /// expect:draft:none|N (open draft with N waypoints) · expect:roster:ENTRY:State · expect:lifecycle:ID:Active|PlacedPendingFacing ·
-    /// expect:mode:InputMode
+    /// expect:mode:InputMode · expect:group:none|M:K · expect:captain:ID · expect:ingroup:ID:yes|no
     /// </summary>
     private void RunExpectation(string arg)
     {
@@ -858,6 +926,24 @@ public partial class Main : Node3D
             case "mode":
                 actual = _fsm.Mode.ToString();
                 ok = actual == a[1];
+                break;
+            case "group":
+                {
+                    // expect:group:none · expect:group:M:K (M members, K КТД in the open command draft)
+                    var g = _fsm.Group;
+                    actual = g is null ? "none" : $"{g.Members.Count}:{g.Waypoints.Count}";
+                    ok = actual == (a.Length > 2 ? $"{a[1]}:{a[2]}" : a[1]);
+                    break;
+                }
+
+            case "captain":
+                actual = _fsm.Group?.Captain?.Value.ToString(CultureInfo.InvariantCulture) ?? "none";
+                ok = actual == a[1];
+                break;
+            case "ingroup":
+                // expect:ingroup:ID:yes|no — the unit executes a command order
+                actual = Unit(1)?.Orders.GroupId is null ? "no" : "yes";
+                ok = actual == a[2];
                 break;
             case "same-tick":
                 actual = $"{_markedTick} -> {_sim.Tick}";

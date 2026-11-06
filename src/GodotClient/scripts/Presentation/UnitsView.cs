@@ -19,9 +19,21 @@ public partial class UnitsView : Node3D
 
     /// <summary>Creates/removes views to match the state and updates positions and facing.</summary>
     /// <param name="interpolationSeconds">Simulation time elapsed since the last tick (smooth rendering only).</param>
-    public void Sync(GameState state, UnitId? selected, float delta, double interpolationSeconds, UnitId? previewUnit = null, HexDirection? previewFacing = null)
+    /// <param name="groupMembers">Members of the team being formed in the command mode (captain first), or null.</param>
+    public void Sync(GameState state, UnitId? selected, float delta, double interpolationSeconds, UnitId? previewUnit = null, HexDirection? previewFacing = null, IReadOnlyList<UnitId>? groupMembers = null)
     {
         var alive = new HashSet<UnitId>();
+        var captains = new HashSet<UnitId>();
+        foreach (var group in state.Groups)
+        {
+            captains.Add(group.Captain);
+        }
+
+        if (groupMembers is { Count: > 0 })
+        {
+            captains.Add(groupMembers[0]);
+        }
+
         foreach (var unit in state.Units)
         {
             alive.Add(unit.Id);
@@ -36,6 +48,8 @@ public partial class UnitsView : Node3D
             var facing = previewUnit == unit.Id && previewFacing is { } pf ? pf : unit.Facing;
             view.Sync(PositionOf(unit, interpolationSeconds), facing, delta);
             view.Selected = selected == unit.Id;
+            view.GroupMember = groupMembers is not null && System.Linq.Enumerable.Contains(groupMembers, unit.Id);
+            view.Captain = captains.Contains(unit.Id);
             view.Blocked = unit.Motion.Status == MovementStatus.Blocked;
         }
 

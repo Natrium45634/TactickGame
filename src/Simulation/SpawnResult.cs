@@ -41,3 +41,7 @@ public readonly record struct PlacementResult(UnitId? Unit, HexCoord? Cell, Core
 {
     public bool Success => Error == Core.Spawning.PlacementError.None && Unit is not null;
 }
+
+/// <summary>Result of applying a command order. On failure no member's queue changed.</summary>
+/// <param name="FailedIndex">Index of the first impossible КТД (-1 if none / not applicable).</param>
+public readonly record struct GroupOrderResult(bool Success, int FailedIndex, GroupPlanError Error, int? GroupId);

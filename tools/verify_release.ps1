@@ -63,6 +63,17 @@ $script:RegressionScenarioV08 = ($script:RegressionScenarioV07 -replace ';key:Es
     'key:Escape'
 ) -join ';')
 
+# v0.9.0+: the v0.8 scenario plus the command mode (spec part 2 §6): the real "Команда" card, captain = first click,
+# no duplicates, RMB cancels, КТД1 + captain's facing applies the command order to both members.
+$script:RegressionScenarioV09 = ($script:RegressionScenarioV08 -replace ';key:Escape$', '') + ';' + (@(
+    'command', 'expect:mode:GroupCollect', 'click:3,4', 'expect:captain:3', 'click:0,6', 'click:3,4', 'expect:group:2:0',
+    'rclick:6,6', 'expect:group:none', 'expect:waypoints:3:0',
+    'command', 'click:3,4', 'click:0,6', 'click:2,2', 'expect:group:2:1', 'click:2,2@South:0.6', 'expect:group:none',
+    'expect:ingroup:3:yes', 'expect:ingroup:4:yes',
+    'waitidle:3:3000', 'waitidle:4:3000', 'expect:cell:3:2,2', 'expect:facing:3:South', 'expect:facing:4:South', 'expect:ingroup:4:no',
+    'key:Escape'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -122,7 +133,8 @@ if ($Run -and $errors.Count -eq 0) {
         $regression = [version]$Version -ge [version]'0.5.0'
         $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
+            $scenario = if ([version]$Version -ge [version]'0.9.0') { $script:RegressionScenarioV09 }
+                        elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
             $smokeArgs += "--hx-script=$scenario"

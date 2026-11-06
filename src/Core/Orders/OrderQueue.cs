@@ -28,6 +28,21 @@ public sealed class OrderQueue
     /// </summary>
     public HexDirection? FinalFacing { get; private set; }
 
+    /// <summary>
+    /// The command order (<see cref="GroupOrderState.Id"/>) this queue belongs to, or null for a personal order.
+    /// Cleared when the unit gets a personal order or finishes the route.
+    /// </summary>
+    public int? GroupId { get; private set; }
+
+    internal void SetGroup(int? groupId)
+    {
+        if (GroupId != groupId)
+        {
+            GroupId = groupId;
+            Version++;
+        }
+    }
+
     internal void SetFinalFacing(HexDirection? facing)
     {
         if (FinalFacing != facing)

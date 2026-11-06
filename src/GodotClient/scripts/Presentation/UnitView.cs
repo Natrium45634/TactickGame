@@ -25,6 +25,8 @@ public partial class UnitView : Node3D
     private MeshInstance3D _selectionRing = null!;
     private Label3D _blockedMarker = null!;
     private Label3D _pendingMarker = null!;
+    private MeshInstance3D _memberRing = null!;
+    private Node3D _captainMark = null!;
     private StandardMaterial3D _bodyMaterial = null!;
     private float _visualAngle;
     private float _targetAngle;
@@ -142,6 +144,51 @@ public partial class UnitView : Node3D
         };
         AddChild(_pendingMarker);
 
+        // Command mode (spec part 2 §6.1): members being collected get a cyan ring, the captain a cyan diamond.
+        _memberRing = new MeshInstance3D
+        {
+            Name = "MemberRing",
+            Mesh = new TorusMesh { InnerRadius = 0.60f, OuterRadius = 0.66f, Rings = 64, RingSegments = 8 },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = VisualConfig.MemberRing,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            },
+            Scale = new Vector3(1, 0.25f, 1),
+            Position = new Vector3(0, 0.025f, 0),
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            Visible = false,
+        };
+        AddChild(_memberRing);
+
+        _captainMark = new Node3D { Name = "CaptainMark", Position = new Vector3(0, BodyHeight + 0.62f, 0), Visible = false };
+        // Drawn above the order overlay (no depth test, higher priority): the captain stays recognisable even under
+        // its own cyan command arrow. Lit, so its facets read against the flat arrows.
+        var diamondMaterial = new StandardMaterial3D
+        {
+            AlbedoColor = VisualConfig.CaptainMark,
+            Roughness = 0.6f,
+            NoDepthTest = true,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            RenderPriority = 40,
+        };
+        _captainMark.AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = 0f, BottomRadius = 0.16f, Height = 0.2f, RadialSegments = 4, Rings = 1 },
+            MaterialOverride = diamondMaterial,
+            Position = new Vector3(0, 0.1f, 0),
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        });
+        _captainMark.AddChild(new MeshInstance3D
+        {
+            Mesh = new CylinderMesh { TopRadius = 0.16f, BottomRadius = 0f, Height = 0.2f, RadialSegments = 4, Rings = 1 },
+            MaterialOverride = diamondMaterial,
+            Position = new Vector3(0, -0.1f, 0),
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        });
+        AddChild(_captainMark);
+
         if (caption is not null)
         {
             AddChild(new Label3D
@@ -174,6 +221,20 @@ public partial class UnitView : Node3D
         set => _selectionRing.Visible = value;
     }
 
+    /// <summary>Cyan ring: the unit is a member of the team being formed in the command mode.</summary>
+    public bool GroupMember
+    {
+        get => _memberRing.Visible;
+        set => _memberRing.Visible = value;
+    }
+
+    /// <summary>Cyan diamond above the unit: captain of the team being formed or of an active command order.</summary>
+    public bool Captain
+    {
+        get => _captainMark.Visible;
+        set => _captainMark.Visible = value;
+    }
+
     /// <summary>
     /// Updates the visual from the model. The facing turns smoothly; position is set directly. A null facing (unit placed
     /// from the roster, waiting for its facing) hides the edge indicator and shows a yellow "?".
@@ -181,6 +242,11 @@ public partial class UnitView : Node3D
     public void Sync(Vector3 position, HexDirection? facingOrNull, float delta)
     {
         Position = position;
+        if (_captainMark.Visible)
+        {
+            _captainMark.RotateY(delta * 1.5f);
+        }
+
         _facingPivot.Visible = facingOrNull is not null;
         _pendingMarker.Visible = facingOrNull is null;
         if (facingOrNull is not { } facing)

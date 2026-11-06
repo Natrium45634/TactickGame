@@ -25,6 +25,14 @@ public partial class RosterBar : CanvasLayer
     /// <summary>LMB pressed on a card: (entry id).</summary>
     public event Action<int>? CardPressed;
 
+    /// <summary>LMB pressed on the "Команда" card (spec part 2 §6.1: a separate tool next to the roster).</summary>
+    public event Action? CommandPressed;
+
+    private PanelContainer _commandCard = null!;
+    private StyleBoxFlat _commandStyle = null!;
+    private Label _commandState = null!;
+    private string _commandText = string.Empty;
+
     public float UiScale { get; set; } = 1f;
 
     /// <summary>Left edge in viewport pixels (right of the side HUD).</summary>
@@ -92,6 +100,117 @@ public partial class RosterBar : CanvasLayer
         {
             AddCard(entry);
         }
+
+        var separator = new VSeparator();
+        separator.AddThemeConstantOverride("separation", 10);
+        outer.AddChild(separator);
+        AddCommandCard(outer);
+    }
+
+    /// <summary>Centre of the "Команда" card in viewport pixels (automation).</summary>
+    public Vector2 CommandCenter
+    {
+        get
+        {
+            var r = _commandCard.GetGlobalRect();
+            return (r.Position + (r.Size * 0.5f)) * UiScale;
+        }
+    }
+
+    /// <summary>Highlights the card while the command mode is on and shows its progress.</summary>
+    public void SetCommandState(bool active, string text)
+    {
+        if (text == _commandText && _commandStyle.BorderWidthTop == (active ? 2 : 1))
+        {
+            return;
+        }
+
+        _commandText = text;
+        _commandState.Text = text;
+        _commandStyle.BgColor = active ? new Color(0.10f, 0.30f, 0.38f) : new Color(0.20f, 0.22f, 0.26f);
+        _commandStyle.BorderColor = active ? VisualConfig.MemberRing : new Color(0.30f, 0.85f, 1.0f, 0.45f);
+        var width = active ? 2 : 1;
+        _commandStyle.BorderWidthTop = width;
+        _commandStyle.BorderWidthBottom = width;
+        _commandStyle.BorderWidthLeft = width;
+        _commandStyle.BorderWidthRight = width;
+    }
+
+    private void AddCommandCard(HBoxContainer parent)
+    {
+        _commandStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.20f, 0.22f, 0.26f),
+            CornerRadiusTopLeft = 5,
+            CornerRadiusTopRight = 5,
+            CornerRadiusBottomLeft = 5,
+            CornerRadiusBottomRight = 5,
+            ContentMarginLeft = 8,
+            ContentMarginRight = 8,
+            ContentMarginTop = 6,
+            ContentMarginBottom = 6,
+            BorderColor = new Color(0.30f, 0.85f, 1.0f, 0.45f),
+            BorderWidthTop = 1,
+            BorderWidthBottom = 1,
+            BorderWidthLeft = 1,
+            BorderWidthRight = 1,
+        };
+        _commandCard = new PanelContainer
+        {
+            Name = "CommandCard",
+            CustomMinimumSize = new Vector2(CardWidth + 8, BarHeight - 16),
+            MouseFilter = Control.MouseFilterEnum.Stop,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+        };
+        _commandCard.AddThemeStyleboxOverride("panel", _commandStyle);
+
+        var box = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        box.AddThemeConstantOverride("separation", 2);
+        _commandCard.AddChild(box);
+
+        // Team symbol: a larger captain disc followed by two smaller companions, in the command colour.
+        var head = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        head.AddThemeConstantOverride("separation", 3);
+        foreach (var size in new[] { 18, 12, 12 })
+        {
+            var dot = new Panel
+            {
+                CustomMinimumSize = new Vector2(size, size),
+                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            dot.AddThemeStyleboxOverride("panel", new StyleBoxFlat
+            {
+                BgColor = VisualConfig.MemberRing,
+                CornerRadiusTopLeft = size / 2,
+                CornerRadiusTopRight = size / 2,
+                CornerRadiusBottomLeft = size / 2,
+                CornerRadiusBottomRight = size / 2,
+            });
+            head.AddChild(dot);
+        }
+
+        var name = new Label { Text = " Команда", MouseFilter = Control.MouseFilterEnum.Ignore };
+        name.AddThemeFontSizeOverride("font_size", 15);
+        name.AddThemeColorOverride("font_color", new Color(0.80f, 0.95f, 1.0f));
+        head.AddChild(name);
+        box.AddChild(head);
+
+        _commandState = new Label { Text = "клик — собрать", MouseFilter = Control.MouseFilterEnum.Ignore };
+        _commandState.AddThemeFontSizeOverride("font_size", 11);
+        _commandState.AddThemeColorOverride("font_color", new Color(0.70f, 0.80f, 0.86f));
+        box.AddChild(_commandState);
+
+        _commandCard.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true })
+            {
+                CommandPressed?.Invoke();
+                _commandCard.AcceptEvent();
+            }
+        };
+
+        parent.AddChild(_commandCard);
     }
 
     /// <summary>Extra control placed after the cards (the "Команда" button from v0.9.0).</summary>

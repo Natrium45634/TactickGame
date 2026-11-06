@@ -137,6 +137,42 @@ public static class UiText
     public static string CommitFailed(DraftCommitFailed f) =>
         $"Приказ не принят: ТД{f.Result.FailedIndex + 1} — {Error(f.Result.Error, null)}. Прежний маршрут сохранён, черновик открыт.";
 
+    // ----- command mode (spec part 2 §6)
+
+    public static string GroupCancelled(GroupCancelled c) => c.Reason switch
+    {
+        DraftCancelReason.InvalidTarget => $"Команда отменена: {GroupStatus(c.Status, c.Cell)}. Прежние приказы не изменены.",
+        DraftCancelReason.UnitLost => "Команда отменена: участника больше нет.",
+        _ => "Команда отменена. Прежние приказы не изменены.",
+    };
+
+    public static string GroupCommitFailed(GroupCommitFailed f) =>
+        $"Команда не принята: КТД{f.Result.FailedIndex + 1} — {GroupError(f.Result.Error)}. Черновик открыт.";
+
+    public static string GroupStatus(GroupTargetStatus status, HexCoord? cell)
+    {
+        var c = cell is { } h ? Cell(h) : string.Empty;
+        return status switch
+        {
+            GroupTargetStatus.OutOfBounds or GroupTargetStatus.NoTarget => "точка вне поля",
+            GroupTargetStatus.NotWalkable => $"клетка {c} непроходима",
+            GroupTargetStatus.Occupied => $"клетка {c} занята",
+            GroupTargetStatus.CaptainUnreachable => $"капитан не может дойти до {c}",
+            GroupTargetStatus.NotEnoughSlots => $"вокруг {c} не хватает свободных достижимых клеток для всей команды",
+            _ => "недопустимая клетка",
+        };
+    }
+
+    public static string GroupError(GroupPlanError error) => error switch
+    {
+        GroupPlanError.CaptainUnreachable => "капитан не может дойти",
+        GroupPlanError.NotEnoughSlots => "не хватает мест для команды",
+        GroupPlanError.Occupied => "клетка занята",
+        GroupPlanError.NotWalkable => "клетка непроходима",
+        GroupPlanError.OutOfBounds => "вне поля",
+        _ => error.ToString(),
+    };
+
     public static string Status(DraftTargetStatus status, HexCoord? cell)
     {
         var c = cell is { } h ? Cell(h) : string.Empty;

@@ -15,8 +15,10 @@ public sealed class GameState
     private readonly SortedDictionary<UnitId, UnitState> _units = new();
     private readonly Dictionary<HexCoord, UnitId> _occupancy = new();
     private readonly Dictionary<HexCoord, UnitId> _reservations = new();
+    private readonly SortedDictionary<int, GroupOrderState> _groups = new();
     private int _nextUnitId = 1;
     private int _nextWaypointId = 1;
+    private int _nextGroupId = 1;
 
     public GameState(MapDefinition map, HexTactics.Core.Roster.RosterState? roster = null)
     {
@@ -194,4 +196,65 @@ public sealed class GameState
     public void SetFinalFacing(UnitId id, HexDirection? facing) => GetUnit(id).Orders.SetFinalFacing(facing);
 
     public void TruncateWaypoints(UnitId id, int index) => GetUnit(id).Orders.TruncateFrom(index);
+
+    // ----- Command orders (spec part 2 §6.4) -----
+
+    /// <summary>Accepted command orders that still have at least one member executing them (ordered by id).</summary>
+    public IEnumerable<GroupOrderState> Groups => _groups.Values;
+
+    public GroupOrderState? FindGroup(int id) => _groups.TryGetValue(id, out var g) ? g : null;
+
+    /// <summary>The command order a unit currently executes, if any.</summary>
+    public GroupOrderState? GroupOf(UnitId unit) => FindUnit(unit)?.Orders.GroupId is { } id ? FindGroup(id) : null;
+
+    /// <summary>Registers an accepted command order; the members' queues are filled by the caller.</summary>
+    public GroupOrderState AddGroup(
+        UnitId captain,
+        IReadOnlyList<UnitId> members,
+        IReadOnlyList<HexCoord> waypoints,
+        IReadOnlyList<IReadOnlyList<GroupSlotAssignment>> stages,
+        IReadOnlyDictionary<UnitId, HexDirection> finalFacings)
+    {
+        var group = new GroupOrderState(_nextGroupId++, captain, members, waypoints, stages, finalFacings);
+        _groups.Add(group.Id, group);
+        return group;
+    }
+
+    /// <summary>Marks a unit's queue as part of a command order (or personal with null).</summary>
+    public void SetQueueGroup(UnitId id, int? groupId) => GetUnit(id).Orders.SetGroup(groupId);
+
+    /// <summary>Drops command orders no member executes any more; returns the removed ids.</summary>
+    public IReadOnlyList<int> PruneGroups()
+    {
+        List<int>? removed = null;
+        foreach (var (id, group) in _groups)
+        {
+            var active = false;
+            foreach (var member in group.Members)
+            {
+                if (FindUnit(member)?.Orders.GroupId == id)
+                {
+                    active = true;
+                    break;
+                }
+            }
+
+            if (!active)
+            {
+                (removed ??= new List<int>()).Add(id);
+            }
+        }
+
+        if (removed is null)
+        {
+            return Array.Empty<int>();
+        }
+
+        foreach (var id in removed)
+        {
+            _groups.Remove(id);
+        }
+
+        return removed;
+    }
 }

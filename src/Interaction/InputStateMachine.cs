@@ -32,6 +32,12 @@ public enum InputMode
 
     /// <summary>A roster card is dragged over the map (spec part 2 §5).</summary>
     RosterDrag = 6,
+
+    /// <summary>"Команда" pressed: allied units are clicked to form the team, the first one is the captain (§6.1).</summary>
+    GroupCollect = 7,
+
+    /// <summary>The team has at least one КТД: clicks add КТД, a sector of the last one confirms (§6.2, §6.3).</summary>
+    GroupDraft = 8,
 }
 
 public sealed record InteractionSettings
@@ -63,7 +69,7 @@ public sealed record InteractionSettings
 /// </list>
 /// No Godot dependency; fully unit-testable.
 /// </summary>
-public sealed class InputStateMachine
+public sealed partial class InputStateMachine
 {
     private readonly GameSimulation _sim;
     private readonly HexLayout _layout;
@@ -133,6 +139,12 @@ public sealed class InputStateMachine
         if (Mode == InputMode.RosterDrag)
         {
             UpdatePlacementView(sample);
+            return;
+        }
+
+        if (IsGrouping)
+        {
+            UpdateGroupView(sample);
             return;
         }
 
@@ -212,6 +224,16 @@ public sealed class InputStateMachine
             return;
         }
 
+        if (IsGrouping)
+        {
+            if (press is not null)
+            {
+                GroupClick(sample);
+            }
+
+            return;
+        }
+
         if (IsDrafting)
         {
             if (_held)
@@ -247,6 +269,10 @@ public sealed class InputStateMachine
         {
             CancelRosterDrag(PlacementError.None, null);
         }
+        else if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
+        }
         else if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -271,6 +297,10 @@ public sealed class InputStateMachine
         {
             UpdateDraftView(pointer);
         }
+        else if (IsGrouping && Pointer is { } groupPointer)
+        {
+            UpdateGroupView(groupPointer);
+        }
     }
 
     /// <summary>
@@ -282,6 +312,11 @@ public sealed class InputStateMachine
         if (_sim.State.FindUnit(unit) is null)
         {
             return;
+        }
+
+        if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
         }
 
         if (IsDrafting)
@@ -313,6 +348,11 @@ public sealed class InputStateMachine
         if (Mode == InputMode.RosterDrag)
         {
             return;
+        }
+
+        if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
         }
 
         if (IsDrafting)
@@ -419,6 +459,11 @@ public sealed class InputStateMachine
             return;
         }
 
+        if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
+        }
+
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -458,6 +503,11 @@ public sealed class InputStateMachine
 
     public void ToggleObstacleEditMode()
     {
+        if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
+        }
+
         if (IsDrafting)
         {
             CancelDraft(DraftCancelReason.ByUser, DraftTargetStatus.NoTarget, null);
@@ -491,6 +541,11 @@ public sealed class InputStateMachine
         if (Mode == InputMode.RosterDrag)
         {
             CancelRosterDrag(PlacementError.None, null);
+        }
+
+        if (IsGrouping)
+        {
+            CancelGroup(DraftCancelReason.ByUser, GroupTargetStatus.NoTarget, null);
         }
 
         if (IsDrafting)
@@ -579,6 +634,12 @@ public sealed class InputStateMachine
         if (Mode == InputMode.RosterDrag)
         {
             CancelRosterDrag(PlacementError.None, null);
+            return;
+        }
+
+        if (IsGrouping)
+        {
+            GroupSecondaryPress(sample);
             return;
         }
 
@@ -671,7 +732,7 @@ public sealed class InputStateMachine
 
     private void SelectInternal(UnitId? unit, int? waypointId)
     {
-        if (!IsDrafting)
+        if (!IsDrafting && !IsGrouping)
         {
             Mode = unit is null ? InputMode.Idle : InputMode.UnitSelected;
         }

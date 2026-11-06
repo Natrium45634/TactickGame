@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
@@ -104,6 +105,16 @@ public sealed class GameSimulation
         foreach (var system in _systems)
         {
             system.Tick(_context);
+        }
+
+        PruneGroups();
+    }
+
+    private void PruneGroups()
+    {
+        foreach (var id in State.PruneGroups())
+        {
+            _events.Add(new GroupOrderFinished(Tick, id));
         }
     }
 
@@ -271,6 +282,7 @@ public sealed class GameSimulation
         if (mode == OrderMode.Replace)
         {
             State.ClearWaypoints(id);
+            State.SetQueueGroup(id, null);
         }
 
         var waypoint = State.AppendWaypoint(id, target);
@@ -325,8 +337,108 @@ public sealed class GameSimulation
         }
 
         State.SetFinalFacing(order.Unit, order.FinalFacing);
+        State.SetQueueGroup(order.Unit, null); // a personal order takes the unit out of its command order
+        PruneGroups();
         _events.Add(new OrderApplied(Tick, order.Unit, order.Waypoints, order.FinalFacing));
         return OrderApplyResult.Ok;
+    }
+
+    /// <summary>
+    /// Applies a command order as one transaction (spec part 2 §6): the whole КТД chain is planned from the members'
+    /// command anchors with <see cref="GroupRoutePlanner"/> (captain on every КТД, companions on neighbouring slots);
+    /// if any КТД is impossible for the team as a whole nothing changes. Otherwise every member's queue is replaced by
+    /// its own destinations, the captain gets the chosen final facing and the companions theirs
+    /// (<see cref="CompanionFacings"/>). Members placed from the roster become active.
+    /// </summary>
+    public GroupOrderResult ApplyGroupOrder(GroupOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        if (!Enum.IsDefined(order.FinalCaptainFacing))
+        {
+            throw new ArgumentOutOfRangeException(nameof(order), "Invalid final facing.");
+        }
+
+        GroupChainPlan plan;
+        if (order.Members.Count > 0 && order.Members[0] != order.Captain)
+        {
+            plan = new GroupChainPlan(Array.Empty<GroupStagePlan>(), 0, GroupPlanError.CaptainNotFirst);
+        }
+        else
+        {
+            var anchors = new List<HexCoord>(order.Members.Count);
+            foreach (var member in order.Members)
+            {
+                anchors.Add(State.FindUnit(member) is null ? default : CommandAnchor(member));
+            }
+
+            plan = GroupRoutePlanner.PlanChain(State, order.Members, anchors, order.GroupWaypoints);
+        }
+
+        if (!plan.IsValid)
+        {
+            _events.Add(new GroupOrderRejected(Tick, order.Captain, plan.FailedIndex, plan.Error));
+            return new GroupOrderResult(false, plan.FailedIndex, plan.Error, null);
+        }
+
+        var stages = new List<IReadOnlyList<GroupSlotAssignment>>(plan.Stages.Count);
+        foreach (var stage in plan.Stages)
+        {
+            stages.Add(stage.Assignments);
+        }
+
+        var facings = CompanionFacings(order);
+        var group = State.AddGroup(order.Captain, order.Members.ToArray(), order.GroupWaypoints.ToArray(), stages, facings);
+        var memberSet = new HashSet<UnitId>(order.Members);
+        foreach (var member in order.Members)
+        {
+            var unit = State.GetUnit(member);
+            var destinations = new List<HexCoord>(plan.Stages.Count);
+            foreach (var stage in plan.Stages)
+            {
+                destinations.Add(stage.DestinationOf(member)!.Value);
+            }
+
+            if (!unit.IsActive)
+            {
+                var initial = facings[member];
+                var path = Core.Pathfinding.Pathfinder.FindPath(State.Grid, unit.Cell, destinations[0], GroupRoutePlanner.ObstaclesFor(State, memberSet));
+                if (path is { Count: > 1 })
+                {
+                    initial = unit.Cell.DirectionTo(path[1]) ?? initial;
+                }
+
+                ActivateIfPending(unit, initial);
+            }
+
+            State.ClearWaypoints(member);
+            foreach (var cell in destinations)
+            {
+                State.AppendWaypoint(member, cell);
+            }
+
+            State.SetFinalFacing(member, facings[member]);
+            State.SetQueueGroup(member, group.Id);
+        }
+
+        PruneGroups();
+        _events.Add(new GroupOrderApplied(Tick, group.Id, order.Captain, group.Members, group.Waypoints));
+        return new GroupOrderResult(true, -1, GroupPlanError.None, group.Id);
+    }
+
+    /// <summary>
+    /// Final facings of all members of a command order: the captain looks where the player chose; in this version the
+    /// companions look the same way (spec part 2 §14.5 allows exactly the captain's facing; the seeded ±60° choice
+    /// follows with synchronised execution).
+    /// </summary>
+    private static Dictionary<UnitId, HexDirection> CompanionFacings(GroupOrder order)
+    {
+        var facings = new Dictionary<UnitId, HexDirection>();
+        foreach (var member in order.Members)
+        {
+            facings[member] = order.FinalCaptainFacing;
+        }
+
+        return facings;
     }
 
     /// <summary>

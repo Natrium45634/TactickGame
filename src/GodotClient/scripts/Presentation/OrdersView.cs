@@ -17,7 +17,10 @@ namespace HexTactics.Client.Presentation;
 /// facing as a small white arrow at the edge of the last ТД;</item>
 /// <item>the open draft: its arrows and amber-rimmed markers, the live arrow from the source to the cursor, the
 /// facing-sector preview at the source edge;</item>
-/// <item>thin route lines (computed paths) and the green preview path to the cursor.</item>
+/// <item>thin route lines (computed paths) and the green preview path to the cursor;</item>
+/// <item>command orders in CYAN (spec part 2 §6): while the team is collected an arrow from every member to the cursor,
+/// then per КТД the arrows of every member to its slot, numbered КТД markers and small slot markers; confirmed command
+/// chains stay cyan.</item>
 /// </list>
 /// It only reads the model and the input state machine; the queue itself lives in <see cref="OrderQueue"/>.
 /// </summary>
@@ -53,6 +56,8 @@ public partial class OrdersView : Node3D
     private ImmediateMesh _pathMesh = null!;
     private long _signature = long.MinValue;
     private string _draftSignature = string.Empty;
+    private string _groupSignature = string.Empty;
+    private Node3D _groupMarkers = null!;
     private long _segmentCacheVersion = -1;
     private string _draftPathKey = string.Empty;
     private IReadOnlyList<IReadOnlyList<HexCoord>?> _draftPaths = Array.Empty<IReadOnlyList<HexCoord>?>();
@@ -64,6 +69,8 @@ public partial class OrdersView : Node3D
         AddChild(_committed);
         _draftMarkers = new Node3D { Name = "DraftMarkers" };
         AddChild(_draftMarkers);
+        _groupMarkers = new Node3D { Name = "GroupMarkers" };
+        AddChild(_groupMarkers);
 
         _overlayMesh = new ImmediateMesh();
         AddChild(new MeshInstance3D
@@ -92,19 +99,33 @@ public partial class OrdersView : Node3D
         UnitId? selected,
         int? selectedWaypoint,
         DraftView? draft,
+        GroupDraftView? group,
         HexDirection? hoverTurn,
         Func<UnitId, HexCoord> anchorOf,
         Func<UnitId, PlaneVector?> visualPosition)
     {
-        var signature = Signature(state, selected, selectedWaypoint, draft?.Unit);
+        // Routes of units that are being re-planned (single draft or command draft) stay visible but faded.
+        var ghosts = new HashSet<UnitId>();
+        if (draft is not null)
+        {
+            ghosts.Add(draft.Unit);
+        }
+
+        if (group is not null && !group.IsCollecting)
+        {
+            ghosts.UnionWith(group.Members);
+        }
+
+        var signature = Signature(state, selected, selectedWaypoint, ghosts);
         if (signature != _signature)
         {
             _signature = signature;
-            RebuildCommitted(state, selected, selectedWaypoint, draft?.Unit, anchorOf);
+            RebuildCommitted(state, selected, selectedWaypoint, ghosts, anchorOf);
         }
 
         RebuildDraftMarkers(draft);
-        DrawOverlay(state, selected, draft, hoverTurn, anchorOf);
+        RebuildGroupMarkers(group);
+        DrawOverlay(state, selected, draft, group, hoverTurn, anchorOf, visualPosition);
         DrawPaths(state, selected, draft, visualPosition);
     }
 
@@ -134,7 +155,7 @@ public partial class OrdersView : Node3D
 
     // ------------------------------------------------------------------ confirmed chains
 
-    private static long Signature(GameState state, UnitId? selected, int? selectedWaypoint, UnitId? draftOwner)
+    private static long Signature(GameState state, UnitId? selected, int? selectedWaypoint, IReadOnlySet<UnitId> ghosts)
     {
         long h = 17;
         foreach (var unit in state.Units)
@@ -147,11 +168,15 @@ public partial class OrdersView : Node3D
 
         h = (h * 31) + (selected?.Value ?? -1);
         h = (h * 31) + (selectedWaypoint ?? -1);
-        h = (h * 31) + (draftOwner?.Value ?? -1);
+        foreach (var ghost in ghosts)
+        {
+            h = (h * 31) + ghost.Value + 7;
+        }
+
         return h;
     }
 
-    private void RebuildCommitted(GameState state, UnitId? selected, int? selectedWaypoint, UnitId? draftOwner, Func<UnitId, HexCoord> anchorOf)
+    private void RebuildCommitted(GameState state, UnitId? selected, int? selectedWaypoint, IReadOnlySet<UnitId> ghosts, Func<UnitId, HexCoord> anchorOf)
     {
         foreach (var child in _committed.GetChildren())
         {
@@ -162,7 +187,9 @@ public partial class OrdersView : Node3D
         foreach (var unit in state.Units)
         {
             var isSelected = unit.Id == selected;
-            var ghost = unit.Id == draftOwner; // the old route stays visible but faded while it is being re-planned
+            var ghost = ghosts.Contains(unit.Id); // the old route stays visible but faded while it is being re-planned
+            var group = state.GroupOf(unit.Id);
+            var isCaptain = group is not null && group.Captain == unit.Id;
             var anchor = anchorOf(unit.Id);
             if (unit.Orders.FinalFacing is { } pendingFacing)
             {
@@ -186,13 +213,25 @@ public partial class OrdersView : Node3D
                 from = to;
             }
 
-            var color = ghost ? VisualConfig.ChainGhost : isSelected ? VisualConfig.ChainSelected : VisualConfig.ChainOther;
+            var color = ghost ? VisualConfig.ChainGhost
+                : group is not null ? (isSelected ? VisualConfig.ChainCommandSelected : VisualConfig.ChainCommand)
+                : isSelected ? VisualConfig.ChainSelected : VisualConfig.ChainOther;
             _committed.AddChild(TriangleMesh($"Chain{unit.Id.Value}", chain, color, isSelected ? LayerChainSelected : LayerChainOther));
 
             foreach (var wp in unit.Orders.Items)
             {
                 var pos = _layout.HexToPlane(wp.Cell).ToWorld(0f);
                 _markers.Add((wp.Id, unit.Id, wp.Sequence, pos));
+                if (group is not null)
+                {
+                    // Command order: the captain's КТД are numbered, companions' slots are small cyan markers.
+                    var commandMarker = isCaptain
+                        ? Marker($"Waypoint{wp.Id}", pos, wp.Sequence, VisualConfig.CommandMarker, VisualConfig.CommandRim, wp.Id == selectedWaypoint, ghost)
+                        : SlotMarker($"Waypoint{wp.Id}", pos, ghost);
+                    _committed.AddChild(commandMarker);
+                    continue;
+                }
+
                 _committed.AddChild(Marker(
                     $"Waypoint{wp.Id}",
                     pos,
@@ -232,13 +271,136 @@ public partial class OrdersView : Node3D
         }
     }
 
+    /// <summary>Numbered КТД markers and companion slot markers of the command draft (rebuilt when the chain changes).</summary>
+    private void RebuildGroupMarkers(GroupDraftView? group)
+    {
+        var signature = group is null ? string.Empty
+            : $"{string.Join(';', group.Waypoints)}|" + string.Join(';', System.Linq.Enumerable.Select(group.Stages, st => string.Join(',', System.Linq.Enumerable.Select(st.Assignments, a => a.Destination))));
+        if (signature == _groupSignature)
+        {
+            return;
+        }
+
+        _groupSignature = signature;
+        foreach (var child in _groupMarkers.GetChildren())
+        {
+            child.QueueFree();
+        }
+
+        if (group is null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < group.Stages.Count; i++)
+        {
+            var stage = group.Stages[i];
+            foreach (var a in stage.Assignments)
+            {
+                if (a.Unit != group.Captain)
+                {
+                    _groupMarkers.AddChild(SlotMarker($"Slot{i}_{a.Unit.Value}", _layout.HexToPlane(a.Destination).ToWorld(0f), false));
+                }
+            }
+        }
+
+        for (var i = 0; i < group.Waypoints.Count; i++)
+        {
+            _groupMarkers.AddChild(Marker($"Ktd{i + 1}", _layout.HexToPlane(group.Waypoints[i]).ToWorld(0f), i + 1, VisualConfig.CommandMarker, VisualConfig.DraftRim, false, false));
+        }
+    }
+
+    /// <summary>
+    /// Cyan arrows of the command draft: confirmed stages (member → slot per КТД) and the live part — while collecting,
+    /// an arrow from every member to the cursor; over a hex where the team fits, arrows to the slots it would take.
+    /// </summary>
+    private void DrawGroupOverlay(GroupDraftView group, Func<UnitId, PlaneVector?> visualPosition)
+    {
+        var captain = group.Captain;
+        for (var i = 0; i < group.Stages.Count; i++)
+        {
+            var stage = group.Stages[i];
+            if (!stage.IsValid)
+            {
+                break;
+            }
+
+            for (var m = 0; m < group.Members.Count; m++)
+            {
+                var member = group.Members[m];
+                var from = i == 0 ? _layout.HexToPlane(group.Anchors[m]) : _layout.HexToPlane(group.Stages[i - 1].DestinationOf(member)!.Value);
+                var to = _layout.HexToPlane(stage.DestinationOf(member)!.Value);
+                var tris = new List<Vector3>();
+                var isCaptain = member == captain;
+                AddArrow(tris, from, to, startInset: i == 0 ? 0.36f : MarkerRadius, endInset: MarkerRadius + 0.04f, widthScale: isCaptain ? 1f : 0.6f);
+                AddColored(tris, isCaptain ? VisualConfig.ArrowCommand : VisualConfig.ArrowCommandCompanion);
+            }
+        }
+
+        if (group.Status == GroupTargetStatus.FacingSector && group.SectorFacing is { } sector && group.Source is { } last)
+        {
+            // Captain's facing at the last КТД; in this version the companions look the same way (spec part 2 §14.5).
+            AddFacingPreview(last, sector);
+            if (group.Stages.Count > 0 && group.Stages[^1].IsValid)
+            {
+                foreach (var a in group.Stages[^1].Assignments)
+                {
+                    if (a.Unit != captain)
+                    {
+                        AddFacingPreview(a.Destination, sector, 0.7f);
+                    }
+                }
+            }
+
+            return;
+        }
+
+        if (group.Pointer is not { } pointer || group.Members.Count == 0 || group.Status is GroupTargetStatus.Neutral)
+        {
+            return;
+        }
+
+        if (group.Status == GroupTargetStatus.Valid && group.Preview is { IsValid: true } preview)
+        {
+            for (var m = 0; m < group.Members.Count; m++)
+            {
+                var member = group.Members[m];
+                var start = group.IsCollecting ? visualPosition(member) ?? _layout.HexToPlane(group.Sources[m]) : _layout.HexToPlane(group.Sources[m]);
+                var isCaptain = member == captain;
+                var live = new List<Vector3>();
+                AddArrow(live, start, _layout.HexToPlane(preview.DestinationOf(member)!.Value), group.IsCollecting ? 0.36f : MarkerRadius, 0.05f, isCaptain ? 1f : 0.6f);
+                AddColored(live, isCaptain ? VisualConfig.ArrowCommand : VisualConfig.ArrowCommandCompanion);
+            }
+
+            return;
+        }
+
+        var color = group.Status switch
+        {
+            GroupTargetStatus.AddMember or GroupTargetStatus.AlreadyMember or GroupTargetStatus.NoTarget or GroupTargetStatus.TeamFull => VisualConfig.ArrowCommand,
+            GroupTargetStatus.AttackTarget => VisualConfig.ArrowAttack,
+            _ => VisualConfig.ArrowInvalid,
+        };
+        for (var m = 0; m < group.Members.Count; m++)
+        {
+            var start = group.IsCollecting ? visualPosition(group.Members[m]) ?? _layout.HexToPlane(group.Sources[m]) : _layout.HexToPlane(group.Sources[m]);
+            var live = new List<Vector3>();
+            AddArrow(live, start, pointer, group.IsCollecting ? 0.36f : MarkerRadius, 0f, group.Members[m] == captain ? 1f : 0.6f);
+            AddColored(live, color);
+        }
+    }
+
     /// <summary>Draft arrows, the live arrow to the cursor and the facing previews (rebuilt every frame).</summary>
-    private void DrawOverlay(GameState state, UnitId? selected, DraftView? draft, HexDirection? hoverTurn, Func<UnitId, HexCoord> anchorOf)
+    private void DrawOverlay(GameState state, UnitId? selected, DraftView? draft, GroupDraftView? group, HexDirection? hoverTurn, Func<UnitId, HexCoord> anchorOf, Func<UnitId, PlaneVector?> visualPosition)
     {
         _overlayMesh.ClearSurfaces();
         _overlayVertices.Clear();
 
-        if (draft is not null)
+        if (group is not null)
+        {
+            DrawGroupOverlay(group, visualPosition);
+        }
+        else if (draft is not null)
         {
             var tris = new List<Vector3>();
             var from = _layout.HexToPlane(draft.Anchor);
@@ -277,14 +439,14 @@ public partial class OrdersView : Node3D
     }
 
     /// <summary>White mini-arrow at the edge of the hex in the previewed direction, with a dark outline.</summary>
-    private void AddFacingPreview(HexCoord hex, HexDirection facing)
+    private void AddFacingPreview(HexCoord hex, HexDirection facing, float scale = 1f)
     {
         var edge = _layout.EdgeMidpoint(hex, facing);
         var outline = new List<Vector3>();
-        AddDart(outline, edge, facing, 0.26f, lift: 0.002f);
+        AddDart(outline, edge, facing, 0.26f * scale, lift: 0.002f);
         AddColored(outline, VisualConfig.FacingIndicatorOutline);
         var fill = new List<Vector3>();
-        AddDart(fill, edge, facing, 0.21f, lift: 0.004f);
+        AddDart(fill, edge, facing, 0.21f * scale, lift: 0.004f);
         AddColored(fill, VisualConfig.FacingPreview);
     }
 
@@ -462,7 +624,7 @@ public partial class OrdersView : Node3D
     /// Flat straight arrow from <paramref name="a"/> to <paramref name="b"/> on the plane: body of
     /// <see cref="ArrowBodyWidth"/> and a head; the head shrinks for very short arrows.
     /// </summary>
-    private static void AddArrow(List<Vector3> mesh, PlaneVector a, PlaneVector b, float startInset, float endInset)
+    private static void AddArrow(List<Vector3> mesh, PlaneVector a, PlaneVector b, float startInset, float endInset, float widthScale = 1f)
     {
         var dir = b - a;
         var len = (float)dir.Length;
@@ -483,9 +645,9 @@ public partial class OrdersView : Node3D
             return;
         }
 
-        var headLen = Mathf.Min(ArrowHeadLength, (end - start) * 0.6f);
-        var headHalf = ArrowHeadWidth * 0.5f * (headLen / ArrowHeadLength);
-        var bodyHalf = Mathf.Min(ArrowBodyWidth * 0.5f, headHalf * 0.8f);
+        var headLen = Mathf.Min(ArrowHeadLength * widthScale, (end - start) * 0.6f);
+        var headHalf = ArrowHeadWidth * 0.5f * widthScale * (headLen / (ArrowHeadLength * widthScale));
+        var bodyHalf = Mathf.Min(ArrowBodyWidth * 0.5f * widthScale, headHalf * 0.8f);
         var neck = end - headLen;
 
         Vector3 P(float along, float side) => new((float)a.X + (ux * along) + (px * side), ArrowLift, (float)a.Z + (uz * along) + (pz * side));
@@ -583,6 +745,16 @@ public partial class OrdersView : Node3D
             RenderPriority = LayerMarkers + 4,
             OutlineRenderPriority = LayerMarkers + 3,
         });
+        return marker;
+    }
+
+    /// <summary>Small cyan hex marker of a companion's slot (no number: the КТД number belongs to the captain).</summary>
+    private static Node3D SlotMarker(string name, Vector3 position, bool ghost)
+    {
+        var marker = new Node3D { Name = name, Position = position };
+        var alpha = ghost ? 0.35f : 1f;
+        marker.AddChild(MarkerDisc(0.15f, VisualConfig.CommandRim with { A = VisualConfig.CommandRim.A * alpha }, LayerMarkers, 0.02f));
+        marker.AddChild(MarkerDisc(0.11f, VisualConfig.CommandSlot with { A = VisualConfig.CommandSlot.A * alpha }, LayerMarkers + 1, 0.03f));
         return marker;
     }
 

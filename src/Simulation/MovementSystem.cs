@@ -101,7 +101,8 @@ internal sealed class MovementSystem : ISimulationSystem
 
         if (needsPlan)
         {
-            if (m.Status == MovementStatus.Blocked && m.BlockedAtTopologyVersion == _state.TopologyVersion && m.PathWaypointId == target.Id)
+            if (m.Status is MovementStatus.Blocked or MovementStatus.Waiting && m.PathCells.Count == 0
+                && m.BlockedAtTopologyVersion == _state.TopologyVersion && m.PathWaypointId == target.Id)
             {
                 return false; // nothing changed since the last failed attempt
             }
@@ -177,6 +178,11 @@ internal sealed class MovementSystem : ISimulationSystem
             _events.Add(new FinalFacingApplied(tick, unit.Id, finalFacing));
         }
 
+        if (unit.Orders.IsEmpty && unit.Orders.GroupId is not null)
+        {
+            _state.SetQueueGroup(unit.Id, null); // this member has completed its part of the command order
+        }
+
         if (unit.Orders.IsEmpty && m.Status != MovementStatus.Idle)
         {
             m.Status = MovementStatus.Idle;
@@ -187,9 +193,30 @@ internal sealed class MovementSystem : ISimulationSystem
         }
     }
 
+    /// <summary>True if <paramref name="cell"/> is occupied by another member of the unit's command order.</summary>
+    private bool IsHeldByTeammate(UnitState unit, HexCoord cell)
+    {
+        if (unit.Orders.GroupId is not { } group || _state.UnitAt(cell) is not { } occupant || occupant.Id == unit.Id)
+        {
+            return false;
+        }
+
+        return occupant.Orders.GroupId == group || (_state.FindGroup(group)?.IsMember(occupant.Id) ?? false);
+    }
+
     private void Block(UnitState unit, HexTactics.Core.Orders.Waypoint target, long tick)
     {
         var m = unit.Motion;
+        if (IsHeldByTeammate(unit, target.Cell))
+        {
+            // A member of the same command order stands on (or passes through) this member's slot: that is a normal,
+            // temporary situation inside a group move — wait quietly and re-plan when occupancy changes.
+            m.PathCells.Clear();
+            m.BlockedAtTopologyVersion = _state.TopologyVersion;
+            m.Status = MovementStatus.Waiting;
+            return;
+        }
+
         var reason = _state.IsOccupiedByOther(target.Cell, unit.Id) ? BlockReason.TargetOccupied : BlockReason.NoPath;
         m.PathCells.Clear();
         m.BlockedAtTopologyVersion = _state.TopologyVersion;

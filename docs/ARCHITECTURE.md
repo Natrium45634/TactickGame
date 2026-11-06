@@ -28,13 +28,15 @@ TactickGame/                     корень репозитория (логич
       Map/                       TileType, TileState, HexGrid, MapDefinition, MapParser
       Units/                     UnitId, Side, UnitState, UnitMotion, GameState (занятость + резервы)
       Pathfinding/               Pathfinder (A*, DistanceField, Reachable)
-      Orders/                    Waypoint (+OrderKind), OrderQueue (+FinalFacing), WaypointRules, OrderMode,
-                                 OrderDraft, OrderDraftValidator, IndividualOrder
+      Orders/                    Waypoint (+OrderKind), OrderQueue (+FinalFacing, GroupId), WaypointRules, OrderMode,
+                                 OrderDraft, OrderDraftValidator, IndividualOrder, GroupOrder (+GroupSlotAssignment,
+                                 GroupOrderState), GroupRoutePlanner (+GroupStageEvaluator) — с v0.9.0
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
                                  MovementSystem, события (без Godot)
-    Interaction/                 HexTactics.Interaction — InputStateMachine, DraftView, PlacementView (без Godot)
+    Interaction/                 HexTactics.Interaction — InputStateMachine (+ .Group.cs — режим «Команда»), DraftView,
+                                 PlacementView, GroupDraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
       scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
       scripts/App/               Main (композиционный корень), BuildInfo
@@ -143,7 +145,7 @@ tests/*  ──► соответствующие сборки
 ## 7. Автомат ввода (`InputStateMachine`, с v0.7.0 — по ТЗ ч.2)
 
 Режимы: `Idle`, `UnitSelected`, `SingleDraft` (открыт черновик), `RosterDrag` (перетаскивается карточка ростера, v0.8.0),
-отладочные `Placement`, `ObstacleEdit`.
+`GroupCollect` / `GroupDraft` (режим «Команда», v0.9.0), отладочные `Placement`, `ObstacleEdit`.
 
 | Состояние | Событие | Результат |
 |---|---|---|
@@ -165,6 +167,14 @@ tests/*  ──► соответствующие сборки
 | `RosterDrag` | отпускание на разрешённой свободной клетке | `PlaceFromRoster` → сразу `SingleDraft` нового юнита |
 | `RosterDrag` | отпускание на запрещённой клетке / вне поля / над панелью, ПКМ, Esc | карточка возвращается (`RosterCardReturned`) |
 | любой | клик по юниту в `PlacedPendingFacing` или по карточке выставленного | выбор; у ожидающего — черновик открывается сам |
+| любой | карточка «Команда» (`ToggleGroupMode`) | `GroupCollect`; прочие черновики/режимы закрываются, выбор снимается |
+| `GroupCollect` | клик по своему юниту не из команды | участник (первый — капитан), ≤ 7 |
+| `GroupCollect` / `GroupDraft` | клик по участнику | ничего (без дублей, капитан не меняется) |
+| `GroupCollect` (есть капитан) / `GroupDraft` | клик по зелёной клетке (команда помещается) | +КТД (`GroupDraft`) |
+| `GroupDraft` | клик в секторе последней КТД | `ApplyGroupOrder` → `UnitSelected` (капитан) |
+| `GroupCollect` / `GroupDraft` | клик по красной клетке | отмена (`GroupCancelled`, `InvalidTarget`) |
+| `GroupDraft` | ПКМ по КТД | удалить её и следующие (без КТД → `GroupCollect`) |
+| `GroupCollect` / `GroupDraft` | ПКМ в другом месте / Esc / карточка «Команда» | отмена, режим закрыт |
 
 - `DraftView` (каждый кадр, `Refresh()`): `Waypoints`, `Anchor`, `Source`, `Pointer`, `TargetHex`, `Status`
   (`Valid`, `FacingSector`, `Neutral`, `AttackTarget`, `OutOfBounds`, `NotWalkable`, `Occupied`, `Unreachable`, `NoTarget`),
@@ -218,6 +228,20 @@ tests/*  ──► соответствующие сборки
   приказов. На паузе работают выбор, протягивание, подсветка, построение и замена цепочек (D-030).
 - Системы правил: `ISimulationSystem.Tick(SimulationContext)` для каждой зарегистрированной системы по порядку;
   контекст даёт `State`, `Tick`, `DeltaSeconds`, `Emit(event)` (D-031).
+
+## 7.4. Командные приказы (с v0.9.0, ТЗ ч.2 §6, D-050–D-055)
+
+- `GroupOrder(Captain, Members, GroupWaypoints, FinalCaptainFacing)` — капитан всегда `Members[0]`.
+- `GroupStageEvaluator(state, members, sources, index).Evaluate(ктд)` → `GroupStagePlan` (ошибка или назначения
+  `GroupSlotAssignment(index, unit, destination)`): КТД проходима, свободна (кроме капитана), капитан до неё дойдёт;
+  спутникам — разные свободные достижимые клетки первого кольца; минимум суммы длин путей, ничьи — по порядку сторон.
+  Одни поля расстояний на этап — поэтому так же дёшево красятся все 120 клеток.
+- `GroupRoutePlanner.PlanChain` — этап k стартует с мест этапа k−1; `ValidateMembers` — 1…7, без дублей, одна сторона.
+- `GameSimulation.ApplyGroupOrder` — транзакция (как `ApplyOrder`): `GroupOrderState` в `GameState.Groups`, очереди
+  участников = их места, `OrderQueue.GroupId`, финальные взгляды (в v0.9.0 спутники = капитан). Удаляется, когда его не
+  выполняет ни один участник. `MovementSystem`: место занято участником той же команды → `Waiting` без `UnitBlocked`.
+- `InputStateMachine.Group` → `GroupDraftView`: участники, якоря, источники следующего этапа, КТД, планы этапов,
+  предпросмотр под курсором, сектор взгляда, `NextStage` (оценщик для подсветки).
 
 ## 8. Визуальные слои
 
@@ -281,14 +305,16 @@ tests/*  ──► соответствующие сборки
 последней (`bar` — обратно над карточкой; `roster:N` — клик по карточке; хвост `>hold` оставляет кнопку зажатой, затем
 `release:P`). Проверки: `expect:roster:N:AvailableInRoster|PlacementPreview|PlacedPendingFacing|Active`,
 `expect:lifecycle:ID:Active|PlacedPendingFacing`, `expect:mode:RosterDrag|SingleDraft|…`.
+Шаги v0.9: `command` — нажать настоящую карточку «Команда». Проверки: `expect:group:none|M:K` (M участников, K КТД в
+открытом командном черновике), `expect:captain:ID`, `expect:ingroup:ID:yes|no` (юнит выполняет командный приказ).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
-для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8+). Точка `P` — `c,r` (центр гекса) или
+для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9+). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка
 
 - `Directory.Build.props` → `Version`; .NET SDK добавляет хеш коммита в `AssemblyInformationalVersion`
-  (`0.8.0+<sha>`), HUD показывает версию и короткий коммит.
+  (`0.9.0+<sha>`), HUD показывает версию и короткий коммит.
 - `project.godot` → `config/version` (метаданные exe). Скрипт релиза проверяет совпадение версий и тега.
 - Экспорт: `godot --headless --path src/GodotClient --export-release "Windows Desktop" <out>/HexTactics.exe`
   → `HexTactics.exe`, `HexTactics.console.exe` (с консолью/логом), `HexTactics.pck`,

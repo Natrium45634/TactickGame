@@ -59,3 +59,12 @@ public sealed record PlacementRejected(long Tick, int RosterEntry, HexCoord? Cel
 
 /// <summary>A placed unit received its first facing and became active.</summary>
 public sealed record UnitActivated(long Tick, UnitId Unit, HexDirection Facing) : SimulationEvent(Tick);
+
+/// <summary>A command order was accepted: every member's queue was replaced by its slots (spec part 2 §6).</summary>
+public sealed record GroupOrderApplied(long Tick, int GroupId, UnitId Captain, IReadOnlyList<UnitId> Members, IReadOnlyList<HexCoord> Waypoints) : SimulationEvent(Tick);
+
+/// <summary>A command order was rejected as a whole; no member's queue changed.</summary>
+public sealed record GroupOrderRejected(long Tick, UnitId Captain, int FailedIndex, GroupPlanError Error) : SimulationEvent(Tick);
+
+/// <summary>No member executes the command order any more (finished or replaced by personal orders).</summary>
+public sealed record GroupOrderFinished(long Tick, int GroupId) : SimulationEvent(Tick);

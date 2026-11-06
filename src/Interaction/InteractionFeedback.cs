@@ -54,3 +54,29 @@ public sealed record RosterCardReturned(int RosterEntry, PlacementError Error, H
 
 /// <summary>The unit appeared on the map; a draft (arrow) was opened for it immediately.</summary>
 public sealed record RosterUnitPlaced(int RosterEntry, UnitId Unit, HexCoord Cell) : InteractionFeedback;
+
+/// <summary>The command mode ("Команда" button) was switched on or off.</summary>
+public sealed record GroupModeChanged(bool Active) : InteractionFeedback;
+
+/// <summary>A unit joined the team being collected (the first one is the captain).</summary>
+public sealed record GroupMemberAdded(UnitId Unit, bool IsCaptain, int Count) : InteractionFeedback;
+
+/// <summary>A click on a unit did not change the team (already a member, team full, or not an ally).</summary>
+public sealed record GroupMemberRefused(UnitId Unit, GroupTargetStatus Reason) : InteractionFeedback;
+
+/// <summary>A click on the ground before any member was chosen: the captain has to be clicked first.</summary>
+public sealed record GroupNeedsCaptain : InteractionFeedback;
+
+public sealed record GroupWaypointAdded(int Number, HexCoord Cell, GroupStagePlan Stage) : InteractionFeedback;
+
+/// <summary>RMB on a draft КТД removed it and all following ones (with no КТД left the team is being collected again).</summary>
+public sealed record GroupDraftTruncated(int RemovedFromNumber, int Remaining) : InteractionFeedback;
+
+/// <summary>The command draft was discarded (RMB, Esc, an invalid КТД click, a lost member); nothing was applied.</summary>
+public sealed record GroupCancelled(DraftCancelReason Reason, GroupTargetStatus Status, HexCoord? Cell) : InteractionFeedback;
+
+/// <summary>The captain's facing was confirmed and the command order was applied to all members.</summary>
+public sealed record GroupCommitted(GroupOrder Order, int GroupId) : InteractionFeedback;
+
+/// <summary>Applying the command order failed because the game changed meanwhile; the draft stays open.</summary>
+public sealed record GroupCommitFailed(GroupOrderResult Result) : InteractionFeedback;

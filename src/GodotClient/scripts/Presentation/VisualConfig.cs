@@ -57,8 +57,7 @@ public static class VisualConfig
     /// <summary>Live arrow over an enemy unit: reserved future attack order (not executed yet).</summary>
     public static readonly Color ArrowAttack = new(1.0f, 0.55f, 0.20f, 0.85f);
 
-    /// <summary>Committed order chains (straight thick arrows between order points).</summary>
-    /// <summary>Personal order chains are WHITE (spec part 2 §3.1); command chains will be cyan.</summary>
+    /// <summary>Personal order chains are WHITE (spec part 2 §3.1); command chains are cyan.</summary>
     public static readonly Color ChainSelected = new(1.0f, 1.0f, 1.0f, 0.72f);
     public static readonly Color ChainOther = new(1.0f, 1.0f, 1.0f, 0.30f);
     public static readonly Color WaypointSelectedUnit = new(1.0f, 1.0f, 1.0f, 1.0f);
@@ -73,6 +72,20 @@ public static class VisualConfig
 
     /// <summary>Stored final facing of a confirmed order (small white arrow at the edge of the last ТД).</summary>
     public static readonly Color FinalFacingMark = new(1.0f, 1.0f, 1.0f, 0.95f);
+
+    /// <summary>
+    /// Command orders are CYAN (spec part 2 §3.1, §6): live arrows from every member, КТД markers, companion slots,
+    /// the rings of the members being collected and the captain's diamond.
+    /// </summary>
+    public static readonly Color ArrowCommand = new(0.30f, 0.85f, 1.0f, 0.85f);
+    public static readonly Color ArrowCommandCompanion = new(0.30f, 0.85f, 1.0f, 0.60f);
+    public static readonly Color ChainCommand = new(0.30f, 0.85f, 1.0f, 0.55f);
+    public static readonly Color ChainCommandSelected = new(0.30f, 0.85f, 1.0f, 0.80f);
+    public static readonly Color CommandMarker = new(0.62f, 0.93f, 1.0f, 1.0f);
+    public static readonly Color CommandRim = new(0.05f, 0.33f, 0.45f, 0.95f);
+    public static readonly Color CommandSlot = new(0.30f, 0.85f, 1.0f, 0.85f);
+    public static readonly Color MemberRing = new(0.30f, 0.85f, 1.0f, 0.95f);
+    public static readonly Color CaptainMark = new(0.30f, 0.85f, 1.0f, 1.0f);
 
     /// <summary>Facing-sector preview (mini arrow at the edge of the source hex).</summary>
     public static readonly Color FacingPreview = new(1.0f, 1.0f, 1.0f, 0.9f);
