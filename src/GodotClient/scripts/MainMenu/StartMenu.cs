@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using HexTactics.Client.App;
 using HexTactics.Client.UI;
@@ -24,6 +25,12 @@ public partial class StartMenu : CanvasLayer
     /// <summary>A line under the buttons (where user content is stored, load problems).</summary>
     public string Footer { get; set; } = string.Empty;
 
+    /// <summary>Maps that can be played (id, name); the first is preselected unless <see cref="SelectedMap"/> is set.</summary>
+    public IReadOnlyList<(string Id, string Name)> Maps { get; set; } = Array.Empty<(string, string)>();
+
+    /// <summary>The map chosen for «Играть».</summary>
+    public string? SelectedMap { get; set; }
+
     public override void _Ready()
     {
         Layer = 20;
@@ -45,6 +52,23 @@ public partial class StartMenu : CanvasLayer
         column.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
         column.AddChild(BigButton("▶  Играть", "Тактический бой: карта, юниты из ростера, приказы ТД/КТД, пауза.", ButtonKind.Primary, "menu.play", () => PlayPressed?.Invoke()));
+        var mapRow = UiKit.Row(8);
+        mapRow.AddChild(UiKit.Label("Карта:", 13, dim: true));
+        var maps = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "menu.map");
+        for (var i = 0; i < Maps.Count; i++)
+        {
+            maps.AddItem(Maps[i].Name, i);
+            maps.SetItemMetadata(i, Maps[i].Id);
+            if (Maps[i].Id == SelectedMap)
+            {
+                maps.Select(i);
+            }
+        }
+
+        SelectedMap ??= Maps.Count > 0 ? Maps[0].Id : null;
+        maps.ItemSelected += index => SelectedMap = maps.GetItemMetadata((int)index).AsString();
+        mapRow.AddChild(maps);
+        column.AddChild(mapRow);
         column.AddChild(BigButton("✎  Разработчик", "Редакторы карт, юнитов, навыков и типов гексов; библиотека контента.", ButtonKind.Normal, "menu.dev", () => DeveloperPressed?.Invoke()));
         column.AddChild(new Control { CustomMinimumSize = new Vector2(0, 4) });
         var quit = UiKit.Button("Выход", () => QuitPressed?.Invoke(), ButtonKind.Flat, "menu.quit");

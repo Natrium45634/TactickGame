@@ -33,6 +33,23 @@ public sealed class MapTileData
     public MapTileData Clone() => new() { Col = Col, Row = Row, Tile = Tile, Level = Level, Zone = Zone, Note = Note };
 }
 
+/// <summary>
+/// A test point of the map (spec part 4 §4.4): the validator checks that consecutive test points are connected by a
+/// passable route. A point lives on a real tile; deleting that tile removes the point in the same undoable operation.
+/// </summary>
+public sealed class MapPointData
+{
+    public int Col { get; set; }
+
+    public int Row { get; set; }
+
+    public string Label { get; set; } = "A";
+
+    public HexCoord Coord => HexCoord.FromOffset(Col, Row);
+
+    public MapPointData Clone() => new() { Col = Col, Row = Row, Label = Label };
+}
+
 /// <summary>Display name of a spawn zone of the map.</summary>
 public sealed class MapZoneData
 {
@@ -65,7 +82,12 @@ public sealed class MapData : IContentData
 
     public List<MapTileData> Tiles { get; } = new();
 
+    /// <summary>Optional test points for the route check (none = no route check).</summary>
+    public List<MapPointData> TestPoints { get; } = new();
+
     public MapTileData? TileAt(int col, int row) => Tiles.Find(t => t.Col == col && t.Row == row);
+
+    public MapPointData? PointAt(int col, int row) => TestPoints.Find(p => p.Col == col && p.Row == row);
 
     public string ZoneName(int id)
     {
@@ -110,7 +132,7 @@ public sealed class MapData : IContentData
             tiles.Add(tile);
         }
 
-        return new JsonObject
+        var result = new JsonObject
         {
             ["layout"] = Layout,
             ["columns"] = Columns,
@@ -119,6 +141,18 @@ public sealed class MapData : IContentData
             ["zones"] = zones,
             ["tiles"] = tiles,
         };
+        if (TestPoints.Count > 0)
+        {
+            var points = new JsonArray();
+            foreach (var p in TestPoints)
+            {
+                points.Add(new JsonObject { ["col"] = p.Col, ["row"] = p.Row, ["label"] = p.Label });
+            }
+
+            result["testPoints"] = points;
+        }
+
+        return result;
     }
 
     public static MapData Read(JsonObject obj, IssueList issues)
@@ -168,6 +202,26 @@ public sealed class MapData : IContentData
                     Level = t.ContainsKey("level") ? JsonFields.Integer(t, "level", 0, issues, path) : null,
                     Zone = t.ContainsKey("zone") ? JsonFields.Integer(t, "zone", 1, issues, path) : null,
                     Note = t.ContainsKey("note") ? JsonFields.Text(t, "note", string.Empty, issues, path) : null,
+                });
+            }
+        }
+
+        if (JsonFields.Array(obj, "testPoints", issues, string.Empty) is { } points)
+        {
+            for (var i = 0; i < points.Count; i++)
+            {
+                var path = $"testPoints[{i}]";
+                if (points[i] is not JsonObject p)
+                {
+                    issues.Error(path, "тестовая точка должна быть объектом");
+                    continue;
+                }
+
+                data.TestPoints.Add(new MapPointData
+                {
+                    Col = JsonFields.Integer(p, "col", 0, issues, path),
+                    Row = JsonFields.Integer(p, "row", 0, issues, path),
+                    Label = JsonFields.Text(p, "label", "A", issues, path),
                 });
             }
         }
@@ -241,6 +295,15 @@ public sealed class MapData : IContentData
             }
         }
 
+        for (var i = 0; i < TestPoints.Count; i++)
+        {
+            var p = TestPoints[i];
+            if (TileAt(p.Col, p.Row) is null)
+            {
+                issues.Error($"testPoints[{i}]", $"тестовая точка «{p.Label}» ({p.Col},{p.Row}) не на гексе карты");
+            }
+        }
+
         var zoneIds = new HashSet<int>();
         for (var i = 0; i < Zones.Count; i++)
         {
@@ -264,6 +327,11 @@ public sealed class MapData : IContentData
         foreach (var t in Tiles)
         {
             copy.Tiles.Add(t.Clone());
+        }
+
+        foreach (var p in TestPoints)
+        {
+            copy.TestPoints.Add(p.Clone());
         }
 
         return copy;

@@ -77,11 +77,14 @@ public partial class GameMode : Node3D
     }
 
     /// <summary>The match to play: built from content by <see cref="RuntimeFactory"/>; call before adding the node.</summary>
-    public void Configure(GameContent content, string title)
+    public void Configure(GameContent content, string title, bool isTest = false)
     {
         _content = content;
         _title = title;
+        _isTest = isTest;
     }
+
+    private bool _isTest;
 
     /// <summary>The skill of the HUD button, the R key and the ТД menu: the first skill of the default unit.</summary>
     private string PrimarySkill => _content.DefaultUnit.Skills.Count > 0 ? _content.DefaultUnit.Skills[0] : HexTactics.Core.Skills.SkillCatalog.LinearStrikeId;
@@ -857,7 +860,7 @@ public partial class GameMode : Node3D
         _hud.AddTitle(BuildInfo.Title);
         _hud.AddLabel($"{BuildInfo.Commit} · Godot {BuildInfo.EngineVersion}\n{BuildInfo.DotNetVersion}", dim: true, fontSize: 12);
         _hud.AddLabel($"Карта: {_title}", fontSize: 12);
-        AutomationIds.Register(_hud.AddButton("← Главное меню", RequestExit), "game.menu");
+        AutomationIds.Register(_hud.AddButton(_isTest ? "← Вернуться в редактор" : "← Главное меню", RequestExit), "game.menu");
         _hud.AddSeparator();
 
         _hud.AddHeader("Время");
@@ -940,10 +943,12 @@ public partial class GameMode : Node3D
     {
         var wasPaused = _sim.IsPaused;
         _sim.SetPaused(true);
-        ModalDialog.Show(this, "Выйти в главное меню?", "Текущий бой будет закрыт. Карты, юниты и другие объекты библиотеки не меняются.", new[]
+        ModalDialog.Show(this, _isTest ? "Завершить тест карты?" : "Выйти в главное меню?", _isTest
+            ? "Тестовый бой закроется, редактор откроется в прежнем состоянии. Изменения боя в карту не попадают."
+            : "Текущий бой будет закрыт. Карты, юниты и другие объекты библиотеки не меняются.", new[]
         {
             new DialogButton("Остаться", "dialog.cancel", ButtonKind.Flat, () => _sim.SetPaused(wasPaused), IsCancel: true),
-            new DialogButton("В меню", "dialog.ok", ButtonKind.Primary, () => ExitRequested?.Invoke()),
+            new DialogButton(_isTest ? "В редактор" : "В меню", "dialog.ok", ButtonKind.Primary, () => ExitRequested?.Invoke()),
         });
     }
 

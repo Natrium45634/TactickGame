@@ -118,6 +118,11 @@ public static class HexMeshBuilder
 
     private static ArrayMesh Commit(List<Vector3> verts, List<Vector3> normals, List<Color> colors, List<Vector2> uvs, List<int> indices)
     {
+        if (verts.Count == 0)
+        {
+            return new ArrayMesh(); // a map without a single tile (spec part 4 §4.1): nothing to draw
+        }
+
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = verts.ToArray();

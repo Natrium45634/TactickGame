@@ -152,6 +152,23 @@ public class SerializerAndValidationTests
     }
 
     [Fact]
+    public void Test_points_round_trip_and_must_stand_on_a_tile_of_the_map()
+    {
+        var library = ContentTestKit.Library(null);
+        var item = library.Create(ContentTypeRegistry.Map, "Тест");
+        var map = (MapData)item.Data;
+        map.Tiles.Add(new MapTileData { Col = 1, Row = 1, Tile = "core.tile.player_base" });
+        map.TestPoints.Add(new MapPointData { Col = 1, Row = 1, Label = "A" });
+        map.TestPoints.Add(new MapPointData { Col = 5, Row = 5, Label = "B" });
+        Assert.Contains(library.Validate(item), i => i.IsError && i.Message.Contains("«B»"));
+
+        var again = (MapData)ContentSerializer.Read(ContentSerializer.Write(item), _registry, ContentOrigin.User).Item!.Data;
+        Assert.Equal(new[] { ("A", 1, 1), ("B", 5, 5) }, again.TestPoints.Select(p => (p.Label, p.Col, p.Row)));
+        map.TestPoints.Clear();
+        Assert.DoesNotContain("testPoints", ContentSerializer.Write(item)); // optional field: absent when empty
+    }
+
+    [Fact]
     public void Obstacles_cannot_be_passable_and_zones_cannot_be_blocked()
     {
         var library = ContentTestKit.Library(null);

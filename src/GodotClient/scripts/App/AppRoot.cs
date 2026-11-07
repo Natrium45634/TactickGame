@@ -30,6 +30,8 @@ public partial class AppRoot : Node
     private StartMenu? _menu;
     private GameMode? _game;
     private DeveloperMode.DeveloperMode? _developer;
+    private ContentItem? _pendingTest;
+    private string _mapId = RuntimeFactory.DefaultMapId;
 
     public Screen Current { get; private set; }
 
@@ -69,6 +71,8 @@ public partial class AppRoot : Node
         {
             Name = "StartMenu",
             Footer = $"Пользовательский контент: {_library.User?.Root}" + (_library.Problems.Count > 0 ? $"\nНе загружено файлов: {_library.Problems.Count} (подробности — в режиме разработчика)" : string.Empty),
+            Maps = PlayableMaps(),
+            SelectedMap = _mapId,
         };
         _menu.PlayPressed += () => CallDeferred(MethodName.StartGame);
         _menu.DeveloperPressed += () => CallDeferred(MethodName.OpenDeveloper);
@@ -77,10 +81,29 @@ public partial class AppRoot : Node
         Current = Screen.Menu;
     }
 
+    private System.Collections.Generic.List<(string Id, string Name)> PlayableMaps()
+    {
+        var list = new System.Collections.Generic.List<(string Id, string Name)>();
+        foreach (var map in _library.Items(HexTactics.Content.Registry.ContentTypeRegistry.Map))
+        {
+            if (!map.HasErrors)
+            {
+                list.Add((map.Id, map.IsBuiltIn ? map.Name : $"{map.Name} (своя)"));
+            }
+        }
+
+        return list;
+    }
+
     private void StartGame()
     {
+        if (_menu?.SelectedMap is { } chosen && _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, chosen) is not null)
+        {
+            _mapId = chosen;
+        }
+
         CloseModes();
-        var content = RuntimeFactory.BuildGame(_library);
+        var content = RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, _mapId) is not null ? _mapId : RuntimeFactory.DefaultMapId);
         foreach (var issue in content.Issues)
         {
             GD.PushWarning($"[content] {issue}");
@@ -99,8 +122,52 @@ public partial class AppRoot : Node
         _developer = new DeveloperMode.DeveloperMode { Name = "Developer" };
         _developer.Configure(_library);
         _developer.ExitRequested += () => CallDeferred(MethodName.ShowMenu);
+        _developer.TestRequested += item =>
+        {
+            _pendingTest = item;
+            CallDeferred(MethodName.StartTest);
+        };
         AddChild(_developer);
         Current = Screen.Developer;
+    }
+
+    /// <summary>
+    /// «Тест карты» (spec part 4 §4.4): the developer mode is taken out of the tree (kept intact, not running), a
+    /// temporary copy is played in the game mode with the same simulation; leaving the test brings the editor back as it
+    /// was. Nothing of the test match is written into the map.
+    /// </summary>
+    private void StartTest()
+    {
+        if (_pendingTest is not { } item || _developer is null)
+        {
+            return;
+        }
+
+        _pendingTest = null;
+        ModalDialog.Open?.Close();
+        RemoveChild(_developer);
+        var content = RuntimeFactory.BuildGame(_library, item);
+        _game = new GameMode { Name = "TestGame", Automation = _automation };
+        _game.Configure(content, $"тест «{item.Name}»", isTest: true);
+        _game.ExitRequested += () => CallDeferred(MethodName.EndTest);
+        AddChild(_game);
+        Current = Screen.Play;
+    }
+
+    private void EndTest()
+    {
+        if (_game is not null)
+        {
+            RemoveChild(_game);
+            _game.QueueFree();
+            _game = null;
+        }
+
+        if (_developer is not null)
+        {
+            AddChild(_developer);
+            Current = Screen.Developer;
+        }
     }
 
     private void CloseModes()
@@ -180,7 +247,16 @@ public partial class AppRoot : Node
                 return int.Parse(arg, CultureInfo.InvariantCulture);
         }
 
-        if (_game is not null)
+        if (Current == Screen.Developer && _developer?.ActiveEditor is { } editor)
+        {
+            var handled = editor.RunAutomationStep(step, _automation);
+            if (handled != -2)
+            {
+                return handled;
+            }
+        }
+
+        if (_game is not null && Current == Screen.Play)
         {
             return _game.RunAutomationStep(step);
         }
@@ -197,6 +273,11 @@ public partial class AppRoot : Node
             case LineEdit line:
                 line.Text = value;
                 line.EmitSignal(LineEdit.SignalName.TextChanged, value);
+                if (line.HasMeta("hx_commit_on_submit"))
+                {
+                    line.EmitSignal(LineEdit.SignalName.TextSubmitted, value); // editor fields commit like Enter
+                }
+
                 return true;
             case TextEdit text:
                 text.Text = value;
@@ -204,6 +285,9 @@ public partial class AppRoot : Node
                 return true;
             case SpinBox spin:
                 spin.Value = double.Parse(value, CultureInfo.InvariantCulture);
+                return true;
+            case CheckButton toggle:
+                toggle.ButtonPressed = value is "true" or "1" or "yes";
                 return true;
             case CheckBox check:
                 check.ButtonPressed = value is "true" or "1" or "yes";
@@ -275,6 +359,10 @@ public partial class AppRoot : Node
                     break;
                 }
 
+            case "editor":
+                actual = Current == Screen.Developer ? _developer?.ActiveEditor?.Kind ?? "none" : "none";
+                ok = actual == a[1];
+                break;
             case "undo":
                 actual = _developer?.UndoCount.ToString(CultureInfo.InvariantCulture) ?? "none";
                 ok = actual == a[1];

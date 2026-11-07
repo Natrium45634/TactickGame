@@ -73,5 +73,36 @@ public partial class CameraRig : Node3D
 
         Camera.Rotation = new Vector3(-e, 0, 0);
         Camera.GlobalPosition = screenCenterWorld - (forward * Distance);
+        _worldPerPixel = k;
+    }
+
+    private float _worldPerPixel = 0.02f;
+
+    /// <summary>
+    /// Zooms by <paramref name="factor"/> (&lt; 1 = closer) keeping the map point under <paramref name="screenPoint"/> in
+    /// place (editor canvas, spec part 4 §3.2: wheel = zoom).
+    /// </summary>
+    public void Zoom(float factor, Vector2 screenPoint, Vector2 viewportSize)
+    {
+        var e = Mathf.DegToRad(ElevationDegrees);
+        var right = Vector3.Right;
+        var up = new Vector3(0, MathF.Cos(e), -MathF.Sin(e));
+        var k = _worldPerPixel;
+        var k2 = Mathf.Clamp(k * factor, 0.002f, 0.2f);
+        var dx = screenPoint.X - (viewportSize.X * 0.5f);
+        var dy = screenPoint.Y - (viewportSize.Y * 0.5f);
+        // The point under the cursor: centre + right·dx·k − up·dy·k (screen y grows downwards). Keep it fixed.
+        Camera.GlobalPosition += (right * (dx * (k - k2))) - (up * (dy * (k - k2)));
+        _worldPerPixel = k2;
+        Camera.Size = k2 * viewportSize.Y;
+    }
+
+    /// <summary>Moves the view by a mouse drag of <paramref name="pixelDelta"/> (the map follows the cursor).</summary>
+    public void Pan(Vector2 pixelDelta)
+    {
+        var e = Mathf.DegToRad(ElevationDegrees);
+        var right = Vector3.Right;
+        var up = new Vector3(0, MathF.Cos(e), -MathF.Sin(e));
+        Camera.GlobalPosition += (-right * (pixelDelta.X * _worldPerPixel)) + (up * (pixelDelta.Y * _worldPerPixel));
     }
 }

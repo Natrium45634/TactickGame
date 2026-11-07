@@ -172,10 +172,13 @@ public static class RuntimeFactory
     /// Builds a match from the library: the map, every valid skill, the default unit and the look of every tile type.
     /// Objects with errors are skipped and reported, never half-loaded.
     /// </summary>
-    public static GameContent BuildGame(ContentLibrary library, string mapId = DefaultMapId, string unitId = DefaultUnitId)
+    public static GameContent BuildGame(ContentLibrary library, string mapId = DefaultMapId, string unitId = DefaultUnitId) =>
+        BuildGame(library, library.Find(ContentTypeRegistry.Map, mapId) ?? throw new InvalidOperationException($"Map '{mapId}' is not in the content library."), unitId);
+
+    /// <summary>A match on a map that need not be saved (test runs from the map editor use a temporary copy).</summary>
+    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId)
     {
         var issues = new IssueList();
-        var mapItem = library.Find(ContentTypeRegistry.Map, mapId) ?? throw new InvalidOperationException($"Map '{mapId}' is not in the content library.");
         var unitItem = library.Find(ContentTypeRegistry.Unit, unitId) ?? throw new InvalidOperationException($"Unit '{unitId}' is not in the content library.");
 
         var skills = new Dictionary<string, SkillDefinition>(StringComparer.Ordinal);

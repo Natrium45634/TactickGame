@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.15.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.16.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo). Формат контента —
 `docs/CONTENT_FORMAT.md`.
@@ -48,7 +48,7 @@ TactickGame/                     корень репозитория (логич
                                  (ContentTypeRegistry, EffectTypeRegistry), Storage (ContentRepository), Library
                                  (ContentLibrary, ContentItem, ContentSerializer, MapChecks), Runtime (RuntimeFactory)
     Editor/                      HexTactics.Editor (с v0.15.0) — History (CommandHistory, команды), Library (LibraryBrowser,
-                                 LibraryCommands)
+                                 LibraryCommands), Maps (MapEditorModel, с v0.16.0)
     Interaction/                 HexTactics.Interaction — InputStateMachine (+ .Group.cs — режим «Команда»), DraftView,
                                  PlacementView, GroupDraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
@@ -57,7 +57,8 @@ TactickGame/                     корень репозитория (логич
                                  BuildInfo
       scripts/MainMenu/          StartMenu («Играть» / «Разработчик» / «Выход»)
       scripts/GameMode/          GameMode (режим «Играть»: матч из библиотеки, бывший Main)
-      scripts/DeveloperMode/     DeveloperMode (каталог категорий, список, свойства, сообщения)
+      scripts/DeveloperMode/     DeveloperMode (каталог категорий, список, свойства, сообщения, реестр редакторов, черновики),
+                                 Editors/IContentEditor, Editors/Map/MapEditor (с v0.16.0), SharedInspector/Inspector
       scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView,
                                  OrdersView (стрелки и ТД), VisualConfig, TilePalette (вид типов гексов из библиотеки)
       scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат),
@@ -336,6 +337,11 @@ tests/*  ──► соответствующие сборки
 - **Каталог разработчика.** `DeveloperMode` показывает модели `LibraryBrowser` (категории из реестра, строки, поиск,
   сортировка); операции библиотеки — команды `LibraryCommands` в `CommandHistory` (Ctrl+Z / Ctrl+Y); редакторы категорий
   регистрируются в `DeveloperMode.Editors` (появляются с v0.16.0). Диалоги — `ModalDialog` (перехватывает ввод).
+- **Редактор карт (с v0.16.0, D-092–D-097).** `MapEditor` (Node3D) показывает `MapEditorModel`: доска строится из
+  рабочей копии через `RuntimeFactory.BuildMap` (пустые места — контуры и координаты), выбор/отметки — `HexFillLayer`,
+  выбор гекса — `BoardPicker` с учётом высот, панель — `Inspector`. Правки — команды модели, сохранение — через
+  библиотеку, черновики — `user://drafts`. «Тест карты»: `DeveloperMode.TestRequested` → `AppRoot` вынимает режим
+  разработчика из дерева и запускает `GameMode` на копии; по выходу возвращает его.
 - **Постоянное правило (ТЗ ч.4 §9.3).** Любая новая редактируемая механика в том же релизе получает: правила в ТЗ,
   версионированную схему, проверку и миграцию, единый обработчик в симуляции, поля и предпросмотр в режиме разработчика,
   сохранение/импорт/экспорт и тесты (игра, редактирование, загрузка, совместимость, откат). Новые категории — через реестр,
@@ -423,13 +429,20 @@ tests/*  ──► соответствующие сборки
 `expect:dialog:none|<начало заголовка>`, `expect:category:<вид>`, `expect:rows:N`, `expect:selected:<id|название>|none`,
 `expect:item:<вид>:<название>:yes|no`, `expect:undo:N`, `expect:message:<текст>`. Аргументы: `--hx-start=play|dev` (минуя
 меню), `--hx-user-root=<папка>` (отдельная папка пользовательского контента).
+С v0.16.0 при открытом редакторе прочие шаги идут ему: `click:c,r`, `hover:c,r`, `wheel:up|down`; проверки
+`expect:editor:map|none`, `expect:tiles:N`, `expect:tile:c,r:<тип>|none`, `expect:hex:c,r|none` (выбранный гекс),
+`expect:delete-mode:on|off`, `expect:delete-count:N`, `expect:dirty:yes|no`, `expect:testpoints:N`, `expect:level:c,r:N|type`,
+`expect:map-size:WxH`, `expect:map-name:<название>`, `expect:map-errors:N`. Элементы редактора: `map.save|undo|redo|validate|test|view|back`,
+`map.delete`, `map.delete.cancel`, `map.tab.hex|map`, `map.brush`, `map.tile.type|level|zone|testpoint|note|deselect`, `map.zone.name`,
+`map.name`, `map.description`, `map.basename`, `map.columns`, `map.rows`, `map.resize`; на стартовом экране — `menu.map`.
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
 для v0.12, `$RegressionScenarioV13` = V12 + «Линейный удар» для v0.13, `$RegressionScenarioV14` = V13 + навык в ТД через
 меню для v0.14.0, `$RegressionScenarioV141` = V14 + подсветка при меню/прицеливании для v0.14.1, `$RegressionScenarioV15` =
-«Играть» + V141 + выход в меню + каталог разработчика для v0.15.0+; `$PersistenceScenarioV15` — второй запуск с той же
-папкой пользователя: сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
+«Играть» + V141 + выход в меню + каталог разработчика для v0.15.0, `$RegressionScenarioV16` = V15 + редактор карт, тест,
+игра на сохранённой карте для v0.16.0+; `$PersistenceScenarioV15/V16` — второй запуск с той же папкой пользователя:
+сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка

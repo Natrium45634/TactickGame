@@ -166,6 +166,39 @@ $script:PersistenceScenarioV15 = (@(
     'ui:dev.back', 'ui:menu.play', 'expect:screen:play', 'spawn:base', 'expect:units:1'
 ) -join ';')
 
+# v0.16.0+ (spec part 4 §4, §12.1 p.3–9): the map editor through its real buttons — an empty 12×10 workspace, clicks create
+# exactly one hex each and select it, types from the library, the red two-stage deletion (marks first, deletes on the
+# second press, Ctrl+Z restores both, Esc and an empty selection delete nothing, a linked test point needs confirmation),
+# saving, a test run in the game mode and back to the unchanged editor, then playing the saved map from the menu
+# (a waypoint on an empty place is refused).
+$script:RegressionScenarioV16 = $script:RegressionScenarioV15 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'ui:dev.create', 'expect:editor:map', 'expect:tiles:0',
+    'click:2,4', 'expect:tiles:1', 'expect:hex:2,4', 'field:map.tile.type=База игрока', 'expect:tile:2,4:core.tile.player_base',
+    'click:3,4', 'click:4,4', 'click:3,4', 'expect:hex:3,4', 'expect:tiles:3',
+    'click:4,4', 'field:map.tile.type=Высокий гекс', 'click:5,4', 'field:map.tile.type=База врага', 'expect:tiles:4',
+    'ui:map.delete', 'expect:delete-mode:on', 'click:4,4', 'click:5,4', 'expect:delete-count:2', 'expect:tiles:4',
+    'ui:map.delete', 'expect:delete-mode:off', 'expect:tiles:2', 'key:ctrl+z', 'expect:tiles:4',
+    'expect:tile:4,4:core.tile.high', 'expect:tile:5,4:core.tile.enemy_base',
+    'ui:map.delete', 'click:4,4', 'key:Escape', 'expect:delete-mode:off', 'expect:tiles:4',
+    'ui:map.delete', 'ui:map.delete', 'expect:delete-mode:off', 'expect:tiles:4',
+    'click:2,4', 'ui:map.tile.testpoint', 'click:5,4', 'ui:map.tile.testpoint', 'expect:testpoints:2',
+    'ui:map.delete', 'click:5,4', 'ui:map.delete', 'expect:dialog:Удалить', 'ui:dialog.ok', 'expect:tiles:3', 'expect:testpoints:1',
+    'key:ctrl+z', 'expect:tiles:4', 'expect:testpoints:2',
+    'ui:map.tab.map', 'field:map.name=Перешеек', 'expect:map-name:Перешеек', 'ui:map.save', 'expect:dirty:no', 'expect:map-errors:0',
+    'ui:map.test', 'expect:screen:play', 'spawn:base', 'expect:units:1', 'expect:cell:1:2,4',
+    'drag:2,4>4,4', 'click:4,4@North:0.6', 'waitidle:1:900', 'expect:cell:1:4,4',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:dev', 'expect:editor:map', 'expect:tiles:4', 'expect:dirty:no',
+    'ui:map.back', 'expect:editor:none', 'expect:item:map:Перешеек:yes', 'ui:dev.back', 'expect:screen:menu',
+    'field:menu.map=Перешеек (своя)', 'ui:menu.play', 'expect:screen:play', 'spawn:base', 'expect:cell:1:2,4',
+    'press:2,4', 'move:3,2', 'release:3,2', 'expect:draft:none', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV16 = (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'expect:item:map:Перешеек:yes', 'row:name=Перешеек', 'ui:dev.open', 'expect:editor:map',
+    'expect:tiles:4', 'expect:tile:2,4:core.tile.player_base', 'expect:tile:4,4:core.tile.high', 'expect:tile:5,4:core.tile.enemy_base',
+    'expect:testpoints:2', 'ui:map.back', 'expect:editor:none', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV15
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -226,7 +259,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
+            $scenario = if ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
+                        elseif ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
                         elseif ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
                         elseif ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
                         elseif ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
@@ -237,7 +271,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }
+            if ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
+            elseif ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }
         }
 
         # From v0.15.0 user content goes to a fresh temporary folder, so the run never touches real user data.

@@ -67,6 +67,20 @@ internal static class MapChecks
             issues.Warning("data.tiles", "на карте нет мест выставления юнитов (база игрока или зона выставления)");
         }
 
+        if (map.TestPoints.Count >= 2 && map.Tiles.Count > 0)
+        {
+            var grid = Runtime.RuntimeFactory.BuildMap(new ContentItem(library.Registry.Find(ContentTypeRegistry.Map)!, "map_routecheck", map, ContentOrigin.User), library, new IssueList()).Grid;
+            for (var i = 1; i < map.TestPoints.Count; i++)
+            {
+                var a = map.TestPoints[i - 1];
+                var b = map.TestPoints[i];
+                if (grid.Exists(a.Coord) && grid.Exists(b.Coord) && HexTactics.Core.Pathfinding.Pathfinder.FindPath(grid, a.Coord, b.Coord) is null)
+                {
+                    issues.Warning("data.testPoints", $"нет проходимого маршрута между тестовыми точками «{a.Label}» ({a.Col},{a.Row}) и «{b.Label}» ({b.Col},{b.Row})");
+                }
+            }
+        }
+
         if (map.Columns > ScreenColumns || map.Rows > ScreenRows)
         {
             issues.Warning("data.columns", $"рабочая область {map.Columns}×{map.Rows} больше {ScreenColumns}×{ScreenRows} — поле может не поместиться на стартовый экран, уменьшите размер");

@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Godot;
+using HexTactics.Client.DeveloperMode.Editors;
+using HexTactics.Client.DeveloperMode.Editors.Map;
 using HexTactics.Client.UI;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
@@ -28,6 +30,8 @@ public partial class DeveloperMode : Node
     private string? _selectedId;
     private int _shownVersion = -1;
 
+    private CanvasLayer _catalogLayer = null!;
+    private Node? _editorNode;
     private Control _root = null!;
     private Label _status = null!;
     private Button _undo = null!;
@@ -49,8 +53,18 @@ public partial class DeveloperMode : Node
     /// <summary>The user wants to go back to the start menu.</summary>
     public event Action? ExitRequested;
 
-    /// <summary>Editors by category id (spec part 4 §9.2 <c>EditorRegistry</c>); filled as editors appear.</summary>
-    public Dictionary<string, string> Editors { get; } = new();
+    /// <summary>
+    /// Editors by category id (spec part 4 §9.2 <c>EditorRegistry</c>): a factory that opens an object (and optionally a
+    /// restored draft of it). Categories without an editor are listed but cannot be opened yet.
+    /// </summary>
+    public Dictionary<string, Func<ContentItem, ContentItem?, Node>> Editors { get; } = new();
+
+    /// <summary>The open editor, if any.</summary>
+    public IContentEditor? ActiveEditor => _editorNode as IContentEditor;
+
+    /// <summary>An editor asked for a test run of a temporary copy (the root runs it in the game mode).</summary>
+    public event Action<ContentItem>? TestRequested;
+
 
     public string? SelectedId => _selectedId;
 
@@ -63,6 +77,12 @@ public partial class DeveloperMode : Node
     public void Configure(ContentLibrary library)
     {
         _library = library;
+        Editors["map"] = (item, draft) =>
+        {
+            var editor = new MapEditor { Name = "MapEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
         _browser = new LibraryBrowser(library);
         foreach (var problem in library.Problems)
         {
@@ -73,6 +93,7 @@ public partial class DeveloperMode : Node
     public override void _Ready()
     {
         var layer = new CanvasLayer { Name = "DeveloperUi", Layer = 10 };
+        _catalogLayer = layer;
         AddChild(layer);
         _root = new Control { Name = "Root", Theme = UiKit.Theme, MouseFilter = Control.MouseFilterEnum.Ignore };
         layer.AddChild(_root);
@@ -101,11 +122,13 @@ public partial class DeveloperMode : Node
         column.AddChild(BuildMessages());
 
         _history.Changed += () => CallDeferred(MethodName.Refresh);
-        GetViewport().SizeChanged += Layout;
         Layout();
         AddMessage("Режим разработчика: выберите категорию слева. Встроенные объекты только для чтения — их можно дублировать.", null);
         Refresh();
+        CallDeferred(MethodName.OfferDrafts);
     }
+
+    public override void _EnterTree() => GetViewport().SizeChanged += Layout;
 
     public override void _ExitTree() => GetViewport().SizeChanged -= Layout;
 
@@ -119,7 +142,7 @@ public partial class DeveloperMode : Node
 
     public override void _UnhandledKeyInput(InputEvent @event)
     {
-        if (@event is not InputEventKey { Pressed: true } key || ModalDialog.Open is not null)
+        if (@event is not InputEventKey { Pressed: true } key || ModalDialog.Open is not null || _editorNode is not null)
         {
             return;
         }
@@ -306,6 +329,11 @@ public partial class DeveloperMode : Node
 
     private void Layout()
     {
+        if (_root is null)
+        {
+            return;
+        }
+
         var viewport = GetViewport().GetVisibleRect().Size;
         var scale = UiKit.ScaleFor(viewport);
         _root.Scale = new Vector2(scale, scale);
@@ -560,13 +588,156 @@ public partial class DeveloperMode : Node
         }
     }
 
-    private void Create() => AddMessage("Редактор этой категории ещё не подключён.", IssueSeverity.Warning);
+    private void Create()
+    {
+        var kind = _library.Registry.Find(_browser.Kind)!;
+        if (!Editors.ContainsKey(kind.Id))
+        {
+            AddMessage("Редактор этой категории ещё не подключён.", IssueSeverity.Warning);
+            return;
+        }
+
+        var name = kind.Id switch
+        {
+            "map" => "Новая карта",
+            "unit" => "Новый юнит",
+            "skill" => "Новый навык",
+            "tile" => "Новый тип гекса",
+            _ => "Новый объект",
+        };
+        OpenEditor(_library.Create(kind.Id, name), null);
+        AddMessage($"Создан черновик: {kind.Singular} «{name}». Он появится в библиотеке после сохранения.", null);
+    }
 
     private void Open()
     {
-        if (Selected is { } item && !Editors.ContainsKey(item.Kind.Id))
+        if (Selected is not { } item)
+        {
+            return;
+        }
+
+        if (!Editors.ContainsKey(item.Kind.Id))
         {
             AddMessage($"«{item.Name}»: редактор категории «{item.Kind.Title}» появится в следующих версиях — сейчас доступны просмотр, копия, переименование и удаление.", IssueSeverity.Warning);
+            return;
+        }
+
+        OpenEditor(item, null);
+    }
+
+    /// <summary>Hides the catalog and shows the editor of <paramref name="item"/> (with a restored draft, if given).</summary>
+    public void OpenEditor(ContentItem item, ContentItem? draft)
+    {
+        if (_editorNode is not null || !Editors.TryGetValue(item.Kind.Id, out var factory))
+        {
+            return;
+        }
+
+        _editorNode = factory(item, draft);
+        var editor = (IContentEditor)_editorNode;
+        editor.CloseRequested += RequestCloseEditor;
+        editor.TestRequested += copy => TestRequested?.Invoke(copy);
+        _catalogLayer.Visible = false;
+        AddChild(_editorNode);
+    }
+
+    /// <summary>Leaving the editor: unsaved changes → «Сохранить / Не сохранять / Отмена» (spec part 4 §2.1).</summary>
+    public void RequestCloseEditor()
+    {
+        if (ActiveEditor is not { } editor)
+        {
+            return;
+        }
+
+        if (!editor.IsDirty)
+        {
+            CloseEditor();
+            return;
+        }
+
+        ModalDialog.Show(this, $"Сохранить изменения «{editor.ObjectName}»?", "Есть несохранённые изменения. Черновик хранится до решения.", new[]
+        {
+            new DialogButton("Отмена", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true),
+            new DialogButton("Не сохранять", "dialog.discard", ButtonKind.Normal, () =>
+            {
+                editor.Discard();
+                CloseEditor();
+            }),
+            new DialogButton("Сохранить", "dialog.ok", ButtonKind.Primary, () =>
+            {
+                if (editor.Save().Ok)
+                {
+                    CloseEditor();
+                }
+            }),
+        });
+    }
+
+    private void CloseEditor()
+    {
+        if (_editorNode is null)
+        {
+            return;
+        }
+
+        var kind = ActiveEditor!.Kind;
+        var name = ActiveEditor.ObjectName;
+        RemoveChild(_editorNode);
+        _editorNode.QueueFree();
+        _editorNode = null;
+        _catalogLayer.Visible = true;
+        _browser.Kind = kind;
+        _selectedId = IdByName(name);
+        Refresh();
+    }
+
+    /// <summary>Unsaved drafts found at start are offered for restoration (the saved version is never overwritten).</summary>
+    private void OfferDrafts()
+    {
+        if (_library.User is null || _editorNode is not null || ModalDialog.Open is not null)
+        {
+            return;
+        }
+
+        foreach (var draftInfo in _library.User.ListDrafts())
+        {
+            var kind = _library.Registry.All.FirstOrDefault(k => k.Folder == draftInfo.Folder);
+            if (kind is null || !Editors.ContainsKey(kind.Id))
+            {
+                continue;
+            }
+
+            var text = _library.User.ReadDraft(draftInfo.Folder, draftInfo.Id);
+            var draft = text is null ? null : ContentSerializer.Read(text, _library.Registry, ContentOrigin.User).Item;
+            if (draft is null)
+            {
+                _library.User.DeleteDraft(draftInfo.Folder, draftInfo.Id);
+                continue;
+            }
+
+            var saved = _library.Find(kind.Id, draft.Id);
+            ModalDialog.Show(this, $"Восстановить черновик «{draft.Name}»?", $"Найдены несохранённые изменения ({kind.Singular}, {draftInfo.Saved.ToLocalTime():dd.MM.yyyy HH:mm}). " +
+                (saved is null ? "Объект ещё ни разу не сохранялся." : "Сохранённая версия не изменится, пока вы не сохраните черновик."), new[]
+            {
+                new DialogButton("Позже", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true),
+                new DialogButton("Удалить черновик", "dialog.discard", ButtonKind.Normal, () =>
+                {
+                    _library.User.DeleteDraft(draftInfo.Folder, draftInfo.Id);
+                    CallDeferred(MethodName.OfferDrafts);
+                }),
+                new DialogButton("Восстановить", "dialog.ok", ButtonKind.Primary, () =>
+                {
+                    var baseItem = saved ?? _library.Create(kind.Id, draft.Name);
+                    if (saved is null)
+                    {
+                        baseItem = draft.CopyAs(draft.Id, ContentOrigin.User, draft.Name);
+                        baseItem.Revision = 0;
+                    }
+
+                    OpenEditor(baseItem, saved is null ? null : draft);
+                }),
+            });
+            return;
         }
     }
 
