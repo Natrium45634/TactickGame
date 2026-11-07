@@ -71,6 +71,9 @@ public class DefinitionEditorModel
         return null;
     }
 
+    /// <summary>Tells the view to refresh (selection and other view state that is not part of the object).</summary>
+    protected void RaiseChanged() => Changed?.Invoke();
+
     public bool Undo() => History.Undo();
 
     public bool Redo() => History.Redo();

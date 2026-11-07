@@ -162,7 +162,7 @@ public static class RuntimeFactory
             cells.Add(new SkillCell(cell.Offset, specs));
         }
 
-        return new SkillDefinition { Id = skillItem.Id, Name = skillItem.Name, Cells = cells };
+        return new SkillDefinition { Id = skillItem.Id, Name = skillItem.Name, Icon = skill.Icon, Cells = cells };
     }
 
     public static UnitTemplate BuildUnit(ContentItem unitItem)
@@ -195,15 +195,22 @@ public static class RuntimeFactory
     /// lists the unit definitions of the five roster operatives (missing entries = <paramref name="unitId"/>);
     /// <paramref name="extraUnits"/> are unsaved unit definitions to include (test runs of the unit editor).
     /// </summary>
-    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null, IReadOnlyList<ContentItem>? extraUnits = null)
+    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null, IReadOnlyList<ContentItem>? extraUnits = null, ContentItem? testSkill = null)
     {
         var issues = new IssueList();
         var unitItem = library.Find(ContentTypeRegistry.Unit, unitId) ?? throw new InvalidOperationException($"Unit '{unitId}' is not in the content library.");
 
         var skills = new Dictionary<string, SkillDefinition>(StringComparer.Ordinal);
-        foreach (var item in library.Items(ContentTypeRegistry.Skill))
+        var skillItems = new List<ContentItem>(library.Items(ContentTypeRegistry.Skill));
+        if (testSkill is not null)
         {
-            if (item.HasErrors)
+            skillItems.RemoveAll(s => s.Id == testSkill.Id);
+            skillItems.Add(testSkill);
+        }
+
+        foreach (var item in skillItems)
+        {
+            if (item.HasErrors && !ReferenceEquals(item, testSkill))
             {
                 issues.Warning(item.Id, $"навык «{item.Name}» с ошибками — не загружен");
                 continue;
@@ -253,14 +260,29 @@ public static class RuntimeFactory
         }
 
         var defaultUnit = units.TryGetValue(unitItem.Id, out var known2) ? known2 : unit with { Skills = known };
+        if (testSkill is not null)
+        {
+            // Skill test run: debug spawns (panel buttons, P) carry the tested skill first as well.
+            defaultUnit = SkillFirst(defaultUnit, testSkill.Id);
+        }
+
         var roster = new List<(string, UnitProfile)>();
         for (var i = 0; i < GameContent.OperativeNames.Count; i++)
         {
             var id = squad is not null && i < squad.Count ? squad[i] : unitItem.Id;
             var template = units.TryGetValue(id, out var t) ? t : defaultUnit;
+            if (testSkill is not null)
+            {
+                // Skill test run: every operative has the tested skill first (R key, ТД menu), then its own ones.
+                template = SkillFirst(template, testSkill.Id);
+            }
+
             roster.Add((GameContent.OperativeNames[i], template.ToProfile()));
         }
 
         return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster };
     }
+
+    private static UnitTemplate SkillFirst(UnitTemplate template, string skillId) =>
+        template with { Skills = new[] { skillId }.Concat(template.Skills.Where(s => s != skillId)).ToArray() };
 }

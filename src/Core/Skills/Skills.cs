@@ -25,6 +25,9 @@ public sealed record SkillDefinition
     /// <summary>Display name.</summary>
     public required string Name { get; init; }
 
+    /// <summary>Short symbol of the skill (ТД menu, skill buttons).</summary>
+    public string Icon { get; init; } = "✦";
+
     /// <summary>Hexes of the area for a caster looking North, in the stored order (also the processing order).</summary>
     public required IReadOnlyList<SkillCell> Cells { get; init; }
 
@@ -99,6 +102,88 @@ public enum SkillActionStatus
     Planned = 0,
     Executed = 1,
     Cancelled = 2,
+
+    /// <summary>
+    /// Started: its hits are being applied over time (spec part 4 §6.5) — one action with several hit events, never a
+    /// new activation. The caster waits at the waypoint until it is done.
+    /// </summary>
+    Executing = 3,
+}
+
+/// <summary>One hit event of a running skill action: when (game seconds after the start), which hit, cell and effect.</summary>
+public readonly record struct ScheduledHit(double Time, int HitIndex, int CellIndex, int EffectIndex);
+
+/// <summary>
+/// A skill action being executed (spec part 4 §6.5): the cells resolved at the start (origin and direction are fixed),
+/// the hit schedule in the fixed order time → hit index → cell → effect, and the game time elapsed. Targets are taken at
+/// every hit from whoever stands in the cell then.
+/// </summary>
+public sealed class SkillExecution
+{
+    public SkillExecution(SkillAction action, SkillDefinition skill, HexCoord origin, HexDirection direction, IReadOnlyList<(HexCoord Cell, SkillCell Config)> cells, IReadOnlyList<ScheduledHit> hits)
+    {
+        Action = action;
+        Skill = skill;
+        Origin = origin;
+        Direction = direction;
+        Cells = cells;
+        Hits = hits;
+    }
+
+    public SkillAction Action { get; }
+
+    public SkillDefinition Skill { get; }
+
+    public HexCoord Origin { get; }
+
+    public HexDirection Direction { get; }
+
+    public IReadOnlyList<(HexCoord Cell, SkillCell Config)> Cells { get; }
+
+    public IReadOnlyList<ScheduledHit> Hits { get; }
+
+    /// <summary>Game seconds since the start (pause freezes it: no ticks).</summary>
+    public double Elapsed { get; internal set; }
+
+    /// <summary>Index of the next hit to apply.</summary>
+    public int Next { get; internal set; }
+
+    public bool Done => Next >= Hits.Count;
+
+    /// <summary>Game time from the first to the last hit.</summary>
+    public double Duration => Hits.Count == 0 ? 0 : Hits[^1].Time;
+
+    /// <summary>Builds the schedule from the hit count and interval of every effect (<c>hits</c>, <c>interval</c>).</summary>
+    public static IReadOnlyList<ScheduledHit> Schedule(IReadOnlyList<(HexCoord Cell, SkillCell Config)> cells)
+    {
+        var hits = new List<ScheduledHit>();
+        for (var c = 0; c < cells.Count; c++)
+        {
+            var effects = cells[c].Config.Effects;
+            for (var e = 0; e < effects.Count; e++)
+            {
+                var count = Math.Max(1, (int)Math.Round(effects[e].Number("hits", 1)));
+                var interval = Math.Max(0, effects[e].Number("interval", 0));
+                for (var h = 0; h < count; h++)
+                {
+                    hits.Add(new ScheduledHit(h * interval, h, c, e));
+                }
+            }
+        }
+
+        hits.Sort((a, b) =>
+        {
+            var t = a.Time.CompareTo(b.Time);
+            if (t != 0)
+            {
+                return t;
+            }
+
+            var h = a.HitIndex.CompareTo(b.HitIndex);
+            return h != 0 ? h : a.CellIndex != b.CellIndex ? a.CellIndex.CompareTo(b.CellIndex) : a.EffectIndex.CompareTo(b.EffectIndex);
+        });
+        return hits;
+    }
 }
 
 /// <summary>
@@ -125,6 +210,9 @@ public sealed class SkillAction
     public int? OriginWaypointId { get; }
 
     public SkillActionStatus Status { get; internal set; }
+
+    /// <summary>Planned or being executed (shown on the waypoint, holds the unit there).</summary>
+    public bool IsActive => Status is SkillActionStatus.Planned or SkillActionStatus.Executing;
 
     /// <summary>Tick of execution (or cancellation).</summary>
     public long? ResolvedTick { get; internal set; }

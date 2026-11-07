@@ -83,12 +83,46 @@ public static class UiText
     /// </summary>
     public static string Hp(double value) => value.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
 
+    /// <summary>Short name of a status for floating text and the unit panel.</summary>
+    public static string StatusName(HexTactics.Core.Effects.StatusKind kind, string stat, string key)
+    {
+        if (kind == HexTactics.Core.Effects.StatusKind.Periodic)
+        {
+            return key.EndsWith("|heal", System.StringComparison.Ordinal) ? "лечение/с" : "урон/с";
+        }
+
+        var down = key.Contains("|debuff|", System.StringComparison.Ordinal);
+        var what = stat switch
+        {
+            "attackPower" => "атака",
+            "attackRate" => "темп атак",
+            _ => "скорость",
+        };
+        return (down ? "↓ " : "↑ ") + what;
+    }
+
     public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false, string? name = null)
     {
         var text = $"Юнит {u.Id}{(name is null ? string.Empty : $" «{name}»")} · {SideName(u.Side)}{(u.IsActive ? string.Empty : " · ожидает взгляда (не активен)")}\n" +
                    $"клетка {Cell(u.Cell)} · взгляд: {(u.Facing is { } f ? $"{Direction(f)} ({f.ShortName()})" : "не задан — выберите сектор у ребра")}\n" +
                    $"здоровье {Hp(u.CurrentHealth)}/{u.MaxHealth} · атака {Hp(u.Stats.AttackPower)} · скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД: {u.Orders.OrderCount}\n" +
                    $"движение: {Motion(u)}{(paused && u.Motion.Status != MovementStatus.Idle ? " (пауза)" : string.Empty)}";
+        if (u.Statuses.Count > 0)
+        {
+            var parts = new System.Collections.Generic.List<string>();
+            foreach (var st in u.Statuses)
+            {
+                parts.Add($"{StatusName(st.Kind, st.Stat, st.Key)} {st.Remaining:0.0} с");
+            }
+
+            text += "\nстатусы: " + string.Join(", ", parts);
+        }
+
+        if (u.ActiveSkill is { } running)
+        {
+            text += $"\nнавык: удары {running.Next}/{running.Hits.Count}";
+        }
+
         if (u.Orders.AttackTarget is { } target)
         {
             text += $"\nатака юнита {target}: " + u.Combat.Status switch

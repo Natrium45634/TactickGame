@@ -130,7 +130,7 @@ public static class CombatPreviewText
             {
                 foreach (var e in skill.EffectsOf(cell))
                 {
-                    effects.Add(EffectText(e, unit.AttackPower, library.Registry.Effects));
+                    effects.Add(HexTactics.Editor.Skills.EffectPreview.Describe(e, unit.AttackPower, unit.MaxHealth, library.Registry.Effects));
                 }
             }
 
@@ -139,18 +139,6 @@ public static class CombatPreviewText
         }
 
         return lines;
-    }
-
-    /// <summary>One effect in words, with the numbers computed for the given attack power.</summary>
-    public static string EffectText(EffectData effect, double attackPower, EffectTypeRegistry registry)
-    {
-        var label = registry.Find(effect.Type)?.Label ?? effect.Type;
-        var spec = effect.ToSpec(registry);
-        return effect.Type switch
-        {
-            "damage" => $"{label.ToLowerInvariant()} {N(spec.Number("amount"))}",
-            _ => label.ToLowerInvariant(),
-        };
     }
 
     private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);

@@ -153,6 +153,74 @@ public sealed class GameState
         return Math.Max(0, healed);
     }
 
+    /// <summary>
+    /// Applies a timed status with a stacking policy (spec part 4 §6.4); returns false if it was ignored. The effective
+    /// characteristics are recomputed at once.
+    /// </summary>
+    public bool AddStatus(UnitId id, HexTactics.Core.Effects.StatusEffect status, HexTactics.Core.Effects.StackingPolicy policy)
+    {
+        var unit = GetUnit(id);
+        if (!unit.IsAlive)
+        {
+            return false;
+        }
+
+        var existing = unit._statuses.FindIndex(s => s.Key == status.Key);
+        switch (policy)
+        {
+            case HexTactics.Core.Effects.StackingPolicy.Ignore when existing >= 0:
+                return false;
+            case HexTactics.Core.Effects.StackingPolicy.Refresh when existing >= 0:
+                unit._statuses[existing].Remaining = unit._statuses[existing].Duration;
+                return true;
+            case HexTactics.Core.Effects.StackingPolicy.Replace:
+                unit._statuses.RemoveAll(s => s.Key == status.Key);
+                break;
+        }
+
+        var added = status.Copy();
+        added.Remaining = status.Duration;
+        unit._statuses.Add(added);
+        RecomputeStats(unit);
+        return true;
+    }
+
+    /// <summary>Advances the timers of a unit's statuses by <paramref name="dt"/>; returns the expired ones (removed).</summary>
+    public IReadOnlyList<HexTactics.Core.Effects.StatusEffect> AgeStatuses(UnitId id, double dt)
+    {
+        var unit = GetUnit(id);
+        var expired = new List<HexTactics.Core.Effects.StatusEffect>();
+        foreach (var s in unit._statuses)
+        {
+            s.Remaining -= dt;
+            if (s.Remaining <= 1e-9)
+            {
+                expired.Add(s);
+            }
+        }
+
+        if (expired.Count > 0)
+        {
+            unit._statuses.RemoveAll(expired.Contains);
+            RecomputeStats(unit);
+        }
+
+        return expired;
+    }
+
+    private static void RecomputeStats(UnitState unit) =>
+        unit.Stats = HexTactics.Core.Effects.StatModifiers.Effective(unit.BaseStats, unit._statuses);
+
+    public void SetActiveSkill(UnitId id, HexTactics.Core.Skills.SkillExecution? execution)
+    {
+        var unit = GetUnit(id);
+        unit.ActiveSkill = execution;
+        if (execution is not null)
+        {
+            execution.Action.Status = HexTactics.Core.Skills.SkillActionStatus.Executing;
+        }
+    }
+
     /// <summary>Records which unit definition a unit was created from.</summary>
     public void SetDefinition(UnitId id, string? definitionId) => GetUnit(id).DefinitionId = definitionId;
 

@@ -41,7 +41,6 @@ public partial class GameMode : Node3D
     private HealthBarsView _healthBars = null!;
     private CombatFxView _combatFx = null!;
     private Button _enemyButton = null!;
-    private Button _skillButton = null!;
     private HexFillLayer _skillLayer = null!;
     private string _skillStamp = string.Empty;
     private PointerInput _input = null!;
@@ -95,6 +94,67 @@ public partial class GameMode : Node3D
         ?? (_content.DefaultUnit.Skills.Count > 0 ? _content.DefaultUnit.Skills[0] : HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
 
     private string PrimarySkillName => _content.Skills.TryGetValue(PrimarySkill, out var skill) ? skill.Name : PrimarySkill;
+
+    /// <summary>The skills of a unit as (id, «icon name») in its definition's order.</summary>
+    private System.Collections.Generic.List<(string Id, string Label)> SkillLabels(HexTactics.Core.Units.UnitId unitId)
+    {
+        var list = new System.Collections.Generic.List<(string, string)>();
+        if (_sim.State.FindUnit(unitId) is { } unit)
+        {
+            foreach (var id in unit.Skills)
+            {
+                if (_content.Skills.TryGetValue(id, out var skill))
+                {
+                    list.Add((id, $"{skill.Icon} {skill.Name}"));
+                }
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>HUD buttons for the selected unit's skills (the first one is also the R key).</summary>
+    private void SyncSkillButtons(HexTactics.Core.Units.UnitState? selected)
+    {
+        var skills = selected is null ? new System.Collections.Generic.List<(string Id, string Label)>() : SkillLabels(selected.Id);
+        var key = string.Join("|", skills);
+        if (key != _skillButtonsKey)
+        {
+            _skillButtonsKey = key;
+            foreach (var child in _skillRow.GetChildren())
+            {
+                _skillRow.RemoveChild(child);
+                child.QueueFree();
+            }
+
+            if (skills.Count == 0)
+            {
+                skills.Add((PrimarySkill, $"✦ {PrimarySkillName}"));
+            }
+
+            for (var i = 0; i < skills.Count; i++)
+            {
+                var (id, label) = skills[i];
+                var button = new Button { Text = i == 0 ? $"{label} (R)" : label, ToggleMode = true, FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+                button.TooltipText = $"Навык «{label}» из библиотеки. Направление — курсором, ЛКМ — применить, ПКМ — отмена.";
+                button.Pressed += () => ToggleSkillAim(id);
+                AutomationIds.Register(button, $"game.skill.{i}");
+                _skillRow.AddChild(button);
+            }
+        }
+
+        foreach (var child in _skillRow.GetChildren())
+        {
+            if (child is Button b)
+            {
+                b.Disabled = selected is not { IsAlive: true, IsActive: true } || selected.Side != HexTactics.Core.Units.Side.Player;
+                b.SetPressedNoSignal(_fsm.IsAimingSkill && _fsm.SkillAim?.SkillId is { } aimed && b.Text.Contains(_content.Skills.TryGetValue(aimed, out var sd) ? sd.Name : aimed));
+            }
+        }
+    }
+
+    private VBoxContainer _skillRow = null!;
+    private string _skillButtonsKey = "-";
 
     public override void _Ready()
     {
@@ -171,7 +231,7 @@ public partial class GameMode : Node3D
         _rosterBar.CardPressed += OnRosterCardPressed;
         _rosterBar.CommandPressed += () => _fsm.ToggleGroupMode();
         _waypointMenu = new WaypointMenuPanel { Name = "WaypointMenu" };
-        _waypointMenu.SkillPressed += () => _fsm.BeginWaypointSkillAim(PrimarySkill);
+        _waypointMenu.SkillPressed += id => _fsm.BeginWaypointSkillAim(id);
         _waypointMenu.ClearPressed += () => _fsm.ClearWaypointSkillFromMenu();
         AddChild(_waypointMenu);
         AddChild(_rosterBar);
@@ -208,7 +268,7 @@ public partial class GameMode : Node3D
         _orders.Sync(_sim.State, _fsm.SelectedUnit, _fsm.SelectedWaypointId, draft, group, _fsm.HoverTurnFacing, _sim.CommandAnchor, _units.VisualPlanePosition, _fsm.SkillAim);
         UpdateSkillAreas();
         _waypointMenu.UiScale = _hud.UiScale;
-        _waypointMenu.Sync(_fsm.WaypointMenu, _cameraRig.Camera, _layout);
+        _waypointMenu.Sync(_fsm.WaypointMenu, _cameraRig.Camera, _layout, _fsm.WaypointMenu is { } menuView ? SkillLabels(menuView.Unit) : System.Array.Empty<(string, string)>());
         _motionDebug.Sync(_sim.State, u => _units.PositionOf(u, interpolation));
         _healthBars.UiScale = _hud.UiScale;
         _healthBars.Sync(_sim.State, _cameraRig.Camera, u => _units.PositionOf(u, interpolation), _fsm.SelectedUnit);
@@ -468,8 +528,7 @@ public partial class GameMode : Node3D
         _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
         _timeLabel.Text = $"Игровое время {_sim.GameTime:0.0} с · тик {_sim.Tick} · {(_sim.IsPaused ? "пауза" : "идёт")}";
         _obstacleButton.SetPressedNoSignal(_fsm.Mode == InputMode.ObstacleEdit);
-        _skillButton.Disabled = selected is not { IsAlive: true, IsActive: true } || selected.Side != HexTactics.Core.Units.Side.Player;
-        _skillButton.SetPressedNoSignal(_fsm.IsAimingSkill);
+        SyncSkillButtons(selected);
     }
 
     private string DescribeCell(HexCoord h)
@@ -526,7 +585,9 @@ public partial class GameMode : Node3D
         }
     }
 
-    private void ToggleSkillAim()
+    private void ToggleSkillAim() => ToggleSkillAim(PrimarySkill);
+
+    private void ToggleSkillAim(string skillId)
     {
         if (_fsm.IsAimingSkill)
         {
@@ -534,7 +595,7 @@ public partial class GameMode : Node3D
         }
         else
         {
-            _fsm.BeginSkillAim(PrimarySkill);
+            _fsm.BeginSkillAim(skillId);
         }
     }
 
@@ -882,9 +943,9 @@ public partial class GameMode : Node3D
 
         _hud.AddHeader("Выбранный юнит");
         _selectionLabel = _hud.AddLabel(string.Empty, fontSize: 13);
-        _skillButton = _hud.AddButton($"✦ {PrimarySkillName} (R)", () => ToggleSkillAim());
-        _skillButton.ToggleMode = true;
-        _skillButton.TooltipText = $"Навык «{PrimarySkillName}» (из библиотеки контента). Направление — курсором, ЛКМ — применить, ПКМ — отмена.";
+        _skillRow = new VBoxContainer();
+        _skillRow.AddThemeConstantOverride("separation", 4);
+        _hud.AddControl(_skillRow);
         _hud.AddSeparator();
 
         _hud.AddHeader("Приказы");
@@ -1134,7 +1195,8 @@ public partial class GameMode : Node3D
             case "menu-clear":
                 {
                     // Presses the real button of the open waypoint menu.
-                    var p = parts[0] == "menu-skill" ? _waypointMenu.SkillButtonCenter : _waypointMenu.ClearButtonCenter;
+                    // menu-skill[:N] — the N-th skill icon of the unit (0 = first).
+                    var p = parts[0] == "menu-skill" ? _waypointMenu.SkillButtonCenter(arg.Length > 0 ? int.Parse(arg, CultureInfo.InvariantCulture) : 0) : _waypointMenu.ClearButtonCenter;
                     InjectMotion(p);
                     InjectButton(p, MouseButton.Left, true);
                     InjectButton(p, MouseButton.Left, false);

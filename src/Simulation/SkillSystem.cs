@@ -6,11 +6,13 @@ using HexTactics.Core.Units;
 namespace HexTactics.Simulation;
 
 /// <summary>
-/// Executes planned skill uses (spec part 3 §5, §7 step 3) — after movement, before normal attacks, units in id order.
-/// An immediate use fires as soon as the caster stands on a hex centre (a running step is completed first); the caster
-/// turns to the skill's direction, the area is computed from its hex with pure hex arithmetic, and the effects of each
-/// cell are applied once — through the shared <see cref="EffectResolver"/> — to the unit standing there at this tick.
-/// Who stood there when the skill was planned does not matter.
+/// Executes planned skill uses (spec part 3 §5, §7 step 3; part 4 §6.5) — after movement, before normal attacks, units in
+/// id order. A use starts when the caster stands on a hex centre: at the waypoint it was planned for (never on another hex)
+/// or, for an immediate use, wherever it rests (a running step is completed first). The caster turns to the skill's
+/// direction, the cells are resolved from that hex, and the hits are applied over game time in the fixed order
+/// time → hit → cell → effect; each hit takes whoever stands in the cell at that moment. Zero interval and one hit =
+/// everything in the starting tick (the part-3 behaviour). The caster waits until the last hit, then goes on. Removing
+/// the waypoint (or the caster's death) stops the remaining hits; applied effects and statuses stay.
 /// </summary>
 internal sealed class SkillSystem : ISimulationSystem
 {
@@ -33,28 +35,37 @@ internal sealed class SkillSystem : ISimulationSystem
     {
         foreach (var unit in new List<UnitState>(_state.Units))
         {
-            if (!unit.IsAlive || !unit.IsActive || unit.Motion.IsStepping)
+            if (!unit.IsAlive)
             {
                 continue;
             }
 
-            // Spec part 3 §6.1, §7 step 3: the skill planned at the waypoint the unit stands on fires once, from the waypoint
-            // hex itself (never from another hex, e.g. when the waypoint became unreachable).
-            if (unit.Orders.Peek() is { Skill: { Status: SkillActionStatus.Planned } planned } wp && wp.Cell == unit.Cell)
+            if (unit.ActiveSkill is { } running)
             {
-                Execute(unit, planned, wp.Cell, context.Tick);
+                running.Elapsed += context.DeltaSeconds;
+                Advance(unit, running, context.Tick);
+                continue;
             }
 
-            if (unit.PendingSkill is { Status: SkillActionStatus.Planned } action)
+            if (!unit.IsActive || unit.Motion.IsStepping)
             {
-                Execute(unit, action, unit.Cell, context.Tick);
-                _state.SetPendingSkill(unit.Id, null);
+                continue;
+            }
+
+            // Spec part 3 §6.1, §7 step 3: the skill planned at the waypoint the unit stands on starts from that hex.
+            if (unit.Orders.Peek() is { Skill: { Status: SkillActionStatus.Planned } planned } wp && wp.Cell == unit.Cell)
+            {
+                Start(unit, planned, wp.Cell, context.Tick);
+            }
+            else if (unit.PendingSkill is { Status: SkillActionStatus.Planned } action)
+            {
+                Start(unit, action, unit.Cell, context.Tick);
             }
         }
     }
 
-    /// <summary>Fires <paramref name="action"/> of <paramref name="caster"/> from <paramref name="origin"/> (once).</summary>
-    internal void Execute(UnitState caster, SkillAction action, HexCoord origin, long tick)
+    /// <summary>Starts <paramref name="action"/> of <paramref name="caster"/> from <paramref name="origin"/> (once).</summary>
+    internal void Start(UnitState caster, SkillAction action, HexCoord origin, long tick)
     {
         if (action.Status != SkillActionStatus.Planned || !_settings.Skills.TryGetValue(action.SkillId, out var skill))
         {
@@ -67,31 +78,69 @@ internal sealed class SkillSystem : ISimulationSystem
             _events.Add(new FacingChanged(tick, caster.Id, action.Direction));
         }
 
-        // Fixed order (spec part 4 §6.5): cell in stored order → effect index → the unit standing there (one per hex).
-        var resolved = skill.Resolve(origin, action.Direction, _state.Grid);
-        var cells = new List<HexCoord>(resolved.Count);
-        var hit = new List<UnitId>();
-        foreach (var (cell, config) in resolved)
+        var cells = skill.Resolve(origin, action.Direction, _state.Grid);
+        var execution = new SkillExecution(action, skill, origin, action.Direction, cells, SkillExecution.Schedule(cells));
+        _state.SetActiveSkill(caster.Id, execution);
+        var hit = Advance(caster, execution, tick);
+        var area = new List<HexCoord>(cells.Count);
+        foreach (var (cell, _) in cells)
         {
-            cells.Add(cell);
-            if (_state.UnitAt(cell) is not { IsAlive: true } target)
+            area.Add(cell);
+        }
+
+        _events.Add(new SkillActivated(tick, caster.Id, action.Id, action.SkillId, origin, action.Direction, area, hit));
+    }
+
+    /// <summary>Applies the hits that are due; finishes the action after its last hit. Returns the units hit now.</summary>
+    private List<UnitId> Advance(UnitState caster, SkillExecution execution, long tick)
+    {
+        var hitNow = new List<UnitId>();
+        if (execution.Action.Status == SkillActionStatus.Cancelled)
+        {
+            _events.Add(new SkillInterrupted(tick, caster.Id, execution.Action.Id, execution.Action.SkillId, execution.Next, execution.Hits.Count));
+            _state.SetActiveSkill(caster.Id, null);
+            ClearPending(caster, execution.Action);
+            return hitNow;
+        }
+
+        while (!execution.Done && execution.Hits[execution.Next].Time <= execution.Elapsed + 1e-9)
+        {
+            var h = execution.Hits[execution.Next];
+            execution.Next++;
+            var (cell, config) = execution.Cells[h.CellIndex];
+            var targets = new List<UnitId>(1);
+            if (_state.UnitAt(cell) is { IsAlive: true } target
+                && _resolver.Apply(new EffectInvocation(config.Effects[h.EffectIndex], caster, target, tick, EffectSource.Skill, execution.Action.SkillId)))
             {
-                continue;
+                targets.Add(target.Id);
+                if (!hitNow.Contains(target.Id))
+                {
+                    hitNow.Add(target.Id);
+                }
             }
 
-            var any = false;
-            foreach (var effect in config.Effects)
+            if (execution.Hits.Count > 1)
             {
-                any |= _resolver.Apply(new EffectInvocation(effect, caster, target, tick, EffectSource.Skill));
-            }
-
-            if (any && !hit.Contains(target.Id))
-            {
-                hit.Add(target.Id);
+                _events.Add(new SkillHit(tick, caster.Id, execution.Action.Id, h.HitIndex, cell, targets));
             }
         }
 
-        _state.MarkExecuted(action, tick);
-        _events.Add(new SkillActivated(tick, caster.Id, action.Id, action.SkillId, origin, action.Direction, cells, hit));
+        if (execution.Done)
+        {
+            _state.MarkExecuted(execution.Action, tick);
+            _state.SetActiveSkill(caster.Id, null);
+            ClearPending(caster, execution.Action);
+            _events.Add(new SkillCompleted(tick, caster.Id, execution.Action.Id, execution.Action.SkillId));
+        }
+
+        return hitNow;
+    }
+
+    private void ClearPending(UnitState caster, SkillAction action)
+    {
+        if (ReferenceEquals(caster.PendingSkill, action))
+        {
+            _state.SetPendingSkill(caster.Id, null);
+        }
     }
 }

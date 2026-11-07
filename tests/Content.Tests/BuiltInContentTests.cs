@@ -2,6 +2,7 @@ using System.IO;
 using System.Linq;
 using HexTactics.Content.Kinds;
 using HexTactics.Content.Library;
+using HexTactics.Content.Model;
 using HexTactics.Content.Registry;
 using HexTactics.Content.Runtime;
 using HexTactics.Core.Hex;
@@ -129,6 +130,18 @@ public class BuiltInContentTests
         Assert.Equal(TileType.DeployZone, Type("core.tile.deploy"));
         Assert.Equal(TileType.SpawnZone, Type("core.tile.spawn"));
     }
+
+    [Fact]
+    public void A_skill_test_run_puts_the_tested_skill_first_for_roster_cards_and_debug_spawns()
+    {
+        var skill = _library.Find(ContentTypeRegistry.Skill, SkillCatalog.LinearStrikeId)!.CopyAs("test.skill", ContentOrigin.User, "Тест");
+        var game = RuntimeFactory.BuildGame(_library, _library.Find(ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, testSkill: skill);
+        Assert.True(game.Skills.ContainsKey("test.skill"));
+        Assert.Equal("test.skill", game.DefaultUnit.Skills[0]);
+        Assert.Contains(SkillCatalog.LinearStrikeId, game.DefaultUnit.Skills);
+        Assert.All(game.Squad, s => Assert.Equal("test.skill", s.Profile.Skills[0]));
+    }
+
 
     private static HexCoord C(int col, int row) => HexCoord.FromOffset(col, row);
 }

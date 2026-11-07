@@ -92,7 +92,28 @@ public enum DamageKind
     NormalAttack = 0,
     Skill = 1,
     Debug = 2,
+
+    /// <summary>A periodic effect (status of a skill, later a tile surface).</summary>
+    Periodic = 3,
 }
+
+/// <summary>Health was restored (spec part 4 §6.3 p.2), never above the maximum.</summary>
+public sealed record HealApplied(long Tick, UnitId Target, UnitId? Source, double Amount, double HealthAfter, DamageKind Kind) : SimulationEvent(Tick);
+
+/// <summary>A timed status (buff, debuff, periodic effect) was applied to a unit.</summary>
+public sealed record StatusApplied(long Tick, UnitId Target, UnitId? Source, string Key, Core.Effects.StatusKind Kind, string Stat, double Duration) : SimulationEvent(Tick);
+
+/// <summary>A timed status ran out; the characteristic is back to its value without it.</summary>
+public sealed record StatusExpired(long Tick, UnitId Target, string Key, Core.Effects.StatusKind Kind, string Stat) : SimulationEvent(Tick);
+
+/// <summary>The last hit of a skill action was applied; the caster goes on (spec part 4 §6.5).</summary>
+public sealed record SkillCompleted(long Tick, UnitId Unit, int ActionId, string SkillId) : SimulationEvent(Tick);
+
+/// <summary>A running skill action stopped early (its waypoint was removed); hits already applied stay.</summary>
+public sealed record SkillInterrupted(long Tick, UnitId Unit, int ActionId, string SkillId, int HitsDone, int HitsTotal) : SimulationEvent(Tick);
+
+/// <summary>One hit event of a skill action (time → hit → cell → effect); <paramref name="Targets"/> = units affected now.</summary>
+public sealed record SkillHit(long Tick, UnitId Unit, int ActionId, int HitIndex, HexCoord Cell, IReadOnlyList<UnitId> Targets) : SimulationEvent(Tick);
 
 public enum AttackLostReason
 {

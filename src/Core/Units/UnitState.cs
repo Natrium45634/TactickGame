@@ -28,6 +28,7 @@ public sealed class UnitState
         Side = side;
         Cell = cell;
         Facing = facing;
+        BaseStats = stats;
         Stats = stats;
         CurrentHealth = stats.MaxHealth;
         Lifecycle = lifecycle;
@@ -54,8 +55,22 @@ public sealed class UnitState
     /// <summary>The roster card the unit was placed from, if any.</summary>
     public int? RosterEntryId { get; }
 
-    /// <summary>Characteristics of the unit (spec part 3 §3).</summary>
-    public UnitStats Stats { get; }
+    /// <summary>
+    /// Effective characteristics (spec part 3 §3): <see cref="BaseStats"/> changed by the active buffs and debuffs
+    /// (spec part 4 §6.3). Movement, attacks and «% от Attack Power» effects read these.
+    /// </summary>
+    public UnitStats Stats { get; internal set; }
+
+    /// <summary>Characteristics of the unit's definition, without temporary modifiers.</summary>
+    public UnitStats BaseStats { get; }
+
+    /// <summary>Active timed statuses (modifiers, periodic effects), in application order.</summary>
+    public IReadOnlyList<HexTactics.Core.Effects.StatusEffect> Statuses => _statuses;
+
+    internal readonly List<HexTactics.Core.Effects.StatusEffect> _statuses = new();
+
+    /// <summary>A skill action being executed (the unit waits until its last hit, spec part 4 §6.5).</summary>
+    public HexTactics.Core.Skills.SkillExecution? ActiveSkill { get; internal set; }
 
     /// <summary>Movement speed in hex transitions per second (spec part 3 §2.4: 1).</summary>
     public double SpeedHexesPerSecond => Stats.MoveSpeedHexPerSecond;

@@ -125,9 +125,11 @@ internal sealed class MovementSystem : ISimulationSystem
             return false;
         }
 
-        if (target.Cell == unit.Cell && target.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned })
+        if (unit.ActiveSkill is not null || (target.Cell == unit.Cell && target.Skill is { IsActive: true }))
         {
-            m.Status = MovementStatus.Waiting; // one tick at the waypoint: its skill fires, then the route goes on
+            // At the waypoint its skill runs (one tick for an instant skill, until the last hit for a timed one, spec part 4
+            // §6.5); an immediate skill also holds the unit. Then the route goes on by itself.
+            m.Status = MovementStatus.Waiting;
             m.WaitReason = WaitReason.Skill;
             return false;
         }
@@ -259,9 +261,9 @@ internal sealed class MovementSystem : ISimulationSystem
         var m = unit.Motion;
         while (unit.Orders.Peek() is { } wp && wp.Cell == unit.Cell)
         {
-            if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned })
+            if (wp.Skill is { IsActive: true })
             {
-                break; // spec part 3 §7: the skill of this waypoint fires (skill system, same tick) before going on
+                break; // spec part 3 §7: the skill of this waypoint runs (skill system) before going on
             }
 
             _state.CompleteCurrentWaypoint(unit.Id);

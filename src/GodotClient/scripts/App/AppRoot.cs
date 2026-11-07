@@ -173,6 +173,8 @@ public partial class AppRoot : Node
         {
             // Unit test: the prototype map, the edited unit is operative «Альфа», the others are the default unit.
             HexTactics.Content.Registry.ContentTypeRegistry.Unit => RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, squad: new[] { item.Id }, extraUnits: new[] { item }),
+            // Skill test: the prototype map, every operative has the tested skill first.
+            HexTactics.Content.Registry.ContentTypeRegistry.Skill => RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, testSkill: item),
             _ => RuntimeFactory.BuildGame(_library, item),
         };
         _game = new GameMode { Name = "TestGame", Automation = _automation };

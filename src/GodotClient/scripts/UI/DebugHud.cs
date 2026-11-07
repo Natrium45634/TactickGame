@@ -184,6 +184,8 @@ public partial class DebugHud : CanvasLayer
         return button;
     }
 
+    public void AddControl(Control control) => _root.AddChild(control);
+
     public HBoxContainer AddRow()
     {
         var row = new HBoxContainer();

@@ -41,9 +41,9 @@ internal sealed class AttackSystem : ISimulationSystem
     {
         foreach (var unit in new List<UnitState>(_state.Units))
         {
-            if (unit.IsAlive && unit.IsActive)
+            if (unit.IsAlive && unit.IsActive && unit.ActiveSkill is null)
             {
-                TickUnit(unit, context.Tick, context.DeltaSeconds);
+                TickUnit(unit, context.Tick, context.DeltaSeconds); // no normal attacks while a skill action runs
             }
         }
     }

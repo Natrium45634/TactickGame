@@ -26,7 +26,15 @@ public sealed class SkillCellData
 
     public List<EffectData> Effects { get; } = new();
 
+    /// <summary>
+    /// For a cell that inherits the skill's base effects: values overridden in this cell only, by base effect index and
+    /// field (spec part 4 §6.2: the cell's own values win only in the explicitly overridden fields).
+    /// </summary>
+    public SortedDictionary<int, SortedDictionary<string, object>> Overrides { get; } = new();
+
     public HexCoord Offset => new(Q, R);
+
+    public bool Inherits => Effects.Count == 0;
 
     public SkillCellData Clone()
     {
@@ -34,6 +42,11 @@ public sealed class SkillCellData
         foreach (var e in Effects)
         {
             copy.Effects.Add(e.Clone());
+        }
+
+        foreach (var (index, values) in Overrides)
+        {
+            copy.Overrides[index] = new SortedDictionary<string, object>(values, StringComparer.Ordinal);
         }
 
         return copy;
@@ -54,8 +67,34 @@ public sealed class SkillData : IContentData
 
     public List<SkillCellData> Cells { get; } = new();
 
-    /// <summary>The effects that apply to <paramref name="cell"/>: its own ones, or the base effects if it has none.</summary>
-    public IReadOnlyList<EffectData> EffectsOf(SkillCellData cell) => cell.Effects.Count > 0 ? cell.Effects : BaseEffects;
+    /// <summary>
+    /// The effects that apply to <paramref name="cell"/>: its own ones, or the base effects of the skill with the cell's
+    /// overridden fields applied.
+    /// </summary>
+    public IReadOnlyList<EffectData> EffectsOf(SkillCellData cell)
+    {
+        if (!cell.Inherits)
+        {
+            return cell.Effects;
+        }
+
+        var list = new List<EffectData>(BaseEffects.Count);
+        for (var i = 0; i < BaseEffects.Count; i++)
+        {
+            var effect = BaseEffects[i].Clone();
+            if (cell.Overrides.TryGetValue(i, out var values))
+            {
+                foreach (var (key, value) in values)
+                {
+                    effect.Set(key, value);
+                }
+            }
+
+            list.Add(effect);
+        }
+
+        return list;
+    }
 
     public SkillCellData? FindCell(int q, int r) => Cells.Find(c => c.Q == q && c.R == r);
 
@@ -88,6 +127,23 @@ public sealed class SkillData : IContentData
             }
 
             cell["effects"] = effects;
+            if (c.Overrides.Count > 0)
+            {
+                var overrides = new JsonObject();
+                foreach (var (index, values) in c.Overrides)
+                {
+                    var o = new JsonObject();
+                    foreach (var (key, value) in values)
+                    {
+                        o[key] = JsonFields.ToNode(value);
+                    }
+
+                    overrides[index.ToString(CultureInfo.InvariantCulture)] = o;
+                }
+
+                cell["overrides"] = overrides;
+            }
+
             cells.Add(cell);
         }
 
@@ -158,6 +214,37 @@ public sealed class SkillData : IContentData
                     }
                 }
 
+                if (c["overrides"] is JsonObject overrides)
+                {
+                    foreach (var (key, node) in overrides)
+                    {
+                        if (!int.TryParse(key, NumberStyles.None, CultureInfo.InvariantCulture, out var index) || node is not JsonObject values)
+                        {
+                            issues.Error($"{path}.overrides.{key}", "переопределение — объект по номеру базового эффекта");
+                            continue;
+                        }
+
+                        var dict = new SortedDictionary<string, object>(StringComparer.Ordinal);
+                        foreach (var (field, value) in values)
+                        {
+                            if (JsonFields.Scalar(value) is { } scalar)
+                            {
+                                dict[field] = scalar;
+                            }
+                            else
+                            {
+                                issues.Error($"{path}.overrides.{key}.{field}", "значение должно быть числом, строкой или true/false");
+                            }
+                        }
+
+                        cell.Overrides[index] = dict;
+                    }
+                }
+                else if (c.ContainsKey("overrides"))
+                {
+                    issues.Error(path + ".overrides", "ожидается объект");
+                }
+
                 data.Cells.Add(cell);
             }
         }
@@ -223,6 +310,44 @@ public sealed class SkillData : IContentData
             for (var e = 0; e < cell.Effects.Count; e++)
             {
                 cell.Effects[e].Validate(context, $"{path}.effects[{e}]", EffectContext.Skill);
+            }
+
+            foreach (var (index, values) in cell.Overrides)
+            {
+                if (!cell.Inherits)
+                {
+                    issues.Warning($"{path}.overrides", "у клетки свои эффекты — переопределения базовых не используются");
+                    break;
+                }
+
+                if (index < 0 || index >= BaseEffects.Count)
+                {
+                    issues.Error($"{path}.overrides.{index}", $"нет базового эффекта №{index + 1}");
+                    continue;
+                }
+
+                var descriptor = context.Effects.Find(BaseEffects[index].Type);
+                foreach (var (key, value) in values)
+                {
+                    var field = descriptor?.FindField(key);
+                    if (field is null)
+                    {
+                        issues.Error($"{path}.overrides.{index}.{key}", $"поле «{key}» не принадлежит эффекту");
+                    }
+                    else if (field.Check(value, $"{path}.overrides.{index}.{key}") is { } bad)
+                    {
+                        issues.AddRange(new[] { bad });
+                    }
+                }
+            }
+
+            if (cell.Inherits && cell.Overrides.Count > 0)
+            {
+                var effective = EffectsOf(cell);
+                for (var e = 0; e < effective.Count; e++)
+                {
+                    effective[e].Validate(context, $"{path}.effective[{e}]", EffectContext.Skill);
+                }
             }
 
             if (EffectsOf(cell).Count == 0)

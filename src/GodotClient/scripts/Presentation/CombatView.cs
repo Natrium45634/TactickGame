@@ -68,17 +68,21 @@ public partial class CombatFxView : Node3D
 {
     private readonly List<(Node3D Node, double Age, double Life, Vector3 Start)> _items = new();
 
-    public void Damage(Vector3 at, double amount, bool skill)
+    public void Damage(Vector3 at, double amount, bool skill) =>
+        Float(at, $"−{HexTactics.Client.UI.UiText.Hp(amount)}", skill ? new Color(1f, 0.45f, 0.35f) : new Color(1f, 0.95f, 0.85f), 52, 0.9);
+
+    /// <summary>Floating text over a unit: damage, healing (green «+»), status names (smaller).</summary>
+    public void Float(Vector3 at, string text, Color color, int size, double life)
     {
         var label = new Label3D
         {
-            Text = $"−{HexTactics.Client.UI.UiText.Hp(amount)}",
+            Text = text,
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             NoDepthTest = true,
-            FontSize = 52,
+            FontSize = size,
             OutlineSize = 12,
             PixelSize = 0.0055f,
-            Modulate = skill ? new Color(1f, 0.45f, 0.35f) : new Color(1f, 0.95f, 0.85f),
+            Modulate = color,
             OutlineModulate = new Color(0.1f, 0.08f, 0.08f),
             RenderPriority = 45,
             OutlineRenderPriority = 44,
@@ -86,7 +90,7 @@ public partial class CombatFxView : Node3D
         AddChild(label);
         var start = at + new Vector3(0, UnitView.BodyHeight + 0.55f, 0);
         label.Position = start;
-        _items.Add((label, 0, 0.9, start));
+        _items.Add((label, 0, life, start));
     }
 
     public void Death(Vector3 at)
@@ -179,6 +183,15 @@ public partial class CombatFxView : Node3D
                 break;
             case SkillActivated skill:
                 SkillFlash(skill.Cells, layout);
+                break;
+            case SkillHit hit when hit.HitIndex > 0:
+                SkillFlash(new[] { hit.Cell }, layout); // later hits of a timed skill flash their own cell
+                break;
+            case HealApplied h when h.Amount > 0 && positionOf(h.Target) is { } hp:
+                Float(hp, $"+{HexTactics.Client.UI.UiText.Hp(h.Amount)}", new Color(0.45f, 0.95f, 0.55f), 52, 0.9);
+                break;
+            case StatusApplied st when positionOf(st.Target) is { } sp:
+                Float(sp + new Vector3(0, 0.25f, 0), HexTactics.Client.UI.UiText.StatusName(st.Kind, st.Stat, st.Key), new Color(0.85f, 0.85f, 1f), 34, 1.1);
                 break;
         }
     }

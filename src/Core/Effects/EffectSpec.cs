@@ -73,4 +73,8 @@ public sealed record EffectSpec
 public static class EffectTypes
 {
     public const string Damage = "damage";
+    public const string Heal = "heal";
+    public const string Buff = "buff";
+    public const string Debuff = "debuff";
+    public const string Periodic = "periodic";
 }

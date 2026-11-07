@@ -14,11 +14,13 @@ namespace HexTactics.Client.UI;
 public partial class WaypointMenuPanel : CanvasLayer
 {
     private PanelContainer _panel = null!;
-    private Button _skill = null!;
+    private HBoxContainer _row = null!;
+    private readonly System.Collections.Generic.List<Button> _skills = new();
     private Button _clear = null!;
+    private string _skillsKey = string.Empty;
 
-    /// <summary>The skill icon was pressed.</summary>
-    public event Action? SkillPressed;
+    /// <summary>The icon of a skill (its id) was pressed.</summary>
+    public event Action<string>? SkillPressed;
 
     /// <summary>"Remove skill" was pressed.</summary>
     public event Action? ClearPressed;
@@ -50,21 +52,45 @@ public partial class WaypointMenuPanel : CanvasLayer
         });
         AddChild(_panel);
 
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 4);
-        _panel.AddChild(row);
-
-        _skill = MakeButton("✦ Линейный удар", new Color(0.78f, 0.16f, 0.14f), "Назначить «Линейный удар» в этой ТД: направление — красной стрелкой");
-        _skill.Pressed += () => SkillPressed?.Invoke();
-        row.AddChild(_skill);
+        _row = new HBoxContainer();
+        _row.AddThemeConstantOverride("separation", 4);
+        _panel.AddChild(_row);
 
         _clear = MakeButton("✕", new Color(0.25f, 0.26f, 0.30f), "Убрать навык этой ТД");
         _clear.Pressed += () => ClearPressed?.Invoke();
-        row.AddChild(_clear);
+        _row.AddChild(_clear);
+    }
+
+    /// <summary>One icon per skill of the unit (spec part 4 §5.2: the ТД menu shows the unit's own skills).</summary>
+    private void SetSkills(System.Collections.Generic.IReadOnlyList<(string Id, string Label)> skills)
+    {
+        var key = string.Join("|", skills);
+        if (key == _skillsKey)
+        {
+            return;
+        }
+
+        _skillsKey = key;
+        foreach (var b in _skills)
+        {
+            _row.RemoveChild(b);
+            b.QueueFree();
+        }
+
+        _skills.Clear();
+        foreach (var (id, label) in skills)
+        {
+            var button = MakeButton(label, new Color(0.78f, 0.16f, 0.14f), $"Назначить «{label}» в этой ТД: направление — красной стрелкой");
+            var captured = id;
+            button.Pressed += () => SkillPressed?.Invoke(captured);
+            _row.AddChild(button);
+            _row.MoveChild(button, _skills.Count);
+            _skills.Add(button);
+        }
     }
 
     /// <summary>Places the menu next to the waypoint (above-right of its marker) or hides it.</summary>
-    public void Sync(WaypointMenuView? menu, Camera3D camera, HexLayout layout)
+    public void Sync(WaypointMenuView? menu, Camera3D camera, HexLayout layout, System.Collections.Generic.IReadOnlyList<(string Id, string Label)> skills)
     {
         Scale = new Vector2(UiScale, UiScale);
         _panel.Visible = menu is not null;
@@ -73,6 +99,7 @@ public partial class WaypointMenuPanel : CanvasLayer
             return;
         }
 
+        SetSkills(skills);
         _clear.Visible = menu.Skill is not null;
         _panel.ResetSize();
         var screen = camera.UnprojectPosition(layout.HexToPlane(menu.Cell).ToWorld(0f)) / UiScale;
@@ -94,8 +121,8 @@ public partial class WaypointMenuPanel : CanvasLayer
         return new Rect2(r.Position * UiScale, r.Size * UiScale).HasPoint(viewportPosition);
     }
 
-    /// <summary>Centre of the skill icon in viewport pixels (automation presses the real button).</summary>
-    public Vector2 SkillButtonCenter => Centre(_skill);
+    /// <summary>Centre of the icon of the unit's <paramref name="index"/>-th skill in viewport pixels (automation presses it).</summary>
+    public Vector2 SkillButtonCenter(int index = 0) => Centre(_skills[Math.Clamp(index, 0, _skills.Count - 1)]);
 
     public Vector2 ClearButtonCenter => Centre(_clear);
 

@@ -121,9 +121,9 @@ public sealed class OrderQueue
 
     private static void CancelSkill(Waypoint wp)
     {
-        if (wp.Skill is { Status: HexTactics.Core.Skills.SkillActionStatus.Planned } action)
+        if (wp.Skill is { IsActive: true } action)
         {
-            action.Status = HexTactics.Core.Skills.SkillActionStatus.Cancelled;
+            action.Status = HexTactics.Core.Skills.SkillActionStatus.Cancelled; // also stops the remaining hits of a running one
         }
     }
 

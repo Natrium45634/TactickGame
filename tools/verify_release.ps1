@@ -224,6 +224,59 @@ $script:PersistenceScenarioV17 = (@(
     'expect:unit-field:attackPower:12.5', 'expect:skills:1', 'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV16
 
+# v0.18.0+ (spec part 4 §6, §12.2 p.12–15, 18–20): the skill editor through its real controls. The built-in «Линейный
+# удар» is ordinary data (two cells, 20 damage each); the drawing turns with the facing of the central unit in all six
+# directions (a click on the drawn hex selects the same stored cell). A new skill: base damage 3 × 150 % of Attack Power
+# every 0.5 s, cell (0,-1) inherits it, cell (0,-2) overrides only the multiplier (75 %), cell (-1,0) has its own fixed
+# 7 damage and a red editor colour; an invalid hit count is refused; undo/redo. A test match: enemies in the three cells
+# lose 45, 22.5 and 7 HP (Attack Power 10). Then the skill is bound to the user unit «Тяжёлый» (first skill), and in
+# «Играть» it is chosen from the waypoint menu with the red arrow: the unit reaches ТД1, strikes three times with its
+# Attack Power 12.5 (56.25 and 28.125 damage) and walks on to ТД2.
+$script:RegressionScenarioV18 = $script:RegressionScenarioV17 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.skill', 'expect:rows:1', 'row:name=Линейный удар', 'ui:dev.open', 'expect:editor:skill',
+    'expect:cells:2', 'expect:preview:0:урон 20 врагам', 'expect:preview:1:урон 20 врагам',
+    'ui:skill.turn.right', 'expect:skill-facing:NorthEast', 'cell:1,-1', 'expect:selected-cell:0,-1',
+    'ui:skill.turn.right', 'expect:skill-facing:SouthEast', 'cell:1,0', 'expect:selected-cell:0,-1',
+    'ui:skill.turn.right', 'expect:skill-facing:South', 'cell:0,2', 'expect:selected-cell:0,-2',
+    'ui:skill.turn.right', 'expect:skill-facing:SouthWest', 'cell:-1,1', 'expect:selected-cell:0,-1',
+    'ui:skill.turn.right', 'expect:skill-facing:NorthWest', 'cell:-2,0', 'expect:selected-cell:0,-2',
+    'ui:skill.turn.right', 'expect:skill-facing:North', 'cell:0,-1', 'expect:selected-cell:0,-1', 'key:Escape',
+    'expect:selected-cell:none', 'expect:dirty:no', 'ui:skill.back', 'expect:editor:none',
+    'ui:dev.create', 'expect:editor:skill', 'expect:cells:0', 'field:skill.name=Тройной удар',
+    'field:skill.addtype=damage', 'ui:skill.add', 'field:skill.e0.formula=attack', 'field:skill.e0.multiplier=150',
+    'field:skill.e0.hits=3', 'field:skill.e0.interval=0.5', 'field:skill.e0.hits=0', 'expect:editor-message:не меньше',
+    'cell:0,-1', 'cell:0,-2', 'expect:cells:2', 'expect:selected-cell:0,-2', 'field:skill.e0.multiplier=75',
+    'expect:preview:0:урон 3 × 150 % силы атаки 10 = 15 = 45', 'expect:preview:1:урон 3 × 75 % силы атаки 10 = 7.5 = 22.5',
+    'cell:-1,0', 'field:skill.cell.color=#D04040', 'field:skill.cell.own=true', 'field:skill.e0.formula=fixed',
+    'field:skill.e0.amount=7', 'field:skill.e0.hits=1', 'expect:preview:2:урон 7 врагам', 'expect:cell-color:-1,0:#D04040',
+    'key:ctrl+z', 'expect:preview:2:урон 3 × 7 = 21', 'key:ctrl+y', 'expect:preview:2:урон 7 врагам',
+    'ui:skill.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:skill.test', 'expect:screen:play', 'pause:on', 'spawn:cell:11,6', 'spawn:enemy:11,5', 'spawn:enemy:11,4', 'spawn:enemy:10,6',
+    'expect:units:4', 'select:1', 'key:R', 'expect:mode:SkillAim', 'move:11,4', 'click:11,4', 'expect:pending-skill:1:yes',
+    'wait:10', 'expect:hp:2:100', 'pause:off', 'wait:120', 'expect:pending-skill:1:no',
+    'expect:hp:2:55', 'expect:hp:3:77.5', 'expect:hp:4:93', 'expect:hp:1:100',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:skill', 'expect:dirty:no', 'ui:skill.back', 'expect:rows:2',
+    'expect:item:skill:Тройной удар:yes',
+    'ui:dev.cat.unit', 'row:name=Тяжёлый', 'ui:dev.open', 'expect:editor:unit', 'expect:skills:1', 'ui:unit.skill.add',
+    'expect:skills:2', 'ui:unit.skill.1.up', 'expect:skills:Тройной удар,Линейный удар', 'ui:unit.save', 'expect:dirty:no',
+    'ui:unit.back', 'ui:dev.back', 'expect:screen:menu',
+    'field:menu.map=Прототип 12×10', 'field:menu.squad=Тяжёлый (свой) × 5', 'ui:menu.play', 'expect:screen:play', 'pause:on',
+    'roster:1>0,5', 'click:0,5@North:0.6', 'expect:lifecycle:1:Active', 'spawn:enemy:2,5', 'spawn:enemy:2,4', 'expect:units:3',
+    'select:1', 'drag:0,5>2,6', 'click:2,8', 'expect:draft:2', 'click:2,6', 'expect:menu:open:1', 'menu-skill:0',
+    'expect:mode:SkillAim', 'move:2,4', 'click:2,4', 'expect:draft-skills:1', 'click:2,8@North:0.6', 'expect:draft:none',
+    'expect:wpskills:1:1', 'wait:10', 'expect:hp:2:100', 'pause:off', 'waitidle:1:4000', 'expect:cell:1:2,8',
+    'expect:wpskills:1:0', 'expect:hp:2:43.75', 'expect:hp:3:71.875', 'expect:hp:1:175',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV18 = (@(
+    'ui:menu.dev', 'ui:dev.cat.skill', 'expect:item:skill:Тройной удар:yes', 'row:name=Тройной удар', 'ui:dev.open',
+    'expect:editor:skill', 'expect:cells:3', 'expect:cell-color:-1,0:#D04040', 'expect:cell-color:0,-1:default',
+    'expect:preview:0:урон 3 × 150 % силы атаки 10 = 15 = 45', 'expect:preview:1:урон 3 × 75 % силы атаки 10 = 7.5 = 22.5',
+    'expect:preview:2:урон 7 врагам', 'ui:skill.back', 'ui:dev.cat.unit', 'row:name=Тяжёлый', 'ui:dev.open',
+    'expect:skills:Тройной удар,Линейный удар', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + ($script:PersistenceScenarioV17 -replace 'expect:skills:1;', 'expect:skills:2;')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -284,7 +337,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
+            $scenario = if ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
+                        elseif ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
                         elseif ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
                         elseif ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
                         elseif ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
@@ -297,7 +351,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }
+            if ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }
+            elseif ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }
             elseif ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
             elseif ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }
         }

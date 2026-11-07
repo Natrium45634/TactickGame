@@ -130,7 +130,7 @@ public class UnitEditorTests
         editor.AddSkill("core.skill.linear_strike");
         var preview = editor.CombatPreview();
         Assert.Contains("15 урона за удар × 2 удар/с ≈ 30 урона/с", preview[0]);
-        Assert.Contains(preview, l => l.Contains("«Линейный удар»") && l.Contains("урон 20"));
+        Assert.Contains(preview, l => l.Contains("«Линейный удар»") && l.Contains("урон 20 врагам"));
     }
 
     [Fact]

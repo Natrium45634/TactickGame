@@ -173,7 +173,7 @@ public partial class UnitEditor : DefinitionEditorShell
         }
         else
         {
-            _pick = choices.Any(c => c.Id == _pick) ? _pick : choices[0].Id;
+            _pick = choices.Any(c => c.Id == _pick) ? _pick! : choices[0].Id;
             inspector.Choice(IdPrefix + "skill.pick", "Навык из библиотеки", choices.Select(c => new ChoiceOption(c.Id, $"{c.Icon} {c.Name}{(c.IsBuiltIn ? string.Empty : " (свой)")} — {c.Summary}")).ToList(), _pick, v => { _pick = v; _previewSkill = null; Stamp++; });
             inspector.Button(IdPrefix + "skill.add", "＋ Добавить навык", () =>
             {

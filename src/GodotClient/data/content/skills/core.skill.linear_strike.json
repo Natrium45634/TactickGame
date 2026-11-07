@@ -3,7 +3,7 @@
   "id": "core.skill.linear_strike",
   "kind": "skill",
   "name": "Линейный удар",
-  "description": "Две клетки перед юнитом: 20 урона один раз каждому врагу (ТЗ ч.3 §5).",
+  "description": "Две клетки перед юнитом: 20 урона один раз каждому врагу (ТЗ ч.3 §5). С v0.18.0 — обычные данные редактора навыков: эффект «урон», фиксированные 20 HP, одно попадание без задержки.",
   "revision": 1,
   "modified": "2026-11-07T00:00:00Z",
   "tags": [
@@ -22,7 +22,10 @@
         "effects": [
           {
             "type": "damage",
+            "formula": "fixed",
             "amount": 20,
+            "hits": 1,
+            "interval": 0,
             "targets": "enemies"
           }
         ]
@@ -33,7 +36,10 @@
         "effects": [
           {
             "type": "damage",
+            "formula": "fixed",
             "amount": 20,
+            "hits": 1,
+            "interval": 0,
             "targets": "enemies"
           }
         ]

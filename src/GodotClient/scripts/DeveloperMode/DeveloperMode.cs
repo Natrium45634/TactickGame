@@ -5,6 +5,7 @@ using System.Linq;
 using Godot;
 using HexTactics.Client.DeveloperMode.Editors;
 using HexTactics.Client.DeveloperMode.Editors.Map;
+using HexTactics.Client.DeveloperMode.Editors.Skill;
 using HexTactics.Client.DeveloperMode.Editors.Unit;
 using HexTactics.Client.UI;
 using HexTactics.Content.Library;
@@ -87,6 +88,12 @@ public partial class DeveloperMode : Node
         Editors["unit"] = (item, draft) =>
         {
             var editor = new UnitEditor { Name = "UnitEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["skill"] = (item, draft) =>
+        {
+            var editor = new SkillEditor { Name = "SkillEditor" };
             editor.Configure(_library, item, draft);
             return editor;
         };
