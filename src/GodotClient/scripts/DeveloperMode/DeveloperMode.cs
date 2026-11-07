@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Godot;
 using HexTactics.Client.DeveloperMode.Editors;
+using HexTactics.Client.DeveloperMode.Editors.Defense;
 using HexTactics.Client.DeveloperMode.Editors.Map;
 using HexTactics.Client.DeveloperMode.Editors.Skill;
 using HexTactics.Client.DeveloperMode.Editors.Tile;
@@ -103,6 +104,12 @@ public partial class DeveloperMode : Node
         Editors["tile"] = (item, draft) =>
         {
             var editor = new TileEditor { Name = "TileEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["defense_rule"] = (item, draft) =>
+        {
+            var editor = new DefenseRuleEditor { Name = "DefenseRuleEditor" };
             editor.Configure(_library, item, draft);
             return editor;
         };
@@ -626,6 +633,7 @@ public partial class DeveloperMode : Node
             "unit" => "Новый юнит",
             "skill" => "Новый навык",
             "tile" => "Новый тип гекса",
+            "defense_rule" => "Новое правило защиты",
             _ => "Новый объект",
         };
         OpenEditor(_library.Create(kind.Id, name), null);

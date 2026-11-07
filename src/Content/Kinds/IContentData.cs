@@ -123,15 +123,19 @@ public sealed record ContentLimits
     }
 }
 
-/// <summary>What a data validator may use: the issue list, the effect type registry and the limits.</summary>
+/// <summary>What a data validator may use: the issue list, the effect and defense action registries and the limits.</summary>
 public sealed class ValidationContext
 {
-    public ValidationContext(IssueList issues, EffectTypeRegistry effects, ContentLimits limits)
+    public ValidationContext(IssueList issues, EffectTypeRegistry effects, ContentLimits limits, DefenseActionRegistry? defenseActions = null)
     {
         Issues = issues;
         Effects = effects;
         Limits = limits;
+        DefenseActions = defenseActions ?? DefenseActionRegistry.Default;
     }
+
+    /// <summary>Actions available to defense rules (spec part 5 §9.4).</summary>
+    public DefenseActionRegistry DefenseActions { get; }
 
     public IssueList Issues { get; }
 

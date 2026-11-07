@@ -60,16 +60,21 @@ public sealed class ContentTypeRegistry
     public const string Skill = "skill";
     public const string Tile = "tile";
     public const string DamageType = "damage_type";
+    public const string DefenseRule = "defense_rule";
 
     private readonly List<ContentKind> _kinds = new();
 
-    public ContentTypeRegistry(EffectTypeRegistry? effects = null)
+    public ContentTypeRegistry(EffectTypeRegistry? effects = null, DefenseActionRegistry? defenseActions = null)
     {
         Effects = effects ?? EffectTypeRegistry.CreateDefault();
+        DefenseActions = defenseActions ?? DefenseActionRegistry.Default;
     }
 
     /// <summary>Effect types usable inside the definitions of these categories.</summary>
     public EffectTypeRegistry Effects { get; }
+
+    /// <summary>Actions of defense rules (spec part 5 §9.4 <c>DefenseRuleRegistry</c>).</summary>
+    public DefenseActionRegistry DefenseActions { get; }
 
     /// <summary>All categories in catalog order.</summary>
     public IReadOnlyList<ContentKind> All
@@ -118,7 +123,7 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 2, Migrate = Migrations.Unit,
+            SchemaVersion = 3, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -140,6 +145,12 @@ public sealed class ContentTypeRegistry
             Description = "Физический (колющий, режущий, дробящий), магический, чистый и свои типы: семейство и стратегия расчёта.",
             Read = (o, i) => DamageTypeData.Read(o, i), CreateDefault = () => new DamageTypeData(),
             Available = false, // the «Механики» category of the catalog arrives with its editors (spec part 5, v0.23.0)
+        });
+        registry.Register(new ContentKind
+        {
+            Id = DefenseRule, Title = "Правила защиты", Singular = "правило защиты", Folder = "defense_rules", Order = 60,
+            Description = "Иммунитеты, поглощение, лечение, отражение, щиты и ответные удары: «когда → от чего → при условии → что сделать».",
+            Read = (o, i) => DefenseRuleData.Read(o, i), CreateDefault = () => DefenseRuleData.CreateDefault(), Fields = DefenseRuleData.Fields,
         });
         return registry;
     }

@@ -137,16 +137,19 @@ public sealed class EffectResolver
     public DamageResult DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageOrigin origin, string damageTypeId, double penetration = 0, bool periodic = false) =>
         Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic), tick);
 
-    /// <summary>Shared health rule: raises health, never above the maximum.</summary>
-    public void Heal(UnitState target, UnitState? source, double amount, long tick, DamageKind kind)
-    {
-        var healed = State.Heal(target.Id, Math.Max(0, amount));
-        Events.Add(new HealApplied(tick, target.Id, source?.Id, healed, target.CurrentHealth, kind));
-    }
+    /// <summary>Shared health rule: the single healing path of the damage resolver (never above the maximum).</summary>
+    public void Heal(UnitState target, UnitState? source, double amount, long tick, DamageKind kind) =>
+        Damage.Heal(target, source?.Id, Math.Max(0, amount), tick, kind);
 
     /// <summary>Puts a timed status on the target with the effect's stacking policy.</summary>
     public void AddStatus(EffectInvocation invocation, StatusEffect status)
     {
+        if (Damage.BlocksStatus(invocation.Target, invocation.Effect.Type))
+        {
+            Events.Add(new StatusBlocked(invocation.Tick, invocation.Target.Id, status.Key));
+            return;
+        }
+
         var policy = invocation.Effect.Text("stacking", "refresh") switch
         {
             "stack" => StackingPolicy.Stack,

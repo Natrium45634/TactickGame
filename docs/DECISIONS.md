@@ -806,6 +806,51 @@ ID неизменяемы: `core.damage.physical/piercing/slashing/blunt/magical
 «↑/↓ защита» без чисел, числа урона — следствие боя. Значения видны в редакторе юнита; явная отладка тестового запуска —
 v0.24.0. **Статус:** принято.
 
+## D-126. Правила защиты как данные (ч.5 §4, §6.3, §9.1)
+Вид `defense_rule` (схема 1, папка `defense_rules`): `trigger` (`on_hit_contact` | `on_health_loss` | `on_damage_dealt` |
+`on_status_applied`), `damageTypeId` (ID типа/семейства или `any`), `damageTag`, `minimumEffectiveResistancePercent` и
+`healthBelowPercent` (null — условия нет), `triggerOnImmuneContact`, `priority` 0–1000, `cooldownSeconds` 0–600,
+`maxTriggers` 0–10000, `actions` (1–8) — `{ "effect": "<id>", …поля }` из `DefenseActionRegistry` (Content). Каждая
+реакция принадлежит одному «когда»; условия — только AND (ИЛИ — несколько правил, §6.3). Юнит хранит ссылки
+`defenseRules` (без копий) и свои `shields`. Ответ на ответ (`allowReactiveChain: true`) в этой редакции — ошибка проверки
+(§5.5: цепочки только с будущими отдельными ограничителями); поле `false` принимается, чтобы контракт §9.3 читался
+дословно. **Статус:** принято.
+
+## D-127. Порядок и бюджет (ч.5 §4.3, §5.1–5.2)
+Правила «получен удар» отбираются по типу/семейству/тегу, условиям и готовности, сортируются `priority`, затем ID.
+Иммунитет: HP-урона нет; конверсии и прочее при иммунитете — только у правил с `triggerOnImmuneContact`. Конверсии берут
+`min(доля × D0, остаток)`; перерасход — событие `CombatLimitReached` (журнал), не отрицательный остаток. Лечение конверсией —
+через общий путь лечения сразу (до урона остатка), неиспользованное не возвращается. Без целей доля отражения исчезает.
+Дальше: R → плоское снижение (только `resistance_affected`) → предел → щиты (порядок, затем название; фильтр типа/семейства;
+чистый урон щит принимает) → HP. Ответный удар — после фактической потери HP/щита живого защитника, не от реактивного
+события; вампиризм — у атакующего от снятого HP (не при иммунитете и не при уроне только по щиту). «Здоровье ниже» у
+вампиризма — здоровье владельца правила. Одно правило срабатывает за удар не более одного раза (перезарядка и лимит
+считаются по срабатываниям). **Статус:** принято.
+
+## D-128. Пределы реакций (ч.5 §5.5)
+`CombatLimits`: `MaxProcDepth` = 1 (реактивный пакет не порождает реакций), `MaxGeneratedEventsPerRoot` = 64,
+`MaxEventsPerTick` = 4096, `MaxReactionTargets` = 32 (цели по возрастанию ID). Реакции ставятся в очередь и
+исполняются итеративно после текущего удара (не рекурсией) в порядке создания. Ответ на непрерывный урон (поверхность,
+периодический статус) суммируется по (защитник, правило, реакция, источник) и отправляется раз в игровую секунду —
+иначе 30 мелких пакетов в секунду. Превышение предела — `CombatLimitReached`, событие отбрасывается. Технические
+значения, не баланс. **Статус:** принято.
+
+## D-129. Щиты (ч.5 §4.5)
+Щит юнита: `name` (уникально, до 40 символов), `capacity` (0 < … ≤ 100 000), `damageTypeId` (`any`, тип или семейство),
+`order` 0–100. В бою щит начинается полным; «поглотить в щит» пополняет названный щит не выше прочности. Длительность и
+износ щита (§4.5 «необязательно») не вводятся до отдельного решения. **Статус:** принято.
+
+## D-130. Иммунитет к статусам и запрет лечения (ч.5 §4.1, §4.6)
+Иммунитет к статусам — правило «накладывается статус» с категорией `debuff`/`buff`/`periodic`/`all` (тип эффекта);
+заблокированный статус — событие `StatusBlocked`, в игре слово «невосприимчив». Запрет лечения — не отдельная механика, а
+характеристика `healingReceived` (множитель входящего лечения, ≥ 0), которую меняют бафф/дебафф; единый путь лечения
+(`DamageResolver.Heal`) умножает на неё любое лечение (навык, гекс, статус, конверсия, вампиризм). **Статус:** принято.
+
+## D-131. Пример «огонь» (ч.5 §5.3, §9.3, §13.4)
+Встроенный тип `core.damage.fire_example` («Огонь (пример)», подтип магического, тег `fire`) и правило
+`core.rule.fire_convert_25_reflect_75` — только демонстрация и тестовые данные; элементальная система и её матрица не
+вводятся. Встроенные объекты только читаются; изменения сохраняются копией с новым ID. **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -921,3 +966,14 @@ v0.24.0. **Статус:** принято.
   AttackAreaSplit/Resistances`, `RuntimeFactory.BuildDamageTypes`, `GameContent.DamageTypes`. Editor: `UnitEditorModel.ResistanceRows/
   SetResistance/EffectiveResistance/Explain/ResistanceSummary`, `EffectPreview.Describe(…, library)`, `TilePreview.Describe(…, library)`.
   Клиент: `Inspector.References`, секция «Сопротивления». Регрессионный сценарий v0.21 = v0.20 + сопротивления и типы.
+- **v0.22.0: правила защиты.** Core: `Combat/Defense.cs` (`DefenseTrigger`, `DefenseActionKind`, `ReactionTargeting`,
+  `ReactionFilter`, `RetaliationBase`, `DefenseAction`, `DefenseRule`, `ShieldDefinition`, `ShieldState`);
+  `UnitStats.DefenseRules/Shields/HealingReceived`, `UnitState.Shields`, `Stats.HealingReceived`; `DamageResult.Immune/
+  Converted/Healed/ShieldLoss`. Simulation: `DamageResolver` — очередь, `Heal`, `BlocksStatus`, `AfterTick`, `Results`,
+  `Last`; `CombatLimits`, `SimulationSettings.CombatLimits`; события `DamageApplied.Immune/ShieldAbsorbed`,
+  `CombatLimitReached`, `StatusBlocked`, `DamageKind.Reaction`; `EffectResolver.Heal` → `DamageResolver.Heal`. Content: вид
+  `defense_rule` (`DefenseRuleData`), `DefenseActionRegistry`, `ShieldData`, `UnitData.DefenseRules/Shields`, схема `unit` 3,
+  `ValidationContext(…, defenseActions)`, `RuntimeFactory.BuildUnit(item, library?, issues?)`. Editor: `Defense/
+  DefenseRuleEditorModel` (`DefenseRuleTemplates`, `DefenseRuleSummary`), `UnitEditorModel.AvailableRules/AddRule/RemoveRule/
+  RuleSummaries/AddShield/RemoveShield/SetShield`. Клиент: `DefenseRuleEditor`, секция «Особые защиты и реакции»,
+  `CombatView.Note`. Регрессионный сценарий v0.22 = v0.21 + правила, щиты и огонь 300 % в бою.

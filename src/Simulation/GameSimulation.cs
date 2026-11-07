@@ -125,6 +125,9 @@ public sealed class GameSimulation
             system.Tick(_context);
         }
 
+        // Spec part 5 §8.2: reactions to continuous damage are summed and sent once per game second.
+        Damage.AfterTick(Tick);
+
         // Spec part 3 §7 step 5: deaths are processed once, after all actions of the tick, in id order.
         foreach (var dead in State.RemoveDead())
         {

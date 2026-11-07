@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "id": "core.rule.fire_convert_25_reflect_75",
+  "kind": "defense_rule",
+  "name": "Огненная регенерация и круговое отражение (пример)",
+  "description": "Пример ТЗ ч.5 §5.3: при попадании огнём и эффективном R к огню не ниже 300 % — 25 % силы удара лечат, 75 % уходят каждому врагу на шести соседних гексах. Ответные удары не отражаются.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный",
+    "пример"
+  ],
+  "references": [
+    {
+      "kind": "damage_type",
+      "id": "core.damage.fire_example"
+    }
+  ],
+  "data": {
+    "trigger": "on_hit_contact",
+    "damageTypeId": "core.damage.fire_example",
+    "damageTag": "",
+    "minimumEffectiveResistancePercent": 300,
+    "healthBelowPercent": null,
+    "triggerOnImmuneContact": false,
+    "priority": 100,
+    "cooldownSeconds": 0,
+    "maxTriggers": 0,
+    "actions": [
+      {
+        "effect": "convert_to_healing",
+        "fraction": 0.25,
+        "recipient": "self"
+      },
+      {
+        "effect": "redirect_as_damage",
+        "fraction": 0.75,
+        "targeting": "adjacent_hex_ring",
+        "radiusHexes": 1,
+        "includeCenter": false,
+        "targetFilter": "enemies_of_defender",
+        "targetDamageMode": "full_per_target",
+        "responseDamageType": "same_as_incoming"
+      }
+    ]
+  }
+}

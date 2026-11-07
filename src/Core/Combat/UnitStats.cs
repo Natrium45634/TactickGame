@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace HexTactics.Core.Combat;
 
 /// <summary>
@@ -38,6 +40,18 @@ public sealed record UnitStats
 
     /// <summary>Base numeric resistances (spec part 5 §3); temporary changes come from statuses.</summary>
     public ResistanceSet Resistances { get; init; } = ResistanceSet.Empty;
+
+    /// <summary>Defense rules of the unit definition in the order of the definition (spec part 5 §4, §6.4).</summary>
+    public IReadOnlyList<DefenseRule> DefenseRules { get; init; } = System.Array.Empty<DefenseRule>();
+
+    /// <summary>Shields of the unit definition (spec part 5 §4.5); a live unit starts with them full.</summary>
+    public IReadOnlyList<ShieldDefinition> Shields { get; init; } = System.Array.Empty<ShieldDefinition>();
+
+    /// <summary>
+    /// Multiplier of incoming healing (spec part 5 §4.6 «запрет лечения»): 1 = normal, 0 = no healing; changed by
+    /// buffs/debuffs, never below 0.
+    /// </summary>
+    public double HealingReceived { get; init; } = 1.0;
 
     /// <summary>Minimal game time between two normal attacks.</summary>
     public double AttackInterval => 1.0 / AttackRatePerSecond;

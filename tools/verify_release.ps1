@@ -377,6 +377,41 @@ $script:PersistenceScenarioV21 = (@(
     'ui:unit.back', 'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.open', 'expect:preview:0:режущий', 'ui:skill.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV20
 
+# v0.22.0+ (spec part 5 §4–§6.4, §9.3; acceptance §11.3 p.18–19, §11.5): the built-in example rule reads as its summary; a
+# new rule «Шипы» from the «Ответный удар» template (50 %, 900 % refused); «Огненный страж» (fire R +300 %, the example
+# rule, a magical shield of 15) and «Поджигатель» (fire normal attack 40, 0.5/s) made in the unit editor. In the match the
+# operative's slashing strike takes the guard to 80; each fire hit then heals it by 10 (80 → 90 → 100, no health loss)
+# and sends 30 to every enemy of the guard on the six adjacent hexes (attacker and operative 100 → 70 → 40), not to the
+# unit two hexes away; the game card shows no resistance, rule or shield.
+$script:RegressionScenarioV22 = $script:RegressionScenarioV21 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.defense_rule', 'expect:category:defense_rule', 'expect:rows:1',
+    'row:name=Огненная регенерация и круговое отражение (пример)', 'ui:dev.open', 'expect:editor:defense_rule',
+    'expect:rule-summary:вылечить себя на 25 % силы удара', 'expect:rule-summary:75 % силы удара отразить каждому врагу на шести соседних гексах', 'ui:rule.back',
+    'ui:dev.create', 'expect:editor:defense_rule', 'field:rule.name=Шипы', 'field:rule.template=retaliate', 'ui:rule.template.apply',
+    'expect:rule-actions:retaliate', 'expect:rule-field:trigger:on_health_loss', 'field:rule.a0.fraction=50',
+    'expect:rule-summary:ответить на 50 % потерянного HP атакующему', 'field:rule.a0.fraction=900', 'expect:editor-message:не больше 500 %',
+    'ui:rule.save', 'expect:dirty:no', 'expect:errors:0', 'ui:rule.back', 'expect:rows:2',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Огненный страж', 'field:unit.res.core.damage.fire_example=300',
+    'expect:resistance:core.damage.fire_example:300', 'field:unit.rule.pick=core.rule.fire_convert_25_reflect_75', 'ui:unit.rule.add',
+    'expect:rules:1', 'ui:unit.shield.add', 'field:unit.shield.0.capacity=15', 'field:unit.shield.0.capacity=-5', 'expect:editor-message:прочность щита',
+    'field:unit.shield.0.damageTypeId=core.damage.magical', 'expect:shield:0:Щит:15', 'field:unit.side=enemy', 'ui:unit.save', 'expect:dirty:no',
+    'expect:errors:0', 'ui:unit.back', 'ui:dev.create', 'field:unit.name=Поджигатель', 'field:unit.attackDamageType=core.damage.fire_example',
+    'field:unit.attackPower=40', 'field:unit.attackRate=0.5', 'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5', 'spawn:enemy:3,4@Огненный страж', 'spawn:cell:2,5@Поджигатель',
+    'spawn:cell:3,2', 'expect:units:4', 'select:1', 'key:R', 'move:3,3', 'click:3,3', 'advance:3', 'expect:hp:2:80',
+    'select:3', 'drag:2,5>3,4', 'advance:58', 'expect:hp:2:80', 'advance:6', 'expect:hp:2:90', 'expect:hp:3:70', 'expect:hp:1:70',
+    'expect:hp:4:100', 'select:2', 'expect:info:2:сопротив:no', 'expect:info:2:%:no', 'expect:info:2:Огненная:no', 'expect:info:2:щит:no',
+    'advance:60', 'expect:hp:2:100', 'expect:hp:3:40', 'expect:hp:1:40', 'expect:hp:4:100',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV22 = (@(
+    'ui:menu.dev', 'ui:dev.cat.defense_rule', 'expect:rows:2', 'row:name=Шипы', 'ui:dev.open', 'expect:editor:defense_rule',
+    'expect:rule-actions:retaliate', 'expect:rule-summary:ответить на 50 % потерянного HP', 'ui:rule.back',
+    'ui:dev.cat.unit', 'row:name=Огненный страж', 'ui:dev.open', 'expect:editor:unit', 'expect:rules:Огненная регенерация и круговое отражение (пример)',
+    'expect:shield:0:Щит:15', 'expect:resistance:core.damage.fire_example:300', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV21
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -437,7 +472,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }
+            $scenario = if ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
+                        elseif ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }
                         elseif ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
                         elseif ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
                         elseif ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
@@ -454,7 +490,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
+            if ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }
+            elseif ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
             elseif ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }
             elseif ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }
             elseif ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }

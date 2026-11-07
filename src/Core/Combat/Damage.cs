@@ -184,6 +184,18 @@ public sealed record DamageResult
 
     public double D0 { get; init; }
 
+    /// <summary>Stage 3: an explicit immunity stopped the health loss.</summary>
+    public bool Immune { get; init; }
+
+    /// <summary>Stage 4: the part of D0 spent by conversions (negate, heal, shield, redirect).</summary>
+    public double Converted { get; init; }
+
+    /// <summary>Health restored by a conversion to healing (after the maximum and the healing multiplier).</summary>
+    public double Healed { get; init; }
+
+    /// <summary>Stage 6: damage taken by shields.</summary>
+    public double ShieldLoss { get; init; }
+
     /// <summary>Effective R after penetration; null for true-like types (R not used).</summary>
     public double? Resistance { get; init; }
 

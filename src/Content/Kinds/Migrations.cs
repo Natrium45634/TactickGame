@@ -52,17 +52,25 @@ public static class Migrations
         return copy;
     }
 
-    /// <summary>Unit 1 → 2: the normal attack hits with the legacy neutral type; no resistances, no area (no hidden bonuses).</summary>
+    /// <summary>
+    /// Unit 1 → 2: the normal attack hits with the legacy neutral type; no resistances, no area (no hidden bonuses).
+    /// Unit 2 → 3 (spec part 5 §9.5): no defense rules and no shields — nothing is invented for old units.
+    /// </summary>
     public static JsonObject? Unit(int from, JsonObject data, IssueList issues)
     {
-        if (from != 1)
-        {
-            return null;
-        }
-
         var copy = (JsonObject)data.DeepClone();
-        copy["attackDamageType"] ??= Untyped;
-        return copy;
+        switch (from)
+        {
+            case 1:
+                copy["attackDamageType"] ??= Untyped;
+                return copy;
+            case 2:
+                copy["defenseRules"] ??= new JsonArray();
+                copy["shields"] ??= new JsonArray();
+                return copy;
+            default:
+                return null;
+        }
     }
 
     private static void TypeEffects(JsonArray? effects, string legacyType)

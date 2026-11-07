@@ -186,7 +186,7 @@ public class UnitEditorTests
     {
         var editor = NewUnit(ContentTestKit.Library(null));
         var rows = editor.ResistanceRows();
-        Assert.Equal(new[] { "global", "core.damage.physical", "core.damage.blunt", "core.damage.piercing", "core.damage.slashing", "core.damage.magical", "core.damage.true" }, rows.Select(r => r.Key));
+        Assert.Equal(new[] { "global", "core.damage.physical", "core.damage.blunt", "core.damage.piercing", "core.damage.slashing", "core.damage.magical", "core.damage.fire_example", "core.damage.true" }, rows.Select(r => r.Key));
         Assert.True(rows.Single(r => r.Key == "core.damage.true").Bypass);
         Assert.Equal(1, rows.Single(r => r.Key == "core.damage.piercing").Depth);
         Assert.Equal("Сопротивлений нет: весь урон проходит полностью.", editor.ResistanceSummary());

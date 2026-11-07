@@ -30,6 +30,9 @@ public sealed record SimulationSettings
     public IReadOnlyDictionary<string, IReadOnlyList<HexTactics.Core.Effects.TileEffect>> TileEffects { get; init; } =
         new Dictionary<string, IReadOnlyList<HexTactics.Core.Effects.TileEffect>>();
 
+    /// <summary>Technical limits of combat reactions (spec part 5 §5.5).</summary>
+    public CombatLimits CombatLimits { get; init; } = new();
+
     /// <summary>Damage types by id (spec part 5 §2): the content catalog; the built-in one if no content is loaded.</summary>
     public IReadOnlyDictionary<string, HexTactics.Core.Combat.DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
 

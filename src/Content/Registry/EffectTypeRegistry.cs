@@ -123,6 +123,7 @@ public sealed class EffectTypeRegistry
         new FieldOption(Stats.AttackPower, "сила атаки (Attack Power)"),
         new FieldOption(Stats.AttackRate, "скорость атак"),
         new FieldOption(Stats.Resistance, "сопротивление (процентные пункты)"),
+        new FieldOption(Stats.HealingReceived, "получаемое лечение (дебафф 100 % — запрет лечения)"),
     };
 
     /// <summary>The built-in physical type: the default damage type of new damage effects (spec part 5 §8.1).</summary>

@@ -44,6 +44,9 @@ public static class Stats
     /// </summary>
     public const string Resistance = "resistance";
 
+    /// <summary>Incoming healing multiplier (spec part 5 §4.6): a debuff of −100 % blocks healing.</summary>
+    public const string HealingReceived = "healingReceived";
+
     /// <summary>Safe lower limits of debuffed values: a unit never stops completely or attacks infinitely slowly.</summary>
     public const double MinMoveSpeed = 0.1;
     public const double MinAttackRate = 0.1;
@@ -100,7 +103,7 @@ public static class StatModifiers
 {
     public static UnitStats Effective(UnitStats baseStats, IEnumerable<StatusEffect> statuses)
     {
-        double speedP = 0, speedD = 0, powerP = 0, powerD = 0, rateP = 0, rateD = 0;
+        double speedP = 0, speedD = 0, powerP = 0, powerD = 0, rateP = 0, rateD = 0, healP = 0, healD = 0;
         var any = false;
         foreach (var s in statuses)
         {
@@ -124,6 +127,10 @@ public static class StatModifiers
                     rateP += s.Percent;
                     rateD += s.Delta;
                     break;
+                case Stats.HealingReceived:
+                    healP += s.Percent;
+                    healD += s.Delta;
+                    break;
             }
         }
 
@@ -137,6 +144,7 @@ public static class StatModifiers
             MoveSpeedHexPerSecond = Math.Max(Stats.MinMoveSpeed, (baseStats.MoveSpeedHexPerSecond * (1 + speedP)) + speedD),
             AttackPower = Math.Max(Stats.MinAttackPower, (baseStats.AttackPower * (1 + powerP)) + powerD),
             AttackRatePerSecond = Math.Max(Stats.MinAttackRate, (baseStats.AttackRatePerSecond * (1 + rateP)) + rateD),
+            HealingReceived = Math.Max(0, (baseStats.HealingReceived * (1 + healP)) + healD),
         };
     }
 }

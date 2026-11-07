@@ -1,7 +1,8 @@
 # Формат игрового контента HexTactics
 
 Документ описывает объекты библиотеки контента (ТЗ ч.4 §8): как они хранятся, какие поля имеют и как проверяются.
-Актуален для **v0.17.0** (схема данных `schemaVersion = 1` у всех видов). История схем — `docs/MIGRATIONS.md`.
+Актуален для **v0.22.0** (схемы: `map` 1, `unit` 3, `skill` 2, `tile` 2, `damage_type` 1, `defense_rule` 1). История схем —
+`docs/MIGRATIONS.md`.
 
 ## 1. Где лежит контент
 
@@ -117,6 +118,10 @@ user://packs/                                      установленные п
   `attackAreaRadius` 0…3 — область обычной атаки вокруг гекса цели (враги атакующего); `attackAreaSplit` — делить силу
   между целями области; `resistances` — объект «`global` или ID типа урона → сопротивление в %», −500…+500, шаг 0,01,
   отсутствующие = 0, например `{ "core.damage.physical": 50, "core.damage.piercing": -100 }` (итог колющего −50 %).
+- С v0.22.0 (схема 3): `defenseRules` — ссылки на правила защиты (до 16, без повторов; порядок применения задаёт приоритет
+  правила); `shields` — до 4 щитов `{ "name": "Барьер", "capacity": 30, "damageTypeId": "any", "order": 0 }`: название
+  (уникальное, до 40 символов), прочность 0 < … ≤ 100 000 HP, принимаемый урон (`any`, тип или семейство — с подтипами),
+  порядок 0–100 (меньше — тратится раньше). В бою щит начинается полным.
 
 ### 3.4. Навык — `skill` (`skills/`)
 
@@ -176,6 +181,62 @@ user://packs/                                      установленные п
 ```
 
 Строки параметров никогда не исполняются как код: тип выбирает заранее реализованный обработчик `EffectResolver`.
+
+### 3.7. Тип урона — `damage_type` (`damage_types/`, с v0.21.0)
+
+```json
+{ "family": "core.damage.magical", "strategy": "resistance_affected", "tags": ["fire"], "color": "#E8743B", "icon": "" }
+```
+
+`family` — ID семейства (пусто — тип сам семейство); `strategy` — `resistance_affected` (учитывает R) или `true_like`
+(обходит численные R и плоское снижение; иммунитет и щиты действуют); у подтипа стратегия семейства. `legacy: true` — тип
+старого контента, в новых списках не предлагается. Встроенные: `core.damage.physical` (`piercing`, `slashing`, `blunt`),
+`core.damage.magical` (пример подтипа — `core.damage.fire_example`, только демонстрация), `core.damage.true`; служебные
+`core.damage.untyped`, `core.damage.direct`.
+
+### 3.8. Правило защиты — `defense_rule` (`defense_rules/`, с v0.22.0)
+
+```json
+{ "trigger": "on_hit_contact", "damageTypeId": "core.damage.fire_example", "damageTag": "",
+  "minimumEffectiveResistancePercent": 300, "healthBelowPercent": null, "triggerOnImmuneContact": false,
+  "priority": 100, "cooldownSeconds": 0, "maxTriggers": 0,
+  "actions": [
+    { "effect": "convert_to_healing", "fraction": 0.25, "recipient": "self" },
+    { "effect": "redirect_as_damage", "fraction": 0.75, "targeting": "adjacent_hex_ring", "radiusHexes": 1,
+      "includeCenter": false, "targetFilter": "enemies_of_defender", "targetDamageMode": "full_per_target",
+      "responseDamageType": "same_as_incoming" } ] }
+```
+
+| Поле | Смысл |
+|---|---|
+| `trigger` | `on_hit_contact` — получен удар; `on_health_loss` — потеряно HP или прочность щита; `on_damage_dealt` — свой удар снял HP; `on_status_applied` — накладывается статус |
+| `damageTypeId` | ID типа или семейства (семейство — со всеми подтипами) или `any` (любой, и чистый) |
+| `damageTag` | дополнительно: у типа есть этот тег (пусто — не проверять) |
+| `minimumEffectiveResistancePercent` | условие: R после пробития против удара ≥ порога (−500…500); `null` — нет; у чистого урона R нет — не выполняется; не для `on_damage_dealt` |
+| `healthBelowPercent` | условие: здоровье владельца до удара < порога (1…100 %); `null` — нет |
+| `triggerOnImmuneContact` | действовать и при иммунитете к удару (по умолчанию нет) |
+| `priority`, `cooldownSeconds`, `maxTriggers` | меньше — раньше (0…1000, 100); игровые секунды между срабатываниями (0…600); срабатываний за бой (0 — без предела) |
+| `actions` | 1…8 реакций `{ "effect": …, поля }` |
+
+| `effect` | Когда | Поля |
+|---|---|---|
+| `immunity` — иммунитет к урону | удар | — |
+| `negate` — поглотить долю | удар | `fraction` 0…1 (доля D0) |
+| `convert_to_healing` — поглотить и лечиться | удар | `fraction`, `recipient`: `self` |
+| `convert_to_shield` — поглотить в щит | удар | `fraction`, `shield` (название щита юнита) |
+| `redirect_as_damage` — отразить часть урона | удар | `fraction`; `targeting`: `attacker` · `adjacent_hex_ring` (`radiusHexes` 1…3, `includeCenter`, `targetDamageMode`: `full_per_target` · `split_between_targets`); `targetFilter`: `enemies_of_defender` · `allies_of_defender` · `all_units`; `responseDamageType`: `same_as_incoming` или ID типа |
+| `flat_reduction` — плоское снижение | удар | `amount` HP (после R, не для чистого) |
+| `damage_cap` — предел урона за удар | удар | `amount` HP |
+| `retaliate` — ответный удар | потеря HP | `fraction` 0…5 (доля потери), `base`: `health_loss` · `shield_loss`; поля целей как у отражения |
+| `vampirism` — вампиризм | свой удар | `fraction` (доля снятого HP) |
+| `status_immunity` — иммунитет к статусам | статус | `statusCategory`: `debuff` · `buff` · `periodic` · `all` |
+
+- Сумма `fraction` поглощений и отражений одного правила ≤ 1 (100 % силы удара); реакция не к своему `trigger` — ошибка;
+  `allowReactiveChain: true` — ошибка (ответ на ответ запрещён, ТЗ ч.5 §5.5). Иммунитет вместе с поглощением без
+  `triggerOnImmuneContact` — предупреждение.
+- Порядок в бою (D-127): иммунитет → поглощения/лечение/отражение из D0 по приоритету → R → плоское снижение → предел → щиты
+  → HP → ответный удар, вампиризм. Ответные пакеты сами реакций не вызывают.
+- Запрет лечения — дебафф характеристики `healingReceived` («получаемое лечение»): 100 % — лечение 0.
 
 ## 3.6. Экспорт и импорт (с v0.20.0)
 

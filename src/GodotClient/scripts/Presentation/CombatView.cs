@@ -212,11 +212,41 @@ public partial class CombatFxView : Node3D
         }
     }
 
+    private readonly System.Collections.Generic.Dictionary<(UnitId Unit, string Text), long> _notes = new();
+
+    /// <summary>A grey word over a unit, at most once per game second per unit and word (continuous damage sends 30 events/s).</summary>
+    private void Note(UnitId unit, long tick, string text, Vector3 position)
+    {
+        if (_notes.TryGetValue((unit, text), out var last) && tick - last < 30 && tick >= last)
+        {
+            return;
+        }
+
+        _notes[(unit, text)] = tick;
+        Float(position + new Vector3(0, 0.45f, 0), text, text == "щит" ? new Color(0.65f, 0.85f, 1f) : new Color(0.8f, 0.8f, 0.8f), 34, 0.9);
+    }
+
     /// <summary>Spawns effects for the combat events of the last simulation update.</summary>
     public void Handle(SimulationEvent e, Func<UnitId, Vector3?> positionOf, HexTactics.Core.Hex.HexLayout layout)
     {
+        if (e is DamageApplied note && positionOf(note.Target) is { } np)
+        {
+            // Spec part 5 §4.2, §7.4: a non-numeric hint only — never the reason, the rule or a percentage.
+            if (note.Immune)
+            {
+                Note(note.Target, note.Tick, "невосприимчив", np);
+            }
+            else if (note.ShieldAbsorbed > 0)
+            {
+                Note(note.Target, note.Tick, "щит", np);
+            }
+        }
+
         switch (e)
         {
+            case StatusBlocked blocked when positionOf(blocked.Target) is { } bp:
+                Note(blocked.Target, blocked.Tick, "невосприимчив", bp);
+                break;
             case DamageApplied pd when pd.Amount > 0 && pd.Kind is DamageKind.Periodic or DamageKind.Surface && positionOf(pd.Target) is { } pp:
                 Accumulate(pd.Target, false, pd.Amount, pd.Tick, pp);
                 break;

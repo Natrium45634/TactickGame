@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "core.unit.operative",
   "kind": "unit",
   "name": "Оперативник",
@@ -34,6 +34,8 @@
     "attackDamageType": "core.damage.physical",
     "attackAreaRadius": 0,
     "attackAreaSplit": false,
-    "resistances": {}
+    "resistances": {},
+    "defenseRules": [],
+    "shields": []
   }
 }

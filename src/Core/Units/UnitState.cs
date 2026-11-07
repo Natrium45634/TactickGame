@@ -33,7 +33,18 @@ public sealed class UnitState
         CurrentHealth = stats.MaxHealth;
         Lifecycle = lifecycle;
         RosterEntryId = rosterEntry;
+        var shields = new List<HexTactics.Core.Combat.ShieldState>();
+        foreach (var definition in stats.Shields)
+        {
+            shields.Add(new HexTactics.Core.Combat.ShieldState(definition));
+        }
+
+        shields.Sort((a, b) => a.Definition.Order != b.Definition.Order ? a.Definition.Order.CompareTo(b.Definition.Order) : string.CompareOrdinal(a.Definition.Name, b.Definition.Name));
+        Shields = shields;
     }
+
+    /// <summary>Live shield points (spec part 5 §4.5), in the order they take damage.</summary>
+    public IReadOnlyList<HexTactics.Core.Combat.ShieldState> Shields { get; }
 
     public UnitId Id { get; }
 

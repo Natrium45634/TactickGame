@@ -7,6 +7,7 @@ using HexTactics.Content.Library;
 using HexTactics.Content.Model;
 using HexTactics.Content.Registry;
 using HexTactics.Content.Schema;
+using HexTactics.Core.Effects;
 using HexTactics.Core.Hex;
 using HexTactics.Editor.Definitions;
 
@@ -404,16 +405,23 @@ public static class EffectPreview
         {
             "damage" => $"{Amount("урон")} {targets}",
             "heal" => $"{Amount("лечение")} {targets} (не выше максимума)",
-            "buff" or "debuff" => $"{(effect.Type == "buff" ? "+" : "−")}{(s.Text("mode", "percent") == "percent" ? N(s.Number("percent") * 100) + " %" : N(s.Number("delta")))} {StatWord(s.Text("stat", "moveSpeed"))} на {N(s.Number("duration", 5))} с {targets}{(hits > 1 ? $", {hits} раза" : string.Empty)}",
+            "buff" or "debuff" => $"{(effect.Type == "buff" ? "+" : "−")}{StatSize(s)} {StatWord(s.Text("stat", "moveSpeed"))} на {N(s.Number("duration", 5))} с {targets}{(hits > 1 ? $", {hits} раза" : string.Empty)}",
             "periodic" => $"{(s.Text("kind", "damage") == "heal" ? "лечение" : "урон")} {N(s.Number("perSecond", 5))} HP/с × {N(s.Number("duration", 3))} с = {N(s.Number("perSecond", 5) * s.Number("duration", 3))} {targets}",
             _ => registry.Find(effect.Type)?.Label.ToLowerInvariant() ?? effect.Type,
         };
     }
 
-    private static string StatWord(string stat) => stat switch
+    /// <summary>«30 %», «1» or, for a resistance, «20 п.п.» (resistance changes are always in percentage points).</summary>
+    internal static string StatSize(EffectSpec s) =>
+        s.Text("stat", Stats.MoveSpeed) == Stats.Resistance ? N(s.Number("delta")) + " п.п."
+        : s.Text("mode", "percent") == "percent" ? N(s.Number("percent") * 100) + " %" : N(s.Number("delta"));
+
+    internal static string StatWord(string stat) => stat switch
     {
-        "attackPower" => "силы атаки",
-        "attackRate" => "скорости атак",
+        Stats.AttackPower => "силы атаки",
+        Stats.AttackRate => "скорости атак",
+        Stats.Resistance => "сопротивления",
+        Stats.HealingReceived => "получаемого лечения",
         _ => "скорости движения",
     };
 

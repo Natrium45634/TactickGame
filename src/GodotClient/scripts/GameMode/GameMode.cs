@@ -803,7 +803,7 @@ public partial class GameMode : Node3D
 
                     break;
                 case AttackStarted s:
-                    ShowMessage($"Юнит {s.Unit} атакует юнит {s.Target}: {_sim.Settings.DefaultStats.AttackRatePerSecond:0.#} удара/с.", false);
+                    ShowMessage($"Юнит {s.Unit} атакует юнит {s.Target}: {(_sim.State.FindUnit(s.Unit)?.Stats ?? _sim.Settings.DefaultStats).AttackRatePerSecond.ToString("0.##", CultureInfo.InvariantCulture)} удар/с.", false);
                     break;
                 case AttackTargetLost l:
                     ShowMessage($"Юнит {l.Unit}: цель {l.Target} уничтожена — атака завершена.", false);

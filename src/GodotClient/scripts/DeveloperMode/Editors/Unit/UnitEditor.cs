@@ -33,6 +33,8 @@ public partial class UnitEditor : DefinitionEditorShell
     private string _filter = string.Empty;
     private string? _previewSkill;
     private string? _pick;
+    private string _ruleFilter = string.Empty;
+    private string? _rulePick;
 
     private static readonly HexCoord Center = HexCoord.FromOffset(3, 3);
 
@@ -195,7 +197,7 @@ public partial class UnitEditor : DefinitionEditorShell
             var label = (row.Depth > 0 ? "    " : string.Empty) + row.Label;
             if (row.Bypass)
             {
-                inspector.ReadOnly(label, "обходит численные сопротивления (особые правила — v0.22.0)");
+                inspector.ReadOnly(label, "обходит численные сопротивления (остановить — только «Иммунитет» ниже)");
                 continue;
             }
 
@@ -212,10 +214,94 @@ public partial class UnitEditor : DefinitionEditorShell
 
         inspector.Text(_model.ResistanceSummary(), size: 12);
 
+        BuildDefenses(inspector);
+
         inspector.Section("Внешний вид");
         foreach (var field in UnitData.Fields.Where(f => f.Section == HexTactics.Content.Schema.FieldSections.Appearance))
         {
             inspector.Field(IdPrefix, field, unit, ApplyField);
+        }
+    }
+
+    /// <summary>
+    /// «Особые защиты и реакции» (spec part 5 §6.4, §8.3): attached rules by reference with their summaries, the picker of
+    /// saved rules, and the shields of the unit. Rules themselves are edited in the «Правила защиты» category.
+    /// </summary>
+    private void BuildDefenses(Inspector inspector)
+    {
+        var unit = _model.Unit;
+        inspector.Section("Особые защиты и реакции");
+        inspector.Hint("Правила — ссылки на «Правила защиты» библиотеки (иммунитет, поглощение, отражение, ответный удар…); порядок — по приоритету правила.");
+        var summaries = _model.RuleSummaries();
+        for (var i = 0; i < summaries.Count; i++)
+        {
+            var (id, name, summary) = summaries[i];
+            var row = inspector.Row();
+            var title = new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            row.AddChild(title);
+            row.AddChild(UiKit.Button("✕", () => _model.RemoveRule(id), ButtonKind.Normal, $"{IdPrefix}rule.{i}.remove", "Убрать правило у юнита (само правило остаётся в библиотеке)"));
+            var text = inspector.Text(summary, dim: true, size: 12);
+            if (summary.StartsWith('✗'))
+            {
+                text.AddThemeColorOverride("font_color", UiKit.Error);
+            }
+        }
+
+        if (summaries.Count == 0)
+        {
+            inspector.Hint("Особых правил нет.");
+        }
+
+        inspector.LineText(IdPrefix + "rule.filter", "Добавить правило: поиск", _ruleFilter, v => { _ruleFilter = v; Stamp++; });
+        var choices = _model.AvailableRules(_ruleFilter);
+        if (choices.Count == 0)
+        {
+            inspector.Hint(_ruleFilter.Length > 0 ? "Ничего не найдено." : "Свободных правил нет — создайте правило в категории «Правила защиты».");
+        }
+        else
+        {
+            _rulePick = choices.Any(c => c.Id == _rulePick) ? _rulePick! : choices[0].Id;
+            inspector.Choice(IdPrefix + "rule.pick", "Правило из библиотеки", choices.Select(c => new ChoiceOption(c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (своё)"))).ToList(), _rulePick,
+                v => { _rulePick = v; Stamp++; }, choices.FirstOrDefault(c => c.Id == _rulePick)?.Summary);
+            inspector.Button(IdPrefix + "rule.add", "＋ Добавить правило", () =>
+            {
+                if (_rulePick is not null && _model.AddRule(_rulePick) is { } refusal)
+                {
+                    Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+                }
+            });
+        }
+
+        inspector.Text("Щиты", size: 13);
+        inspector.Hint("Щит принимает уже рассчитанный урон до HP (и чистый тоже, если тип подходит); в бою начинается полным.");
+        var types = new List<ChoiceOption> { new(ShieldData.AnyType, "любой урон") };
+        types.AddRange(Library.Items(ContentTypeRegistry.DamageType).Where(t => t.Data is DamageTypeData { Legacy: false }).Select(t => new ChoiceOption(t.Id, t.Name)));
+        for (var i = 0; i < unit.Shields.Count; i++)
+        {
+            var shield = unit.Shields[i];
+            var index = i;
+            inspector.LineText($"{IdPrefix}shield.{i}.name", $"Щит {i + 1}: название", shield.Name, v => ApplyShield(index, "name", v));
+            inspector.LineText($"{IdPrefix}shield.{i}.capacity", "Прочность, HP", Inspector.Num(shield.Capacity), v => ApplyShield(index, "capacity", v), "Больше 0, не больше 100 000.");
+            inspector.Choice($"{IdPrefix}shield.{i}.damageTypeId", "Принимает", types, shield.DamageType, v => ApplyShield(index, "damageTypeId", v), "Семейство принимает и свои подтипы.");
+            inspector.LineText($"{IdPrefix}shield.{i}.order", "Порядок", shield.Order.ToString(CultureInfo.InvariantCulture), v => ApplyShield(index, "order", v), "Меньше — тратится раньше.");
+            inspector.Button($"{IdPrefix}shield.{i}.remove", "✕ Убрать щит", () => _model.RemoveShield(index), ButtonKind.Flat);
+        }
+
+        inspector.Button(IdPrefix + "shield.add", "＋ Добавить щит", () =>
+        {
+            if (_model.AddShield() is { } refusal)
+            {
+                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            }
+        });
+    }
+
+    private void ApplyShield(int index, string key, object? value)
+    {
+        if (_model.SetShield(index, key, value) is { } issue)
+        {
+            Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+            Stamp++;
         }
     }
 
@@ -274,6 +360,19 @@ public partial class UnitEditor : DefinitionEditorShell
                 actual = string.Join(",", unit.Skills.Select(s => Library.Find(ContentTypeRegistry.Skill, s)?.Name ?? s));
                 ok = a[1] == unit.Skills.Count.ToString(CultureInfo.InvariantCulture) || actual == a[1];
                 return true;
+            case "rules":
+                // expect:rules:N or expect:rules:<names joined by ,>
+                actual = string.Join(",", _model.RuleSummaries().Select(r => r.Name));
+                ok = a[1] == unit.DefenseRules.Count.ToString(CultureInfo.InvariantCulture) || actual == a[1];
+                return true;
+            case "shield":
+                {
+                    // expect:shield:<index>:<name>:<capacity>
+                    var n = int.Parse(a[1], CultureInfo.InvariantCulture);
+                    actual = n < unit.Shields.Count ? $"{unit.Shields[n].Name}:{unit.Shields[n].Capacity.ToString("0.##", CultureInfo.InvariantCulture)}" : "none";
+                    ok = actual == string.Join(":", a.Skip(2));
+                    return true;
+                }
             default:
                 actual = "unknown";
                 ok = false;

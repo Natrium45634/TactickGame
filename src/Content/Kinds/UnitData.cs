@@ -41,6 +41,15 @@ public sealed class UnitData : IContentData
     /// </summary>
     public SortedDictionary<string, double> Resistances { get; } = new(System.StringComparer.Ordinal);
 
+    /// <summary>References to defense rules of the library (spec part 5 §6.4, §8.3 <c>defenseRuleRefs</c>), no copies.</summary>
+    public List<string> DefenseRules { get; } = new();
+
+    /// <summary>Shields of the unit (spec part 5 §4.5 <c>ShieldPool</c>); a new unit in battle starts with them full.</summary>
+    public List<ShieldData> Shields { get; } = new();
+
+    public const int MaxDefenseRules = 16;
+    public const int MaxShields = 4;
+
     public const string GlobalResistance = "global";
     public const double MinResistance = -500;
     public const double MaxResistance = 500;
@@ -150,6 +159,8 @@ public sealed class UnitData : IContentData
             ["attackAreaRadius"] = AttackAreaRadius,
             ["attackAreaSplit"] = AttackAreaSplit,
             ["resistances"] = ResistancesJson(),
+            ["defenseRules"] = Strings(DefenseRules),
+            ["shields"] = ShieldsJson(),
             ["side"] = Side,
             ["color"] = Color,
             ["scale"] = Scale,
@@ -192,7 +203,45 @@ public sealed class UnitData : IContentData
             issues.Error("resistances", "ожидается объект «тип урона → процент»");
         }
 
+        data.DefenseRules.AddRange(JsonFields.TextList(obj, "defenseRules", issues, string.Empty));
+        if (JsonFields.Array(obj, "shields", issues, string.Empty) is { } shields)
+        {
+            for (var i = 0; i < shields.Count; i++)
+            {
+                if (shields[i] is JsonObject so)
+                {
+                    data.Shields.Add(ShieldData.Read(so, issues, $"shields[{i}]"));
+                }
+                else
+                {
+                    issues.Error($"shields[{i}]", "щит должен быть объектом");
+                }
+            }
+        }
+
         return data;
+    }
+
+    private static JsonArray Strings(IEnumerable<string> values)
+    {
+        var array = new JsonArray();
+        foreach (var v in values)
+        {
+            array.Add(v);
+        }
+
+        return array;
+    }
+
+    private JsonArray ShieldsJson()
+    {
+        var array = new JsonArray();
+        foreach (var shield in Shields)
+        {
+            array.Add(shield.ToJson());
+        }
+
+        return array;
     }
 
     private JsonObject ResistancesJson()
@@ -218,11 +267,25 @@ public sealed class UnitData : IContentData
             yield return new ContentRef("damage_type", AttackDamageType);
         }
 
+        var types = new HashSet<string>(System.StringComparer.Ordinal) { AttackDamageType };
         foreach (var key in Resistances.Keys)
         {
-            if (key != GlobalResistance && key != AttackDamageType)
+            if (key != GlobalResistance && types.Add(key))
             {
                 yield return new ContentRef("damage_type", key);
+            }
+        }
+
+        foreach (var r in DefenseRules)
+        {
+            yield return new ContentRef("defense_rule", r);
+        }
+
+        foreach (var shield in Shields)
+        {
+            if (shield.DamageType != ShieldData.AnyType && types.Add(shield.DamageType))
+            {
+                yield return new ContentRef("damage_type", shield.DamageType);
             }
         }
     }
@@ -249,6 +312,22 @@ public sealed class UnitData : IContentData
                 var value = Resistances[key];
                 Resistances.Remove(key);
                 Resistances[renamed] = value;
+            }
+        }
+
+        for (var i = 0; i < DefenseRules.Count; i++)
+        {
+            if (newIds.TryGetValue(new ContentRef("defense_rule", DefenseRules[i]), out var rule))
+            {
+                DefenseRules[i] = rule;
+            }
+        }
+
+        foreach (var shield in Shields)
+        {
+            if (newIds.TryGetValue(new ContentRef("damage_type", shield.DamageType), out var type))
+            {
+                shield.DamageType = type;
             }
         }
     }
@@ -289,6 +368,39 @@ public sealed class UnitData : IContentData
                 context.Issues.Error($"resistances.{key}", $"неверный ключ сопротивления «{key}»");
             }
         }
+
+        if (DefenseRules.Count > MaxDefenseRules)
+        {
+            context.Issues.Error("defenseRules", $"не больше {MaxDefenseRules} правил защиты");
+        }
+
+        var rules = new HashSet<string>(System.StringComparer.Ordinal);
+        foreach (var r in DefenseRules)
+        {
+            if (!ContentIds.IsValid(r))
+            {
+                context.Issues.Error("defenseRules", $"неверная ссылка на правило «{r}»");
+            }
+            else if (!rules.Add(r))
+            {
+                context.Issues.Warning("defenseRules", $"правило «{r}» указано дважды");
+            }
+        }
+
+        if (Shields.Count > MaxShields)
+        {
+            context.Issues.Error("shields", $"не больше {MaxShields} щитов");
+        }
+
+        var names = new HashSet<string>(System.StringComparer.Ordinal);
+        for (var i = 0; i < Shields.Count; i++)
+        {
+            Shields[i].Validate(context.Issues, $"shields[{i}]");
+            if (!names.Add(Shields[i].Name.Trim()))
+            {
+                context.Issues.Error($"shields[{i}].name", $"два щита с названием «{Shields[i].Name}»");
+            }
+        }
     }
 
     public string Summary() => string.Create(CultureInfo.InvariantCulture,
@@ -308,6 +420,71 @@ public sealed class UnitData : IContentData
             copy.Resistances[key] = value;
         }
 
+        copy.DefenseRules.AddRange(DefenseRules);
+        foreach (var shield in Shields)
+        {
+            copy.Shields.Add(shield.Clone());
+        }
+
         return copy;
     }
+}
+
+/// <summary>
+/// A shield of a unit definition (spec part 5 §4.5): name, capacity, the damage it accepts (a type, a family or any) and
+/// its order among the unit's shields. A shield takes calculated damage before health; it is never negative or infinite.
+/// </summary>
+public sealed class ShieldData
+{
+    public const string AnyType = "any";
+    public const double MaxCapacity = 100000;
+
+    public string Name { get; set; } = "Щит";
+
+    public double Capacity { get; set; } = 20;
+
+    public string DamageType { get; set; } = AnyType;
+
+    public int Order { get; set; }
+
+    public JsonObject ToJson() => new()
+    {
+        ["name"] = Name,
+        ["capacity"] = Capacity,
+        ["damageTypeId"] = DamageType,
+        ["order"] = Order,
+    };
+
+    public static ShieldData Read(JsonObject obj, IssueList issues, string path) => new()
+    {
+        Name = JsonFields.Text(obj, "name", "Щит", issues, path),
+        Capacity = JsonFields.Number(obj, "capacity", 20, issues, path),
+        DamageType = JsonFields.Text(obj, "damageTypeId", AnyType, issues, path) is { Length: > 0 } t ? t : AnyType,
+        Order = JsonFields.Integer(obj, "order", 0, issues, path),
+    };
+
+    public void Validate(IssueList issues, string path)
+    {
+        if (string.IsNullOrWhiteSpace(Name) || Name.Length > 40)
+        {
+            issues.Error($"{path}.name", "у щита нужно название до 40 символов");
+        }
+
+        if (!double.IsFinite(Capacity) || Capacity <= 0 || Capacity > MaxCapacity)
+        {
+            issues.Error($"{path}.capacity", $"прочность щита — от 0 до {MaxCapacity:0} HP (не отрицательная и не бесконечная)");
+        }
+
+        if (DamageType != AnyType && !ContentIds.IsValid(DamageType))
+        {
+            issues.Error($"{path}.damageTypeId", $"неверный тип урона щита «{DamageType}»");
+        }
+
+        if (Order is < 0 or > 100)
+        {
+            issues.Error($"{path}.order", "порядок щита — от 0 до 100");
+        }
+    }
+
+    public ShieldData Clone() => new() { Name = Name, Capacity = Capacity, DamageType = DamageType, Order = Order };
 }

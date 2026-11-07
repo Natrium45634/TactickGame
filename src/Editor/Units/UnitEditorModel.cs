@@ -10,6 +10,9 @@ using HexTactics.Editor.Definitions;
 
 namespace HexTactics.Editor.Units;
 
+/// <summary>A saved defense rule that can be attached to the unit (entry of the rule picker).</summary>
+public sealed record DefenseRuleChoice(string Id, string Name, string Summary, bool IsBuiltIn);
+
 /// <summary>A skill that can be added to the unit (catalog entry of the skill picker).</summary>
 public sealed record SkillChoice(string Id, string Name, string Icon, string Summary, bool IsBuiltIn);
 
@@ -112,6 +115,165 @@ public sealed class UnitEditorModel : DefinitionEditorModel
     /// (attack power ≠ attack rate) and the effects of each skill with this unit's attack power.
     /// </summary>
     public IReadOnlyList<string> CombatPreview() => CombatPreviewText.Describe(Unit, Library);
+
+    // ------------------------------------------------------------------ defense rules and shields (spec part 5 §4, §6.4, §8.3)
+
+    /// <summary>Saved rules without errors that are not attached yet, filtered by name, id or summary.</summary>
+    public IReadOnlyList<DefenseRuleChoice> AvailableRules(string filter = "")
+    {
+        var list = new List<DefenseRuleChoice>();
+        foreach (var r in Library.Items(ContentTypeRegistry.DefenseRule))
+        {
+            if (Unit.DefenseRules.Contains(r.Id) || r.HasErrors || r.Data is not DefenseRuleData data)
+            {
+                continue;
+            }
+
+            var summary = Defense.DefenseRuleSummary.Describe(data, Library);
+            if (filter.Length > 0 && !r.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase) && !r.Id.Contains(filter, StringComparison.OrdinalIgnoreCase) && !summary.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+            {
+                continue;
+            }
+
+            list.Add(new DefenseRuleChoice(r.Id, r.Name, summary, r.IsBuiltIn));
+        }
+
+        return list;
+    }
+
+    /// <summary>Attaches a saved rule by reference (refused for unknown rules, duplicates and beyond the limit).</summary>
+    public string? AddRule(string ruleId)
+    {
+        if (Library.Find(ContentTypeRegistry.DefenseRule, ruleId) is not { } rule)
+        {
+            return $"правило «{ruleId}» не найдено в библиотеке";
+        }
+
+        if (Unit.DefenseRules.Contains(ruleId))
+        {
+            return $"правило «{rule.Name}» уже есть у юнита";
+        }
+
+        if (Unit.DefenseRules.Count >= UnitData.MaxDefenseRules)
+        {
+            return $"у юнита не больше {UnitData.MaxDefenseRules} правил защиты";
+        }
+
+        Apply($"Добавить правило «{rule.Name}»", (d, _) => ((UnitData)d).DefenseRules.Add(ruleId));
+        return null;
+    }
+
+    public void RemoveRule(string ruleId)
+    {
+        var name = Library.Find(ContentTypeRegistry.DefenseRule, ruleId)?.Name ?? ruleId;
+        Apply($"Убрать правило «{name}»", (d, _) => ((UnitData)d).DefenseRules.Remove(ruleId));
+    }
+
+    /// <summary>The attached rules in words, in the order the resolver applies them (priority, then id).</summary>
+    public IReadOnlyList<(string Id, string Name, string Summary)> RuleSummaries() => Unit.DefenseRules
+        .Select(id => (Id: id, Item: Library.Find(ContentTypeRegistry.DefenseRule, id)))
+        .OrderBy(x => (x.Item?.Data as DefenseRuleData)?.Priority ?? int.MaxValue).ThenBy(x => x.Id, StringComparer.Ordinal)
+        .Select(x => x.Item is { Data: DefenseRuleData data } item
+            ? (x.Id, item.Name, (item.HasErrors ? "✗ правило с ошибками — не действует. " : string.Empty) + Defense.DefenseRuleSummary.Describe(data, Library))
+            : (x.Id, x.Id, $"✗ правило «{x.Id}» не найдено"))
+        .ToList();
+
+    public string? AddShield()
+    {
+        if (Unit.Shields.Count >= UnitData.MaxShields)
+        {
+            return $"у юнита не больше {UnitData.MaxShields} щитов";
+        }
+
+        var n = 1;
+        while (Unit.Shields.Any(s => s.Name == (n == 1 ? "Щит" : $"Щит {n}")))
+        {
+            n++;
+        }
+
+        var name = n == 1 ? "Щит" : $"Щит {n}";
+        Apply($"Добавить щит «{name}»", (d, _) => ((UnitData)d).Shields.Add(new ShieldData { Name = name, Order = ((UnitData)d).Shields.Count }));
+        return null;
+    }
+
+    public void RemoveShield(int index) => Apply("Убрать щит", (d, _) =>
+    {
+        var shields = ((UnitData)d).Shields;
+        if (index >= 0 && index < shields.Count)
+        {
+            shields.RemoveAt(index);
+        }
+    });
+
+    /// <summary>Sets a shield field: <c>name</c>, <c>capacity</c> (HP), <c>damageTypeId</c> (type id or «any»), <c>order</c>.</summary>
+    public ContentIssue? SetShield(int index, string key, object? input)
+    {
+        if (index < 0 || index >= Unit.Shields.Count)
+        {
+            return ContentIssue.Error($"shields[{index}]", "нет такого щита");
+        }
+
+        var probe = Unit.Shields[index].Clone();
+        string? Number(out double value)
+        {
+            value = 0;
+            if (input is double d)
+            {
+                value = d;
+                return null;
+            }
+
+            return input is string t && double.TryParse(t.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value) ? null : $"«{input}» — не число";
+        }
+
+        switch (key)
+        {
+            case "name":
+                probe.Name = ((input as string) ?? string.Empty).Trim();
+                if (Unit.Shields.Where((_, i) => i != index).Any(s => s.Name == probe.Name))
+                {
+                    return ContentIssue.Error($"shields[{index}].name", $"щит «{probe.Name}» уже есть — значение не изменено");
+                }
+
+                break;
+            case "capacity":
+                if (Number(out var capacity) is { } bad)
+                {
+                    return ContentIssue.Error($"shields[{index}].capacity", $"прочность: {bad}, значение не изменено");
+                }
+
+                probe.Capacity = capacity;
+                break;
+            case "order":
+                if (Number(out var order) is { } badOrder || Math.Abs(order - Math.Round(order)) > 1e-9)
+                {
+                    return ContentIssue.Error($"shields[{index}].order", "порядок — целое число, значение не изменено");
+                }
+
+                probe.Order = (int)Math.Round(order);
+                break;
+            case "damageTypeId":
+                probe.DamageType = input as string ?? ShieldData.AnyType;
+                if (probe.DamageType != ShieldData.AnyType && Library.Find(ContentTypeRegistry.DamageType, probe.DamageType) is null)
+                {
+                    return ContentIssue.Error($"shields[{index}].damageTypeId", $"нет типа урона «{probe.DamageType}» — значение не изменено");
+                }
+
+                break;
+            default:
+                return ContentIssue.Error(key, "нет такого поля щита");
+        }
+
+        var issues = new IssueList();
+        probe.Validate(issues, $"shields[{index}]");
+        if (issues.Items.FirstOrDefault(i => i.IsError) is { } issue)
+        {
+            return issue with { Message = issue.Message + " — значение не изменено" };
+        }
+
+        Apply($"Щит «{probe.Name}»", (d, _) => ((UnitData)d).Shields[index] = probe.Clone());
+        return null;
+    }
 
     // ------------------------------------------------------------------ resistances (spec part 5 §3, §7)
 

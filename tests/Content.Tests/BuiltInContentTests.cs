@@ -48,7 +48,8 @@ public class BuiltInContentTests
         Assert.Single(_library.Items(ContentTypeRegistry.Unit));
         Assert.Single(_library.Items(ContentTypeRegistry.Skill));
         Assert.Single(_library.Items(ContentTypeRegistry.Map));
-        Assert.Equal(8, _library.Items(ContentTypeRegistry.DamageType).Count);
+        Assert.Equal(9, _library.Items(ContentTypeRegistry.DamageType).Count);
+        Assert.Single(_library.Items(ContentTypeRegistry.DefenseRule));
     }
 
     [Fact]

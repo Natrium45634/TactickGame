@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "core.damage.fire_example",
+  "kind": "damage_type",
+  "name": "Огонь (пример)",
+  "description": "Демонстрационный подтип магического урона для проверки правил защиты (ТЗ ч.5 §5.3, §9.3). Это не финальная стихия: элементальная система будет определена следующей частью ТЗ.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный",
+    "пример"
+  ],
+  "references": [
+    {
+      "kind": "damage_type",
+      "id": "core.damage.magical"
+    }
+  ],
+  "data": {
+    "family": "core.damage.magical",
+    "strategy": "resistance_affected",
+    "tags": [
+      "fire"
+    ],
+    "color": "#E8743B",
+    "icon": ""
+  }
+}

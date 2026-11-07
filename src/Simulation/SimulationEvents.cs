@@ -77,7 +77,19 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
 {
     /// <summary>Damage type of the hit (spec part 5); empty for events created before the typed damage model.</summary>
     public string DamageTypeId { get; init; } = string.Empty;
+
+    /// <summary>An explicit immunity stopped the health loss (the game shows only «не нанесён урон»).</summary>
+    public bool Immune { get; init; }
+
+    /// <summary>Damage taken by the target's shields instead of health.</summary>
+    public double ShieldAbsorbed { get; init; }
 }
+
+/// <summary>A technical combat limit dropped a reaction (spec part 5 §5.5): no endless chains, no unbounded events.</summary>
+public sealed record CombatLimitReached(long Tick, long RootActionId, string Reason) : SimulationEvent(Tick);
+
+/// <summary>A status was not applied: the target's defense rule makes it immune to this category (spec part 5 §4.1).</summary>
+public sealed record StatusBlocked(long Tick, UnitId Target, string Key) : SimulationEvent(Tick);
 
 /// <summary>A dead unit was removed from the map at the end of the tick; its hex is free (spec part 3 §3).</summary>
 public sealed record UnitDied(long Tick, UnitId Unit, Side Side, HexCoord Cell) : SimulationEvent(Tick);
@@ -102,6 +114,9 @@ public enum DamageKind
 
     /// <summary>A tile type acting on the unit standing on it or entering/leaving it (spec part 4 §7).</summary>
     Surface = 4,
+
+    /// <summary>A defensive reaction: redirected or retaliating damage, conversion healing, vampirism (spec part 5 §4).</summary>
+    Reaction = 5,
 }
 
 /// <summary>Health was restored (spec part 4 §6.3 p.2), never above the maximum.</summary>

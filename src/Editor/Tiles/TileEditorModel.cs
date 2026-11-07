@@ -182,13 +182,8 @@ public static class TilePreview
             case HexTactics.Core.Effects.EffectTypes.Debuff:
                 {
                     var sign = effect.Type == HexTactics.Core.Effects.EffectTypes.Buff ? "+" : "−";
-                    var size = s.Text("mode", "percent") == "percent" ? N(s.Number("percent") * 100) + " %" : N(s.Number("delta"));
-                    var stat = s.Text("stat", Stats.MoveSpeed) switch
-                    {
-                        Stats.AttackPower => "силы атаки",
-                        Stats.AttackRate => "скорости атак",
-                        _ => "скорости движения",
-                    };
+                    var size = HexTactics.Editor.Skills.EffectPreview.StatSize(s);
+                    var stat = HexTactics.Editor.Skills.EffectPreview.StatWord(s.Text("stat", Stats.MoveSpeed));
                     text = $"{sign}{size} {stat} на {N(s.Number("duration", 5))} с";
                     break;
                 }

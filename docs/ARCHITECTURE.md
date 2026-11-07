@@ -1,10 +1,10 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.21.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.22.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
-типы урона, сопротивления). Формат контента —
+типы урона, сопротивления, правила защиты, щиты и реакции). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -389,6 +389,15 @@ tests/*  ──► соответствующие сборки
   `area = split`), срез поверхности, `StatusSystem` (тип периодического статуса). Каталог типов — `SimulationSettings.DamageTypes`
   (`RuntimeFactory.BuildDamageTypes` из вида `damage_type`). Сопротивления — `UnitStats.Resistances`, временные — статусы
   `Stats.Resistance`. Клиент R не показывает; редактор юнита — секция «Сопротивления».
+- **Защита и реакции (с v0.22.0, ТЗ ч.5 §4–§5, D-126–D-131).** Стадии `DamageResolver.ResolveOne`: допуск → D0 → иммунитет →
+  конверсии из бюджета D0 (правила «получен удар» по `Priority`, затем `Id`) → R → плоское снижение → предел → щиты
+  (`UnitState.Shields`, порядок) → HP (`GameState.ApplyDamage`) → ответный удар и вампиризм. Лечение — только
+  `DamageResolver.Heal` (множитель `HealingReceived`). Реакции — `Pending` в очереди, `Drain` после удара; ответный пакет
+  `Reactive`, `ProcDepth` + 1; пределы `CombatLimits` (`MaxProcDepth` 1, `MaxGeneratedEventsPerRoot` 64, `MaxEventsPerTick`
+  4096, `MaxReactionTargets` 32) → `CombatLimitReached`; ответ на непрерывный урон копится и уходит раз в игровую секунду
+  (`AfterTick`). Правила — `UnitStats.DefenseRules` (`RuntimeFactory.BuildUnit` разрешает ссылки `defenseRules` через
+  библиотеку; правило с ошибками не действует), реакции описывает `DefenseActionRegistry` (Content), формы — из его полей.
+  Клиент: `DefenseRuleEditor`, секция юнита «Особые защиты и реакции», `CombatView.Note` («невосприимчив», «щит»).
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -507,6 +516,12 @@ tests/*  ──► соответствующие сборки
 проверка `expect:import:<текст>` (итог последнего предпросмотра).
 С v0.21.0: поля сопротивлений `unit.res.<global|ID типа>`, проверка `expect:resistance:<ключ>:<итог>`; в бою
 `spawn:enemy:c,r@Название` (юнит отладки из определения), `expect:info:ID:текст:yes|no` (что показывает карточка юнита).
+С v0.22.0: редактор правил — поля `rule.<ключ>` (`rule.trigger`, `rule.damageTypeId`, `rule.useResistanceThreshold`…),
+`rule.template`, `rule.template.apply`, реакции `rule.a<i>.<ключ>`, `rule.a<i>.remove`, `rule.addtype`, `rule.add`,
+`rule.advanced`; проверки `expect:rule-summary:<текст>`, `expect:rule-actions:<effect,…|N>`, `expect:rule-field:<ключ>:<значение>`;
+в редакторе юнита `unit.rule.filter`, `unit.rule.pick`, `unit.rule.add`, `unit.rule.<i>.remove`, `unit.shield.add`,
+`unit.shield.<i>.name|capacity|damageTypeId|order|remove`, проверки `expect:rules:<N|названия>`, `expect:shield:<i>:<название>:<прочность>`;
+`spawn:cell:c,r@Название` — юнит игрока из определения.
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
@@ -517,9 +532,9 @@ tests/*  ──► соответствующие сборки
 `$RegressionScenarioV18` = V17 + редактор навыков, тест навыка, навык своего юнита из меню ТД для v0.18.0,
 `$RegressionScenarioV19` = V18 + редактор гексов, тест гекса, карта с жгучей и целебной поверхностями для v0.19.x,
 `$RegressionScenarioV20` = V19 + экспорт, импорт, конфликты для v0.20.0, `$RegressionScenarioV21` = V20 + сопротивления и типы
-урона для v0.21.0+, `$CleanImportScenarioV20` — третий запуск с чистой
+урона для v0.21.0, `$RegressionScenarioV22` = V21 + правила защиты, щиты и «огонь 300 %» в бою для v0.22.0+, `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

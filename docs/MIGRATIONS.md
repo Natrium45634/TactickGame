@@ -16,6 +16,8 @@
 | `tile` | 2 | v0.21.0 | урон эффектов гекса получает `damageType`. Миграция 1 → 2: урон без типа → `core.damage.direct` (прежние HP/с для любой цели) |
 | `unit` | 2 | v0.21.0 | `attackDamageType`, `attackAreaRadius`, `attackAreaSplit`, `resistances`. Миграция 1 → 2: `attackDamageType` = `core.damage.untyped`, сопротивлений нет |
 | `damage_type` | 1 | v0.21.0 | первая схема: семейство, стратегия, теги, цвет, значок, `legacy` |
+| `unit` | 3 | v0.22.0 | `defenseRules` (ссылки на правила защиты), `shields`. Миграция 2 → 3: правил и щитов нет — невидимой брони не появляется |
+| `defense_rule` | 1 | v0.22.0 | первая схема: `trigger`, `damageTypeId`, `damageTag`, пороги R и здоровья, `triggerOnImmuneContact`, `priority`, `cooldownSeconds`, `maxTriggers`, `actions` |
 | `tile` | 1 | v0.19.0 | + необязательные `icon`, `waypoints`; категория `special`; эффекты с полями для гексов (`trigger`, `sides`). Старые типы корректны без миграции: без значка, ТД разрешены, эффектов не было |
 
 Новые **необязательные** поля с значением по умолчанию добавляются без смены версии схемы: старые файлы остаются

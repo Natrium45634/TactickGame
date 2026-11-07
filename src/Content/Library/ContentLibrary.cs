@@ -158,7 +158,7 @@ public sealed class ContentLibrary
         }
 
         var dataIssues = new IssueList();
-        item.Data.Validate(new ValidationContext(dataIssues, Registry.Effects, Limits));
+        item.Data.Validate(new ValidationContext(dataIssues, Registry.Effects, Limits, Registry.DefenseActions));
         foreach (var i in dataIssues.Items)
         {
             issues.AddRange(new[] { i with { Path = i.Path.Length == 0 ? "data" : "data." + i.Path } });

@@ -241,12 +241,38 @@ public static class RuntimeFactory
         return catalog;
     }
 
-    public static UnitTemplate BuildUnit(ContentItem unitItem)
+    /// <summary>
+    /// The runtime unit template. Defense rules are resolved by reference in <paramref name="library"/> (a rule that is
+    /// missing or has errors is left out and reported in <paramref name="issues"/>); shields start full.
+    /// </summary>
+    public static UnitTemplate BuildUnit(ContentItem unitItem, ContentLibrary? library = null, IssueList? issues = null)
     {
         if (unitItem.Data is not UnitData unit)
         {
             throw new ArgumentException("Not a unit.", nameof(unitItem));
         }
+
+        var rules = new List<DefenseRule>();
+        foreach (var id in unit.DefenseRules.Distinct(StringComparer.Ordinal))
+        {
+            if (library?.Find(ContentTypeRegistry.DefenseRule, id) is not { Data: DefenseRuleData rule } ruleItem)
+            {
+                issues?.Error(unitItem.Id, $"у юнита «{unitItem.Name}» правило защиты «{id}» не найдено");
+                continue;
+            }
+
+            if (ruleItem.HasErrors)
+            {
+                issues?.Warning(ruleItem.Id, $"правило защиты «{ruleItem.Name}» с ошибками — не действует");
+                continue;
+            }
+
+            rules.Add(rule.ToRule(ruleItem.Id, ruleItem.Name, library.Registry.DefenseActions));
+        }
+
+        var shields = unit.Shields
+            .Select(s => new ShieldDefinition(s.Name, s.Capacity, s.DamageType == ShieldData.AnyType ? null : s.DamageType, s.Order))
+            .ToArray();
 
         var stats = new UnitStats
         {
@@ -259,6 +285,8 @@ public static class RuntimeFactory
             AttackAreaRadius = unit.AttackAreaRadius,
             AttackAreaSplit = unit.AttackAreaSplit,
             Resistances = new ResistanceSet(unit.Resistances),
+            DefenseRules = rules,
+            Shields = shields,
         };
         return new UnitTemplate(unitItem.Id, unitItem.Name, stats, unit.Skills.ToArray(), unit.Side == "enemy" ? Side.Enemy : Side.Player, unit.Color, unit.Scale);
     }
@@ -337,7 +365,7 @@ public static class RuntimeFactory
             }
         }
 
-        var unit = BuildUnit(unitItem);
+        var unit = BuildUnit(unitItem, library, issues);
         var known = new List<string>();
         foreach (var s in unit.Skills)
         {
@@ -366,7 +394,7 @@ public static class RuntimeFactory
                 continue;
             }
 
-            var template = BuildUnit(item);
+            var template = BuildUnit(item, library);
             units[item.Id] = template with { Skills = template.Skills.Where(skills.ContainsKey).ToArray() };
         }
 
