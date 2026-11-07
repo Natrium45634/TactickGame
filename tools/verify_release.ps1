@@ -452,8 +452,9 @@ if ($Run -and $errors.Count -eq 0) {
             $cleanRoot = Join-Path $tmp 'clean-user'
             New-Item -ItemType Directory -Force -Path $cleanRoot | Out-Null
             $package = Join-Path (Join-Path $userRoot 'exports') 'Поверхности.hxp'
-            $packageArg = if ($Launcher) { 'Z:' + ($package -replace '/', '') } else { $package }
-            $cleanArg = if ($Launcher) { 'Z:' + ($cleanRoot -replace '/', '') } else { $cleanRoot }
+            # The package path goes inside the scenario text: Windows accepts forward slashes, so it stays free of escapes.
+            $packageArg = if ($Launcher) { 'Z:' + $package } else { $package }
+            $cleanArg = if ($Launcher) { 'Z:' + ($cleanRoot -replace '/', '\') } else { $cleanRoot }
             $runs += @{ Name = 'clean-import'; Script = $script:CleanImportScenarioV20.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
         }
         foreach ($pass in $runs) {
