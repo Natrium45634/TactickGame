@@ -252,7 +252,45 @@ public sealed class SkillData : IContentData
         return data;
     }
 
-    public IEnumerable<ContentRef> References() => Array.Empty<ContentRef>();
+    public IEnumerable<ContentRef> References()
+    {
+        var seen = new HashSet<ContentRef>();
+        foreach (var e in BaseEffects)
+        {
+            foreach (var r in e.References())
+            {
+                if (seen.Add(r))
+                {
+                    yield return r;
+                }
+            }
+        }
+
+        foreach (var c in Cells)
+        {
+            foreach (var e in c.Effects)
+            {
+                foreach (var r in e.References())
+                {
+                    if (seen.Add(r))
+                    {
+                        yield return r;
+                    }
+                }
+            }
+
+            foreach (var values in c.Overrides.Values)
+            {
+                foreach (var (key, value) in values)
+                {
+                    if (EffectData.ReferenceKeys.TryGetValue(key, out var kind) && value is string id && id != EffectData.GlobalResistance && seen.Add(new ContentRef(kind, id)))
+                    {
+                        yield return new ContentRef(kind, id);
+                    }
+                }
+            }
+        }
+    }
 
     public void Validate(ValidationContext context)
     {

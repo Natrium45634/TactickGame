@@ -113,6 +113,11 @@ user://packs/                                      установленные п
 | `side` | `player` · `enemy` | — | `player` |
 | `color`, `scale` | оттенок, размер модели (0,6…1,4) — только вид | — | `#4D80CC`, 1,0 |
 
+- С v0.21.0 (схема 2): `attackDamageType` — тип урона обычной атаки (по умолчанию `core.damage.physical`);
+  `attackAreaRadius` 0…3 — область обычной атаки вокруг гекса цели (враги атакующего); `attackAreaSplit` — делить силу
+  между целями области; `resistances` — объект «`global` или ID типа урона → сопротивление в %», −500…+500, шаг 0,01,
+  отсутствующие = 0, например `{ "core.damage.physical": 50, "core.damage.piercing": -100 }` (итог колющего −50 %).
+
 ### 3.4. Навык — `skill` (`skills/`)
 
 ```json

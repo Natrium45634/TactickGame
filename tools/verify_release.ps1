@@ -352,6 +352,31 @@ $script:CleanImportScenarioV20 = (@(
     'advance:90', 'expect:cell:1:3,4', 'expect:hp:1:161.67~0.4', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
 ) -join ';')
 
+# v0.21.0+ (spec part 5 §3, §7.3, §8; acceptance §11.2 p.8–13, §11.5 p.36): a unit «Бронированный» made in the unit editor
+# only — physical +50 %, piercing −100 % (effective −50 %), a refused 600 %, a blunt normal attack; its test match: the
+# default operative's slashing «Линейный удар» (20) takes 10 HP from it, and its game card shows no resistance; the skill
+# editor offers the damage type of a skill effect (preview «режущий»), the tile rules name the type of the surface.
+$script:RegressionScenarioV21 = $script:RegressionScenarioV20 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Бронированный',
+    'field:unit.res.core.damage.physical=50', 'expect:resistance:core.damage.slashing:50', 'field:unit.res.core.damage.piercing=-100',
+    'expect:resistance:core.damage.piercing:-50', 'field:unit.res.core.damage.blunt=600', 'expect:editor-message:от −500 до +500',
+    'expect:resistance:core.damage.blunt:50', 'field:unit.attackDamageType=core.damage.blunt', 'expect:unit-field:attackDamageType:core.damage.blunt',
+    'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5', 'spawn:enemy:3,4@Бронированный', 'expect:units:2', 'expect:hp:2:100',
+    'select:1', 'key:R', 'expect:mode:SkillAim', 'move:3,3', 'click:3,3', 'advance:3', 'expect:hp:2:90',
+    'select:2', 'expect:info:2:сопротив:no', 'expect:info:2:%:no', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.open', 'expect:editor:skill', 'expect:preview:0:физический',
+    'field:skill.e0.damageType=core.damage.slashing', 'expect:preview:0:режущий', 'ui:skill.save', 'expect:dirty:no', 'ui:skill.back',
+    'ui:dev.cat.tile', 'row:name=Жгучая поверхность', 'ui:dev.open', 'expect:tile-preview:1:тип урона — физический', 'ui:tile.back',
+    'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV21 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Бронированный', 'ui:dev.open', 'expect:editor:unit',
+    'expect:resistance:core.damage.slashing:50', 'expect:resistance:core.damage.piercing:-50', 'expect:unit-field:attackDamageType:core.damage.blunt',
+    'ui:unit.back', 'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.open', 'expect:preview:0:режущий', 'ui:skill.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV20
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -412,7 +437,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
+            $scenario = if ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }
+                        elseif ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
                         elseif ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
                         elseif ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
                         elseif ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
@@ -428,7 +454,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }
+            if ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
+            elseif ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }
             elseif ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }
             elseif ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }
             elseif ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }

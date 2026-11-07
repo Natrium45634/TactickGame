@@ -184,7 +184,48 @@ public sealed class ContentLibrary
             MapChecks.Validate(map, this, issues);
         }
 
+        if (item.Data is DamageTypeData type && type.Family.Length > 0 && Find(ContentTypeRegistry.DamageType, type.Family) is { Data: DamageTypeData family } familyItem)
+        {
+            // Spec part 5 §6.2: a subtype cannot change how its family is calculated.
+            if (family.Family.Length > 0)
+            {
+                issues.Error("data.family", $"«{familyItem.Name}» — подтип, а не семейство");
+            }
+            else if (family.Strategy != type.Strategy)
+            {
+                issues.Error("data.strategy", $"стратегия подтипа должна совпадать со стратегией семейства «{familyItem.Name}»");
+            }
+        }
+
+        if (item.Data is UnitData unit)
+        {
+            foreach (var r in unit.Resistances.Keys)
+            {
+                if (r != UnitData.GlobalResistance && Find(ContentTypeRegistry.DamageType, r) is { Data: DamageTypeData { Strategy: DamageTypeData.TrueLike } } bypass)
+                {
+                    issues.Warning($"data.resistances.{r}", $"«{bypass.Name}» обходит численные сопротивления — значение не действует");
+                }
+            }
+
+            foreach (var t in Items(ContentTypeRegistry.DamageType))
+            {
+                if (t.Data is not DamageTypeData { Strategy: DamageTypeData.ResistanceAffected } d)
+                {
+                    continue;
+                }
+
+                var familyId = d.Family.Length == 0 ? t.Id : d.Family;
+                var sum = Get(unit, UnitData.GlobalResistance) + Get(unit, familyId) + (familyId == t.Id ? 0 : Get(unit, t.Id));
+                if (sum > UnitData.MaxResistance || sum < UnitData.MinResistance)
+                {
+                    issues.Warning("data.resistances", $"итог сопротивления «{t.Name}» = {sum:0.##} % вне −500…+500 — в бою будет ограничен");
+                }
+            }
+        }
+
         return issues.Items;
+
+        static double Get(UnitData u, string key) => u.Resistances.TryGetValue(key, out var v) ? v : 0;
     }
 
     /// <summary>

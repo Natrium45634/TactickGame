@@ -740,7 +740,7 @@ public partial class MapEditor : Node3D, IContentEditor
             _inspector.Section("Эффекты типа (общие для всех его гексов)");
             foreach (var effect in data.Effects)
             {
-                _inspector.Text(HexTactics.Editor.Tiles.TilePreview.DescribeEffect(effect, _library.Registry.Effects), size: 12);
+                _inspector.Text(HexTactics.Editor.Tiles.TilePreview.DescribeEffect(effect, _library), size: 12);
             }
 
             _inspector.Hint("Гекс карты ссылается на тип: изменить эффекты — в редакторе гексов («Гексы»), они изменятся на всех картах.");

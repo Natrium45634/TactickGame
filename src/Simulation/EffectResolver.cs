@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using HexTactics.Core.Combat;
 using HexTactics.Core.Effects;
 using HexTactics.Core.Units;
 
@@ -25,6 +26,9 @@ public sealed record EffectInvocation(EffectSpec Effect, UnitState? Source, Unit
     /// applications. A periodic effect with a slice acts at once for that time instead of putting a status.
     /// </summary>
     public double Slice { get; init; }
+
+    /// <summary>Share of the strength for this target (spec part 5 §2.3: an area effect split among its targets); 1 = full.</summary>
+    public double Scale { get; init; } = 1;
 }
 
 /// <summary>Executes one registered effect type (spec part 4 §6.3, §9.2: only shared services resolve effects).</summary>
@@ -45,10 +49,11 @@ public sealed class EffectResolver
 {
     private readonly Dictionary<string, IEffectHandler> _handlers = new(StringComparer.Ordinal);
 
-    internal EffectResolver(GameState state, List<SimulationEvent> events)
+    internal EffectResolver(GameState state, List<SimulationEvent> events, DamageResolver damage)
     {
         State = state;
         Events = events;
+        Damage = damage;
         Register(new DamageEffectHandler());
         Register(new HealEffectHandler());
         Register(new ModifierEffectHandler(EffectTypes.Buff, +1));
@@ -57,6 +62,9 @@ public sealed class EffectResolver
     }
 
     internal GameState State { get; }
+
+    /// <summary>Every damage of an effect goes through the single damage resolver (spec part 5 §2.3).</summary>
+    public DamageResolver Damage { get; }
 
     internal List<SimulationEvent> Events { get; }
 
@@ -122,12 +130,12 @@ public sealed class EffectResolver
         _ => effect.Number("amount"),
     };
 
-    /// <summary>Shared health rule: lowers health (not below 0) and reports the damage; death is processed after the tick.</summary>
-    public void DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageKind kind)
-    {
-        var dealt = State.ApplyDamage(target.Id, Math.Max(0, amount));
-        Events.Add(new DamageApplied(tick, target.Id, source?.Id ?? target.Id, dealt, target.CurrentHealth, kind));
-    }
+    /// <summary>
+    /// Typed damage of an effect: one event through the damage resolver (resistances etc.); death is processed after the
+    /// tick. <paramref name="effect"/> gives the damage type and the penetration.
+    /// </summary>
+    public DamageResult DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageOrigin origin, string damageTypeId, double penetration = 0, bool periodic = false) =>
+        Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic), tick);
 
     /// <summary>Shared health rule: raises health, never above the maximum.</summary>
     public void Heal(UnitState target, UnitState? source, double amount, long tick, DamageKind kind)
@@ -158,8 +166,18 @@ internal sealed class DamageEffectHandler : IEffectHandler
 {
     public string Type => EffectTypes.Damage;
 
-    public void Apply(EffectInvocation invocation, EffectResolver resolver) =>
-        resolver.DealDamage(invocation.Target, invocation.Source, EffectResolver.Amount(invocation.Effect, invocation.Source), invocation.Tick, invocation.Origin == EffectSource.Tile ? DamageKind.Surface : DamageKind.Skill);
+    public void Apply(EffectInvocation invocation, EffectResolver resolver)
+    {
+        var e = invocation.Effect;
+        resolver.DealDamage(
+            invocation.Target,
+            invocation.Source,
+            EffectResolver.Amount(e, invocation.Source) * invocation.Scale,
+            invocation.Tick,
+            invocation.Origin == EffectSource.Tile ? DamageOrigin.Surface : DamageOrigin.Skill,
+            e.Text("damageType", DamageTypes.Untyped),
+            e.Number("penetration", 0));
+    }
 }
 
 /// <summary><c>heal</c>: fixed HP or a multiple of a source characteristic; capped at the target's maximum (§6.3 p.2).</summary>
@@ -191,12 +209,15 @@ internal sealed class ModifierEffectHandler : IEffectHandler
     {
         var e = invocation.Effect;
         var stat = e.Text("stat", Stats.MoveSpeed);
-        var percent = e.Text("mode", "percent") == "percent";
+        var resistance = stat == Stats.Resistance;
+        var percent = !resistance && e.Text("mode", "percent") == "percent";
+        var key = resistance ? e.Text("resistanceOf", ResistanceSet.Global) : ResistanceSet.Global;
         resolver.AddStatus(invocation, new StatusEffect
         {
-            Key = $"{invocation.SourceKey}|{Type}|{stat}",
+            Key = resistance ? $"{invocation.SourceKey}|{Type}|{stat}|{key}" : $"{invocation.SourceKey}|{Type}|{stat}",
             Kind = StatusKind.Modifier,
             Stat = stat,
+            ResistanceKey = key,
             Delta = percent ? 0 : _sign * e.Number("delta", 0),
             Percent = percent ? _sign * e.Number("percent", 0) : 0,
             Duration = Math.Max(0.01, e.Number("duration", 5)),
@@ -227,7 +248,7 @@ internal sealed class PeriodicEffectHandler : IEffectHandler
             }
             else
             {
-                resolver.DealDamage(invocation.Target, invocation.Source, amount, invocation.Tick, DamageKind.Surface);
+                resolver.DealDamage(invocation.Target, invocation.Source, amount, invocation.Tick, DamageOrigin.Surface, e.Text("damageType", DamageTypes.Direct), 0, periodic: true);
             }
 
             return;
@@ -237,6 +258,7 @@ internal sealed class PeriodicEffectHandler : IEffectHandler
             Key = $"{invocation.SourceKey}|{Type}|{(heals ? "heal" : "damage")}",
             Kind = StatusKind.Periodic,
             Heals = heals,
+            DamageTypeId = e.Text("damageType", DamageTypes.Untyped),
             AmountPerSecond = Math.Max(0, e.Number("perSecond", 5)),
             Duration = Math.Max(0.01, e.Number("duration", 3)),
             Source = invocation.Source?.Id,

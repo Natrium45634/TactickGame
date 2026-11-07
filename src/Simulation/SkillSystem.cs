@@ -103,14 +103,43 @@ internal sealed class SkillSystem : ISimulationSystem
             return hitNow;
         }
 
+        var due = new List<ScheduledHit>();
         while (!execution.Done && execution.Hits[execution.Next].Time <= execution.Elapsed + 1e-9)
         {
-            var h = execution.Hits[execution.Next];
+            due.Add(execution.Hits[execution.Next]);
             execution.Next++;
+        }
+
+        // Spec part 5 §2.3: an effect set to «split» shares its strength among the targets it hits in this wave (the same
+        // hit of the same effect over all its cells); targets are the units standing in the cells now.
+        var shares = new Dictionary<(int Hit, string Group), HashSet<UnitId>>();
+        foreach (var h in due)
+        {
             var (cell, config) = execution.Cells[h.CellIndex];
+            var spec = config.Effects[h.EffectIndex];
+            if (spec.Text("area", "full") == "split" && _state.UnitAt(cell) is { IsAlive: true } t && EffectResolver.Matches(spec, caster, t))
+            {
+                var key = (h.HitIndex, spec.Text("group", $"{h.CellIndex}.{h.EffectIndex}"));
+                if (!shares.TryGetValue(key, out var set))
+                {
+                    set = new HashSet<UnitId>();
+                    shares[key] = set;
+                }
+
+                set.Add(t.Id);
+            }
+        }
+
+        foreach (var h in due)
+        {
+            var (cell, config) = execution.Cells[h.CellIndex];
+            var spec = config.Effects[h.EffectIndex];
+            var scale = spec.Text("area", "full") == "split" && shares.TryGetValue((h.HitIndex, spec.Text("group", $"{h.CellIndex}.{h.EffectIndex}")), out var group) && group.Count > 0
+                ? 1.0 / group.Count
+                : 1.0;
             var targets = new List<UnitId>(1);
             if (_state.UnitAt(cell) is { IsAlive: true } target
-                && _resolver.Apply(new EffectInvocation(config.Effects[h.EffectIndex], caster, target, tick, EffectSource.Skill, execution.Action.SkillId)))
+                && _resolver.Apply(new EffectInvocation(spec, caster, target, tick, EffectSource.Skill, execution.Action.SkillId) { Scale = scale }))
             {
                 targets.Add(target.Id);
                 if (!hitNow.Contains(target.Id))

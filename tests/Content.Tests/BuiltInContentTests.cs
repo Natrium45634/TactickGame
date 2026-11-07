@@ -48,6 +48,21 @@ public class BuiltInContentTests
         Assert.Single(_library.Items(ContentTypeRegistry.Unit));
         Assert.Single(_library.Items(ContentTypeRegistry.Skill));
         Assert.Single(_library.Items(ContentTypeRegistry.Map));
+        Assert.Equal(8, _library.Items(ContentTypeRegistry.DamageType).Count);
+    }
+
+    [Fact]
+    public void Built_in_damage_types_match_the_core_catalog()
+    {
+        var catalog = RuntimeFactory.BuildDamageTypes(_library);
+        foreach (var (id, expected) in HexTactics.Core.Combat.DamageTypes.BuiltIn)
+        {
+            var item = _library.Find(ContentTypeRegistry.DamageType, id)!;
+            Assert.Equal(expected.Name, item.Name);
+            Assert.Equal((expected.FamilyId, expected.Strategy), (catalog[id].FamilyId, catalog[id].Strategy));
+        }
+
+        Assert.True(((DamageTypeData)_library.Find(ContentTypeRegistry.DamageType, "core.damage.untyped")!.Data).Legacy);
     }
 
     [Fact]

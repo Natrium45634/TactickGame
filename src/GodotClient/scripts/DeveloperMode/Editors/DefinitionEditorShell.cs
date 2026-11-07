@@ -262,6 +262,27 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
 
     protected void RequestTest(ContentItem copy) => TestRequested?.Invoke(copy);
 
+    /// <summary>
+    /// Choices of reference fields: the library objects of a kind (damage types for effects and attacks, spec part 5 §8);
+    /// legacy damage types are offered only where they are already used.
+    /// </summary>
+    protected IReadOnlyList<ChoiceOption> ReferenceOptions(string kind, string? current)
+    {
+        var list = new List<ChoiceOption>();
+        foreach (var item in Library.Items(kind))
+        {
+            if (item.Data is HexTactics.Content.Kinds.DamageTypeData { Legacy: true } && item.Id != current)
+            {
+                continue;
+            }
+
+            list.Add(new ChoiceOption(item.Id, item.IsBuiltIn ? item.Name : $"{item.Name} (свой)",
+                item.Data is HexTactics.Content.Kinds.DamageTypeData d ? Color.FromHtml(d.Color) : null));
+        }
+
+        return list;
+    }
+
     // ------------------------------------------------------------------ frame
 
     private void Undo()
@@ -377,9 +398,9 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
         bar.AddChild(UiKit.Button("← Каталог", () => CloseRequested?.Invoke(), ButtonKind.Flat, IdPrefix + "back", "Вернуться в каталог (спросит про несохранённые изменения)"));
 
         _left = SidePanel(360, out var left);
-        Inspector = new Inspector(left);
+        Inspector = new Inspector(left) { References = ReferenceOptions };
         _right = SidePanel(340, out var right);
-        Preview = new Inspector(right);
+        Preview = new Inspector(right) { References = ReferenceOptions };
 
         _bottom = UiKit.Panel(UiKit.PanelColor, 8);
         _root.AddChild(_bottom);

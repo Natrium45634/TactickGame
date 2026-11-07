@@ -149,7 +149,20 @@ public sealed class TileData : IContentData
         return data;
     }
 
-    public IEnumerable<ContentRef> References() => System.Array.Empty<ContentRef>();
+    public IEnumerable<ContentRef> References()
+    {
+        var seen = new HashSet<ContentRef>();
+        foreach (var e in Effects)
+        {
+            foreach (var r in e.References())
+            {
+                if (seen.Add(r))
+                {
+                    yield return r;
+                }
+            }
+        }
+    }
 
     public void Validate(ValidationContext context)
     {

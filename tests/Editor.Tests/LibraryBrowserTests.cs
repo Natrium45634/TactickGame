@@ -33,7 +33,7 @@ public class LibraryBrowserTests
         var browser = new LibraryBrowser(ContentTestKit.Library(null)) { Kind = ContentTypeRegistry.Tile };
         var rows = browser.Rows();
         Assert.Equal(7, rows.Count);
-        Assert.All(rows, r => Assert.True(r.IsBuiltIn && r.SchemaVersion == 1 && r.Revision == 1 && r.Errors == 0));
+        Assert.All(rows, r => Assert.True(r.IsBuiltIn && r.SchemaVersion == 2 && r.Revision == 1 && r.Errors == 0));
         Assert.Equal(rows.Select(r => r.Name).OrderBy(n => n, System.StringComparer.CurrentCultureIgnoreCase), rows.Select(r => r.Name));
 
         browser.Search = "БАЗА";

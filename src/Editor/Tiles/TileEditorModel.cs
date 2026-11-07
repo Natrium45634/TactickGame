@@ -93,12 +93,36 @@ public sealed class TileEditorModel : DefinitionEditorModel
     }
 
     /// <summary>What the type does, in words (spec part 4 §7.2: «5 HP/с → за 2 с 10 HP»).</summary>
-    public IReadOnlyList<string> Preview() => TilePreview.Describe(Tile, Library.Registry.Effects);
+    public IReadOnlyList<string> Preview() => TilePreview.Describe(Tile, Library);
 }
 
 /// <summary>Human-readable rules of a tile type (shared by the tile and map editors and tests).</summary>
 public static class TilePreview
 {
+    /// <summary>The rules with the names of damage types (spec part 5 §8.2).</summary>
+    public static IReadOnlyList<string> Describe(TileData tile, ContentLibrary library)
+    {
+        var lines = new List<string>(Describe(tile, library.Registry.Effects));
+        for (var i = 0; i < tile.Effects.Count; i++)
+        {
+            lines[i + (lines.Count - tile.Effects.Count)] = DescribeEffect(tile.Effects[i], library);
+        }
+
+        return lines;
+    }
+
+    public static string DescribeEffect(EffectData effect, ContentLibrary library)
+    {
+        var text = DescribeEffect(effect, library.Registry.Effects);
+        var damaging = effect.Type == "damage" || (effect.Type == "periodic" && (effect.Get("kind") as string ?? "damage") == "damage");
+        if (damaging && effect.ToSpec(library.Registry.Effects, EffectContext.Tile).Text("damageType") is { Length: > 0 } type)
+        {
+            text = text.TrimEnd('.') + $"; тип урона — {library.Find("damage_type", type)?.Name.ToLowerInvariant() ?? type}.";
+        }
+
+        return text;
+    }
+
     public static IReadOnlyList<string> Describe(TileData tile, EffectTypeRegistry registry)
     {
         var lines = new List<string>

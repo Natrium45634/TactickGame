@@ -27,6 +27,28 @@ public sealed class EffectData
 
     public EffectData Clone() => new(Type, Params);
 
+    /// <summary>Parameters that refer to library objects, by parameter key → kind (spec part 5: damage types).</summary>
+    public static IReadOnlyDictionary<string, string> ReferenceKeys { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["damageType"] = "damage_type",
+        ["resistanceOf"] = "damage_type",
+    };
+
+    /// <summary>Value of <c>resistanceOf</c> meaning «every resistance-affected type» (not a library object).</summary>
+    public const string GlobalResistance = "global";
+
+    /// <summary>Library objects this effect refers to (checked, exported with it).</summary>
+    public IEnumerable<ContentRef> References()
+    {
+        foreach (var (key, kind) in ReferenceKeys)
+        {
+            if (Get(key) is string id && id.Length > 0 && id != GlobalResistance)
+            {
+                yield return new ContentRef(kind, id);
+            }
+        }
+    }
+
     public object? Get(string key) => Params.TryGetValue(key, out var v) ? v : null;
 
     public void Set(string key, object? value)

@@ -28,15 +28,19 @@ public sealed class GameSimulation
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
         AddSystem(new MovementSystem(State, _events, Settings, Layout));
-        Effects = new EffectResolver(State, _events);
+        Damage = new DamageResolver(State, _events, Settings);
+        Effects = new EffectResolver(State, _events, Damage);
         AddSystem(new SkillSystem(State, _events, Settings, Effects));
-        AddSystem(new AttackSystem(State, _events, Settings));
+        AddSystem(new AttackSystem(State, _events, Settings, Damage));
         AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
     }
 
     /// <summary>The single executor of configured effects (spec part 4 §6.3).</summary>
     public EffectResolver Effects { get; }
+
+    /// <summary>The single damage calculation (spec part 5 §5).</summary>
+    public DamageResolver Damage { get; }
 
     /// <summary>Map-plane geometry of the simulation (hex size 1): unit positions and motion curves use it.</summary>
     public HexLayout Layout { get; } = new(1.0);

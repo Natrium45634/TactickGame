@@ -25,9 +25,11 @@ internal sealed class AttackSystem : ISimulationSystem
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
     private readonly SimulationSettings _settings;
+    private readonly DamageResolver _damage;
 
-    public AttackSystem(GameState state, List<SimulationEvent> events, SimulationSettings settings)
+    public AttackSystem(GameState state, List<SimulationEvent> events, SimulationSettings settings, DamageResolver damage)
     {
+        _damage = damage;
         _state = state;
         _events = events;
         _settings = settings;
@@ -137,9 +139,31 @@ internal sealed class AttackSystem : ISimulationSystem
         }
 
         combat.AttackTimer -= unit.Stats.AttackInterval;
-        var dealt = _state.ApplyDamage(target.Id, unit.Stats.AttackPower);
         combat.HitsDelivered++;
-        _events.Add(new DamageApplied(tick, target.Id, unit.Id, dealt, target.CurrentHealth, DamageKind.NormalAttack));
+        Hit(unit, target, tick);
+    }
+
+    /// <summary>
+    /// One normal attack (spec part 5 §2.3, §8.3): a typed damage event per target — the target only, or every enemy of the
+    /// attacker within the area radius of the target's hex at this moment (stable id order), full or split strength.
+    /// </summary>
+    private void Hit(UnitState unit, UnitState target, long tick)
+    {
+        var stats = unit.Stats;
+        var targets = new List<UnitState> { target };
+        if (stats.AttackAreaRadius > 0)
+        {
+            targets = _state.Units
+                .Where(u => u.IsAlive && u.Side != unit.Side && u.Cell.DistanceTo(target.Cell) <= stats.AttackAreaRadius)
+                .OrderBy(u => u.Id.Value)
+                .ToList();
+        }
+
+        var amount = stats.AttackAreaSplit && targets.Count > 0 ? stats.AttackPower / targets.Count : stats.AttackPower;
+        foreach (var t in targets)
+        {
+            _damage.Resolve(_damage.Create(unit.Id, t.Id, stats.AttackDamageTypeId, amount, DamageOrigin.NormalAttack), tick);
+        }
     }
 
     /// <summary>Chooses the nearest free reachable hex within range of the target and walks there (a detour step).</summary>

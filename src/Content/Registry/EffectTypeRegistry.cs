@@ -122,6 +122,35 @@ public sealed class EffectTypeRegistry
         new FieldOption(Stats.MoveSpeed, "скорость движения"),
         new FieldOption(Stats.AttackPower, "сила атаки (Attack Power)"),
         new FieldOption(Stats.AttackRate, "скорость атак"),
+        new FieldOption(Stats.Resistance, "сопротивление (процентные пункты)"),
+    };
+
+    /// <summary>The built-in physical type: the default damage type of new damage effects (spec part 5 §8.1).</summary>
+    public const string DefaultDamageType = "core.damage.physical";
+
+    /// <summary>A damage type of the library (spec part 5 §8: every damage effect has one).</summary>
+    public static FieldSchema DamageTypeField(string fallback = DefaultDamageType) => Param("damageType", "Тип урона", FieldKind.Reference, fallback) with
+    {
+        RefKind = "damage_type",
+        Hint = "Природа урона: от неё зависят сопротивления цели. Форма (одна цель / область) задаётся отдельно.",
+    };
+
+    private static FieldSchema AreaField() => Param("area", "Область: сила", FieldKind.Choice, "full") with
+    {
+        Options = new[] { new FieldOption("full", "полная сила по каждой цели"), new FieldOption("split", "разделить силу между целями") },
+        Hint = "«Разделить»: сила этого эффекта в одном ударе делится поровну между всеми целями, которых он задел.",
+    };
+
+    private static FieldSchema PenetrationField() => Param("penetration", "Пробитие сопротивления", FieldKind.Number, 0.0) with
+    {
+        Min = 0, Max = 500, Unit = "п.п.", Advanced = true,
+        Hint = "Снижает только положительное сопротивление цели на столько процентных пунктов; иммунитет не пробивает.",
+    };
+
+    private static FieldSchema ResistanceOfField() => Param("resistanceOf", "Сопротивление к", FieldKind.Reference, "global") with
+    {
+        RefKind = "damage_type", SpecialValue = "global", SpecialLabel = "всем сопротивляемым типам",
+        VisibleWhen = o => Is(o, "stat", Stats.Resistance),
     };
 
     public static IReadOnlyList<FieldOption> StackingOptions { get; } = new[]
@@ -138,6 +167,8 @@ public sealed class EffectTypeRegistry
     {
         "formula" => "fixed",
         "mode" => "percent",
+        "stat" => Stats.MoveSpeed,
+        "kind" => "damage",
         _ => null,
     };
 
@@ -204,15 +235,19 @@ public sealed class EffectTypeRegistry
                 Param("formula", "Расчёт", FieldKind.Choice, "fixed") with { Options = amountFormula, Hint = "150 % — это 1,5 × сила атаки, а не доля здоровья цели." },
                 Param("amount", "Урон", FieldKind.Number, 10.0) with { Min = 0, Max = 10000, Unit = "HP", VisibleWhen = o => Is(o, "formula", "fixed") },
                 Param("multiplier", "Множитель силы атаки", FieldKind.Number, 1.0) with { Min = 0, Max = 50, Percent = true, VisibleWhen = o => Is(o, "formula", "attack") },
+                DamageTypeField(),
                 Hits(),
                 Interval(),
                 Targets("enemies"),
+                AreaField(),
+                PenetrationField(),
             })
         {
             TileFields = new[]
             {
                 Trigger(stay: false),
                 Param("amount", "Урон", FieldKind.Number, 10.0) with { Min = 0, Max = 10000, Unit = "HP" },
+                DamageTypeField(),
                 Sides(),
             },
         });
@@ -248,12 +283,13 @@ public sealed class EffectTypeRegistry
         })
         {
             var stat = Param("stat", "Характеристика", FieldKind.Choice, Stats.MoveSpeed) with { Options = StatOptions };
-            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") } };
-            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => Is(o, "mode", "percent") };
-            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с или урон." };
+            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") }, VisibleWhen = o => !Is(o, "stat", Stats.Resistance) };
+            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => !Is(o, "stat", Stats.Resistance) && Is(o, "mode", "percent") };
+            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Is(o, "stat", Stats.Resistance) || Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с, урон; для сопротивления — процентные пункты (итог R ограничен −500…+500)." };
+            var resistanceOf = ResistanceOfField();
             registry.Register(new EffectTypeDescriptor(type, label, text, EffectContext.Skill | EffectContext.Tile, new[]
             {
-                stat, mode, percent, delta,
+                stat, resistanceOf, mode, percent, delta,
                 Duration(5),
                 Stacking(),
                 Hits(),
@@ -261,7 +297,7 @@ public sealed class EffectTypeRegistry
                 Targets(targets),
             })
             {
-                TileFields = new[] { Trigger(stay: false), stat, mode, percent, delta, Duration(5), Stacking(), Sides() },
+                TileFields = new[] { Trigger(stay: false), stat, resistanceOf, mode, percent, delta, Duration(5), Stacking(), Sides() },
             });
         }
 
@@ -274,6 +310,7 @@ public sealed class EffectTypeRegistry
             {
                 Param("kind", "Что", FieldKind.Choice, "damage") with { Options = new[] { new FieldOption("damage", "урон"), new FieldOption("heal", "лечение") } },
                 Param("perSecond", "В секунду", FieldKind.Number, 5.0) with { Min = 0, Max = 10000, Unit = "HP/с" },
+                DamageTypeField() with { VisibleWhen = o => Is(o, "kind", "damage") },
                 Duration(3),
                 Stacking(),
                 Targets("enemies"),
@@ -284,6 +321,7 @@ public sealed class EffectTypeRegistry
                 Trigger(stay: true),
                 Param("kind", "Что", FieldKind.Choice, "damage") with { Options = new[] { new FieldOption("damage", "урон"), new FieldOption("heal", "лечение") } },
                 Param("perSecond", "В секунду", FieldKind.Number, 5.0) with { Min = 0, Max = 10000, Unit = "HP/с" },
+                DamageTypeField() with { VisibleWhen = o => Is(o, "kind", "damage") },
                 Duration(3) with { VisibleWhen = NotStay, Hint = "После входа/выхода эффект действует столько игровых секунд (статус)." },
                 Stacking() with { VisibleWhen = NotStay },
                 Sides(),

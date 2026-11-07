@@ -38,6 +38,12 @@ public static class Stats
     public const string AttackPower = "attackPower";
     public const string AttackRate = "attackRate";
 
+    /// <summary>
+    /// A resistance in percentage points (spec part 5 §4.6: «R_temporary»); <see cref="StatusEffect.ResistanceKey"/> names
+    /// the layer — <c>global</c>, a family or a subtype id.
+    /// </summary>
+    public const string Resistance = "resistance";
+
     /// <summary>Safe lower limits of debuffed values: a unit never stops completely or attacks infinitely slowly.</summary>
     public const double MinMoveSpeed = 0.1;
     public const double MinAttackRate = 0.1;
@@ -70,6 +76,12 @@ public sealed class StatusEffect
     /// <summary>True: a periodic status heals; false: it damages.</summary>
     public bool Heals { get; init; }
 
+    /// <summary>Damage type of a damaging periodic status (spec part 5 §4.6: DoT goes through the damage resolver).</summary>
+    public string DamageTypeId { get; init; } = HexTactics.Core.Combat.DamageTypes.Untyped;
+
+    /// <summary>Resistance layer changed by a <see cref="Stats.Resistance"/> modifier: <c>global</c>, a family or a type id.</summary>
+    public string ResistanceKey { get; init; } = HexTactics.Core.Combat.ResistanceSet.Global;
+
     public required double Duration { get; init; }
 
     public double Remaining { get; internal set; }
@@ -79,7 +91,7 @@ public sealed class StatusEffect
     public StatusEffect Copy() => new()
     {
         Key = Key, Kind = Kind, Stat = Stat, Delta = Delta, Percent = Percent, AmountPerSecond = AmountPerSecond, Heals = Heals,
-        Duration = Duration, Remaining = Remaining, Source = Source,
+        Duration = Duration, Remaining = Remaining, Source = Source, DamageTypeId = DamageTypeId, ResistanceKey = ResistanceKey,
     };
 }
 

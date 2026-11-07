@@ -49,7 +49,7 @@ public class TileEditorTests
         Assert.Equal("all", effect.Get("sides"));
         Assert.Null(effect.Get("targets")); // skill-only fields are not on tiles
         var preview = editor.Preview();
-        Assert.Contains("Пока юнит на гексе: урон 5 HP за игровую секунду нахождения (за 2 с — 10 HP) — все юниты.", preview);
+        Assert.Contains("Пока юнит на гексе: урон 5 HP за игровую секунду нахождения (за 2 с — 10 HP) — все юниты; тип урона — физический.", preview);
         Assert.DoesNotContain(editor.Validate(), i => i.IsError);
     }
 

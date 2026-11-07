@@ -30,7 +30,7 @@ public class RegistryTests
             Id = "status", Title = "Статусы", Singular = "статус", Folder = "statuses", Order = 50, Available = false,
             Read = (o, i) => TileData.Read(o, i), CreateDefault = () => new TileData(),
         });
-        Assert.Equal(5, registry.All.Count);
+        Assert.Equal(6, registry.All.Count); // maps, units, skills, tiles, damage types (hidden until «Механики»), the new one
         Assert.Equal(4, registry.Visible.Count);
         Assert.Throws<InvalidOperationException>(() => registry.Register(registry.Find("map")!));
     }

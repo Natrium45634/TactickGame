@@ -188,11 +188,48 @@ public partial class UnitEditor : DefinitionEditorShell
             });
         }
 
+        inspector.Section("Сопротивления");
+        inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип, от −500 до +500 %; сверх 100 % урон просто 0 — лечения и отражения сам по себе не даёт.");
+        foreach (var row in _model.ResistanceRows())
+        {
+            var label = (row.Depth > 0 ? "    " : string.Empty) + row.Label;
+            if (row.Bypass)
+            {
+                inspector.ReadOnly(label, "обходит численные сопротивления (особые правила — v0.22.0)");
+                continue;
+            }
+
+            var key = row.Key;
+            inspector.LineText($"{IdPrefix}res.{key}", label + ", %", Inspector.Num(row.Value), v =>
+            {
+                if (_model.SetResistance(key, v) is { } issue)
+                {
+                    Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+                    Stamp++;
+                }
+            }, Explain(row));
+        }
+
+        inspector.Text(_model.ResistanceSummary(), size: 12);
+
         inspector.Section("Внешний вид");
         foreach (var field in UnitData.Fields.Where(f => f.Section == HexTactics.Content.Schema.FieldSections.Appearance))
         {
             inspector.Field(IdPrefix, field, unit, ApplyField);
         }
+    }
+
+    /// <summary>The row's value in words; for a layered row also the total with «все типы» and the family.</summary>
+    private string? Explain(ResistanceRow row)
+    {
+        var total = row.Key == UnitData.GlobalResistance ? row.Value : _model.EffectiveResistance(row.Key);
+        if (row.Value == 0 && total == 0)
+        {
+            return null;
+        }
+
+        var own = row.Value == 0 ? "своего значения нет" : UnitEditorModel.Explain(row.Value);
+        return total == row.Value ? own : $"{own} · итог: {UnitEditorModel.Explain(total)}";
     }
 
     protected override void BuildPreview(Inspector preview)
@@ -221,6 +258,14 @@ public partial class UnitEditor : DefinitionEditorShell
                         null => "none",
                         _ => value.ToString() ?? string.Empty,
                     };
+                    ok = actual == a[2];
+                    return true;
+                }
+
+            case "resistance":
+                {
+                    // expect:resistance:<type id or global>:<effective value> — global + family + subtype of this unit
+                    actual = (a[1] == UnitData.GlobalResistance ? _model.ResistanceRows()[0].Value : _model.EffectiveResistance(a[1])).ToString("0.##", CultureInfo.InvariantCulture);
                     ok = actual == a[2];
                     return true;
                 }

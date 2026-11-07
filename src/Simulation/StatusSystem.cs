@@ -49,7 +49,7 @@ internal sealed class StatusSystem : ISimulationSystem
                 }
                 else
                 {
-                    _resolver.DealDamage(unit, source, amount, context.Tick, DamageKind.Periodic);
+                    _resolver.DealDamage(unit, source, amount, context.Tick, HexTactics.Core.Combat.DamageOrigin.Status, status.DamageTypeId, 0, periodic: true);
                 }
             }
 

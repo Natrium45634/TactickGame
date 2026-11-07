@@ -1,6 +1,14 @@
 {
   "comment": "Built-in content of the game (read-only). The client loads exactly these files; Content.Tests checks the list against the folders.",
   "files": [
+    "damage_types/core.damage.blunt.json",
+    "damage_types/core.damage.direct.json",
+    "damage_types/core.damage.magical.json",
+    "damage_types/core.damage.physical.json",
+    "damage_types/core.damage.piercing.json",
+    "damage_types/core.damage.slashing.json",
+    "damage_types/core.damage.true.json",
+    "damage_types/core.damage.untyped.json",
     "maps/core.map.prototype.json",
     "skills/core.skill.linear_strike.json",
     "tiles/core.tile.deploy.json",

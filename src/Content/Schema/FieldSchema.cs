@@ -76,6 +76,14 @@ public sealed partial record FieldSchema
 
     public bool ReadOnly { get; init; }
 
+    /// <summary>
+    /// For a reference field: an extra value that is not a library object (e.g. <c>global</c> — «все сопротивляемые типы»),
+    /// shown as <see cref="SpecialLabel"/>.
+    /// </summary>
+    public string? SpecialValue { get; init; }
+
+    public string? SpecialLabel { get; init; }
+
     /// <summary>Maximum length of a text field in characters (text elements); null — unlimited.</summary>
     public int? MaxLength { get; init; }
 
@@ -156,7 +164,7 @@ public sealed partial record FieldSchema
             case FieldKind.Color:
                 return IsColor(value as string) ? null : ContentIssue.Error(path, $"«{Label}»: ожидается цвет #RRGGBB");
             case FieldKind.Reference:
-                return value is string id && ContentIds.IsValid(id) ? null : ContentIssue.Error(path, $"«{Label}»: неверная ссылка «{value}»");
+                return value is string id && (ContentIds.IsValid(id) || (SpecialValue is not null && id == SpecialValue)) ? null : ContentIssue.Error(path, $"«{Label}»: неверная ссылка «{value}»");
             case FieldKind.ReferenceList:
                 {
                     if (value is not IEnumerable<string> ids)

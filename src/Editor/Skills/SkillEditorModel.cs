@@ -298,7 +298,7 @@ public sealed class SkillEditorModel : DefinitionEditorModel
             var offset = cell.Offset;
             var where = offset == default ? "сам юнит" : $"{offset.DistanceTo(default)} гекс. {DirectionWord(offset)}";
             var effects = Skill.EffectsOf(cell);
-            var text = effects.Count == 0 ? "нет эффектов" : string.Join("; ", effects.Select(e => EffectPreview.Describe(e, PreviewAttackPower, PreviewMaxHealth, Library.Registry.Effects)));
+            var text = effects.Count == 0 ? "нет эффектов" : string.Join("; ", effects.Select(e => EffectPreview.Describe(e, PreviewAttackPower, PreviewMaxHealth, Library)));
             lines.Add($"{Show(offset)} ({where}{(cell.Inherits ? (cell.Overrides.Count > 0 ? ", эффекты навыка с изменениями" : ", эффекты навыка") : ", свои эффекты")}): {text}");
         }
 
@@ -350,6 +350,24 @@ public sealed class SkillEditorModel : DefinitionEditorModel
 /// <summary>An effect in words with numbers for a given caster (shared by the skill and unit editors).</summary>
 public static class EffectPreview
 {
+    /// <summary>The effect with the name of its damage type (spec part 5 §8.1: «тип — режущий»).</summary>
+    public static string Describe(EffectData effect, double attackPower, double maxHealth, ContentLibrary library)
+    {
+        var text = Describe(effect, attackPower, maxHealth, library.Registry.Effects);
+        var damaging = effect.Type == "damage" || (effect.Type == "periodic" && (effect.Get("kind") as string ?? "damage") == "damage");
+        if (damaging && effect.ToSpec(library.Registry.Effects).Text("damageType") is { Length: > 0 } type)
+        {
+            text += $" · {library.Find("damage_type", type)?.Name.ToLowerInvariant() ?? type}";
+        }
+
+        if (effect.Type == "damage" && (effect.Get("area") as string) == "split")
+        {
+            text += " · сила делится между целями";
+        }
+
+        return text;
+    }
+
     public static string Describe(EffectData effect, double attackPower, double maxHealth, EffectTypeRegistry registry)
     {
         var s = effect.ToSpec(registry);

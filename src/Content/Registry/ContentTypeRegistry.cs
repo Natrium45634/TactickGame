@@ -59,6 +59,7 @@ public sealed class ContentTypeRegistry
     public const string Unit = "unit";
     public const string Skill = "skill";
     public const string Tile = "tile";
+    public const string DamageType = "damage_type";
 
     private readonly List<ContentKind> _kinds = new();
 
@@ -117,18 +118,28 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
+            SchemaVersion = 2, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
             Id = Skill, Title = "Навыки", Singular = "навык", Folder = "skills", Order = 30,
             Description = "Область действия на гексах и эффекты каждой клетки.",
             Read = (o, i) => SkillData.Read(o, i), CreateDefault = () => new SkillData(),
+            SchemaVersion = 2, Migrate = Migrations.Skill,
         });
         registry.Register(new ContentKind
         {
             Id = Tile, Title = "Гексы", Singular = "тип гекса", Folder = "tiles", Order = 40,
             Description = "Типы местности: проходимость, высота, цвет, эффекты.",
             Read = (o, i) => TileData.Read(o, i), CreateDefault = () => new TileData(), Fields = TileData.Fields,
+            SchemaVersion = 2, Migrate = Migrations.Tile,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = DamageType, Title = "Типы урона", Singular = "тип урона", Folder = "damage_types", Order = 50,
+            Description = "Физический (колющий, режущий, дробящий), магический, чистый и свои типы: семейство и стратегия расчёта.",
+            Read = (o, i) => DamageTypeData.Read(o, i), CreateDefault = () => new DamageTypeData(),
+            Available = false, // the «Механики» category of the catalog arrives with its editors (spec part 5, v0.23.0)
         });
         return registry;
     }

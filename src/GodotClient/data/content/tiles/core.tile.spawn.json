@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.tile.spawn",
   "kind": "tile",
   "name": "Край / зона появления",

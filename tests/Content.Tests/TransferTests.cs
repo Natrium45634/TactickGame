@@ -426,7 +426,7 @@ public class TransferTests
         public string Type => "pulse";
 
         public void Apply(EffectInvocation invocation, EffectResolver resolver) =>
-            resolver.DealDamage(invocation.Target, invocation.Source, invocation.Effect.Number("amount") * 2, invocation.Tick, DamageKind.Skill);
+            resolver.DealDamage(invocation.Target, invocation.Source, invocation.Effect.Number("amount") * 2, invocation.Tick, HexTactics.Core.Combat.DamageOrigin.Skill, HexTactics.Core.Combat.DamageTypes.Untyped);
     }
 
     [Fact]

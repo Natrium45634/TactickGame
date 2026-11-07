@@ -123,6 +123,12 @@ public sealed class Inspector
         return spin;
     }
 
+    /// <summary>
+    /// Library objects a reference field can point to, by kind (set by the editor: damage types etc.). Without it reference
+    /// fields are left to the editor's own controls.
+    /// </summary>
+    public Func<string, string?, IReadOnlyList<ChoiceOption>>? References { get; set; }
+
     public OptionButton Choice(string id, string label, IReadOnlyList<ChoiceOption> options, string selected, Action<string> commit, string? hint = null)
     {
         var option = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, ClipText = true }, id);
@@ -238,6 +244,23 @@ public sealed class Inspector
                 return LongText(id, label, value as string ?? string.Empty, v => apply(field, v), field.Hint);
             case HexTactics.Content.Schema.FieldKind.Text:
                 return LineText(id, label, value as string ?? string.Empty, v => apply(field, v), field.Hint);
+            case HexTactics.Content.Schema.FieldKind.Reference when References is not null && field.RefKind is { } refKind:
+                {
+                    var options = new List<ChoiceOption>();
+                    if (field.SpecialValue is { } special)
+                    {
+                        options.Add(new ChoiceOption(special, field.SpecialLabel ?? special));
+                    }
+
+                    var current = value as string ?? string.Empty;
+                    options.AddRange(References(refKind, current));
+                    if (current.Length > 0 && options.TrueForAll(o => o.Value != current))
+                    {
+                        options.Add(new ChoiceOption(current, $"{current} (нет в списке)"));
+                    }
+
+                    return Choice(id, label, options, current, v => apply(field, v), field.Hint);
+                }
             default:
                 return null; // references are edited by the editor's own list controls
         }

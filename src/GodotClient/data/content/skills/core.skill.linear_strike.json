@@ -1,15 +1,20 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.skill.linear_strike",
   "kind": "skill",
   "name": "Линейный удар",
-  "description": "Две клетки перед юнитом: 20 урона один раз каждому врагу (ТЗ ч.3 §5). С v0.18.0 — обычные данные редактора навыков: эффект «урон», фиксированные 20 HP, одно попадание без задержки.",
-  "revision": 1,
+  "description": "Две клетки перед юнитом: 20 режущего урона один раз каждому врагу (ТЗ ч.3 §5). С v0.18.0 — обычные данные редактора навыков, с v0.21.0 — тип урона «Режущий».",
+  "revision": 2,
   "modified": "2026-11-07T00:00:00Z",
   "tags": [
     "встроенный"
   ],
-  "references": [],
+  "references": [
+    {
+      "kind": "damage_type",
+      "id": "core.damage.slashing"
+    }
+  ],
   "data": {
     "icon": "✦",
     "anchor": "caster",
@@ -26,7 +31,8 @@
             "amount": 20,
             "hits": 1,
             "interval": 0,
-            "targets": "enemies"
+            "targets": "enemies",
+            "damageType": "core.damage.slashing"
           }
         ]
       },
@@ -40,7 +46,8 @@
             "amount": 20,
             "hits": 1,
             "interval": 0,
-            "targets": "enemies"
+            "targets": "enemies",
+            "damageType": "core.damage.slashing"
           }
         ]
       }

@@ -96,6 +96,7 @@ public static class UiText
         {
             "attackPower" => "атака",
             "attackRate" => "темп атак",
+            "resistance" => "защита", // spec part 5 §7.4: no numbers or types of resistances in the game UI
             _ => "скорость",
         };
         return (down ? "↓ " : "↑ ") + what;

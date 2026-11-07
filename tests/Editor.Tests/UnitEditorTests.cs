@@ -129,7 +129,7 @@ public class UnitEditorTests
         editor.TrySetField(F("attackRate"), "2");
         editor.AddSkill("core.skill.linear_strike");
         var preview = editor.CombatPreview();
-        Assert.Contains("15 урона за удар × 2 удар/с ≈ 30 урона/с", preview[0]);
+        Assert.Contains("15 урона за удар (физический) × 2 удар/с ≈ 30 урона/с", preview[0]);
         Assert.Contains(preview, l => l.Contains("«Линейный удар»") && l.Contains("урон 20 врагам"));
     }
 
@@ -144,5 +144,51 @@ public class UnitEditorTests
         Assert.NotEqual("core.unit.operative", editor.Item.Id);
         Assert.Equal(100, ((UnitData)library.Find(ContentTypeRegistry.Unit, "core.unit.operative")!.Data).MaxHealth);
         Assert.False(editor.IsDirty);
+    }
+
+    [Fact]
+    public void P36_a_tank_with_physical_plus_50_is_made_in_the_unit_editor_alone()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var editor = NewUnit(library);
+        Assert.Null(editor.SetResistance("core.damage.physical", "50"));
+        Assert.True(editor.Save().Ok);
+        var saved = (UnitData)ContentTestKit.Library(dir.Path).Find(ContentTypeRegistry.Unit, editor.Item.Id)!.Data;
+        Assert.Equal(50, saved.Resistances["core.damage.physical"]);
+        Assert.Equal(50, editor.EffectiveResistance("core.damage.slashing"));
+        Assert.Contains("Сильные стороны: ", editor.ResistanceSummary());
+        Assert.Contains("режущий +50 %", editor.ResistanceSummary());
+    }
+
+    [Fact]
+    public void P10_P12_resistance_input_is_checked_and_explained_by_the_formula()
+    {
+        var editor = NewUnit(ContentTestKit.Library(null));
+        Assert.NotNull(editor.SetResistance("core.damage.piercing", "501"));
+        Assert.NotNull(editor.SetResistance("core.damage.piercing", "-500,5"));
+        Assert.NotNull(editor.SetResistance("core.damage.piercing", "много"));
+        Assert.NotNull(editor.SetResistance("user_damage_none", "10"));
+        Assert.Empty(editor.Unit.Resistances);
+        Assert.Null(editor.SetResistance("core.damage.piercing", "-100"));
+        Assert.Null(editor.SetResistance("global", "12,345"));
+        Assert.Equal(12.35, editor.Unit.Resistances["global"]); // 0.01 of a point
+        Assert.True(editor.Undo());
+        Assert.False(editor.Unit.Resistances.ContainsKey("global"));
+        Assert.Equal("−50 % = 150 % входящего урона", UnitEditorModel.Explain(-50));
+        Assert.Equal("+75 % = 25 % входящего урона", UnitEditorModel.Explain(75));
+        Assert.Equal("+300 % = 0 урона без дополнительных реакций (сверх 100 % не лечит)", UnitEditorModel.Explain(300));
+        Assert.DoesNotContain("лечит", UnitEditorModel.Explain(100));
+    }
+
+    [Fact]
+    public void The_resistance_table_lists_global_families_and_subtypes_and_hides_legacy_types()
+    {
+        var editor = NewUnit(ContentTestKit.Library(null));
+        var rows = editor.ResistanceRows();
+        Assert.Equal(new[] { "global", "core.damage.physical", "core.damage.blunt", "core.damage.piercing", "core.damage.slashing", "core.damage.magical", "core.damage.true" }, rows.Select(r => r.Key));
+        Assert.True(rows.Single(r => r.Key == "core.damage.true").Bypass);
+        Assert.Equal(1, rows.Single(r => r.Key == "core.damage.piercing").Depth);
+        Assert.Equal("Сопротивлений нет: весь урон проходит полностью.", editor.ResistanceSummary());
     }
 }

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "core.damage.true",
+  "kind": "damage_type",
+  "name": "Чистый",
+  "description": "Игнорирует численные сопротивления и плоское снижение; явный иммунитет и щиты продолжают действовать.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный"
+  ],
+  "references": [],
+  "data": {
+    "family": "",
+    "strategy": "true_like",
+    "tags": [],
+    "color": "#F0F0F0",
+    "icon": ""
+  }
+}

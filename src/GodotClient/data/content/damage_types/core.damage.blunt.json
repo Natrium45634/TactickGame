@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "core.damage.blunt",
+  "kind": "damage_type",
+  "name": "Дробящий",
+  "description": "Физический подтип: удар, импульс, раздавливание. Отдельная строка сопротивления.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный"
+  ],
+  "references": [
+    {
+      "kind": "damage_type",
+      "id": "core.damage.physical"
+    }
+  ],
+  "data": {
+    "family": "core.damage.physical",
+    "strategy": "resistance_affected",
+    "tags": [],
+    "color": "#A8A8C0",
+    "icon": ""
+  }
+}

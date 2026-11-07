@@ -44,6 +44,9 @@ public sealed record GameContent(
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<TileEffect>> TileEffects { get; init; } = new Dictionary<string, IReadOnlyList<TileEffect>>();
 
+    /// <summary>Damage types of the library by id (spec part 5 §2) for <c>SimulationSettings.DamageTypes</c>.</summary>
+    public IReadOnlyDictionary<string, DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
+
     /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
     public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
 }
@@ -191,18 +194,51 @@ public static class RuntimeFactory
         }
 
         var cells = new List<SkillCell>(skill.Cells.Count);
-        foreach (var cell in skill.Cells)
+        for (var c = 0; c < skill.Cells.Count; c++)
         {
+            var cell = skill.Cells[c];
             var specs = new List<EffectSpec>();
-            foreach (var effect in skill.EffectsOf(cell))
+            var own = skill.EffectsOf(cell);
+            for (var e = 0; e < own.Count; e++)
             {
-                specs.Add(effect.ToSpec(effects));
+                // «group»: one effect of the skill over all its cells — base effect i, or a cell's own effect (spec part 5
+                // §2.3: an area effect set to «split» shares its strength among the targets of its group in one hit).
+                var spec = own[e].ToSpec(effects);
+                var values = new Dictionary<string, object>(spec.Params, StringComparer.Ordinal) { ["group"] = cell.Inherits ? $"base.{e}" : $"cell.{c}.{e}" };
+                specs.Add(new EffectSpec(spec.Type, values));
             }
 
             cells.Add(new SkillCell(cell.Offset, specs));
         }
 
         return new SkillDefinition { Id = skillItem.Id, Name = skillItem.Name, Icon = skill.Icon, Cells = cells };
+    }
+
+    /// <summary>The damage type catalog of the library: a type without a family is a family itself (spec part 5 §2.2).</summary>
+    public static IReadOnlyDictionary<string, DamageTypeDefinition> BuildDamageTypes(ContentLibrary library)
+    {
+        var catalog = new Dictionary<string, DamageTypeDefinition>(StringComparer.Ordinal);
+        foreach (var (id, builtIn) in HexTactics.Core.Combat.DamageTypes.BuiltIn)
+        {
+            catalog[id] = builtIn; // the fundamental built-ins exist even if a library misses a file
+        }
+
+        foreach (var item in library.Items(ContentTypeRegistry.DamageType))
+        {
+            if (item.Data is not DamageTypeData d || (item.HasErrors && !item.IsBuiltIn))
+            {
+                continue;
+            }
+
+            catalog[item.Id] = new DamageTypeDefinition(
+                item.Id,
+                item.Name,
+                d.Family.Length == 0 ? item.Id : d.Family,
+                d.Strategy == DamageTypeData.TrueLike ? DamageStrategy.TrueLike : DamageStrategy.ResistanceAffected,
+                d.Tags.ToArray());
+        }
+
+        return catalog;
     }
 
     public static UnitTemplate BuildUnit(ContentItem unitItem)
@@ -219,6 +255,10 @@ public static class RuntimeFactory
             AttackRatePerSecond = unit.AttackRate,
             AttackPower = unit.AttackPower,
             NormalAttackRangeHex = unit.AttackRange,
+            AttackDamageTypeId = unit.AttackDamageType,
+            AttackAreaRadius = unit.AttackAreaRadius,
+            AttackAreaSplit = unit.AttackAreaSplit,
+            Resistances = new ResistanceSet(unit.Resistances),
         };
         return new UnitTemplate(unitItem.Id, unitItem.Name, stats, unit.Skills.ToArray(), unit.Side == "enemy" ? Side.Enemy : Side.Player, unit.Color, unit.Scale);
     }
@@ -259,6 +299,7 @@ public static class RuntimeFactory
             skills[item.Id] = BuildSkill(item, library.Registry.Effects);
         }
 
+        var damageTypes = BuildDamageTypes(library);
         var tiles = new Dictionary<string, TileVisual>(StringComparer.Ordinal);
         var tileEffects = new Dictionary<string, IReadOnlyList<TileEffect>>(StringComparer.Ordinal);
         var tileItems = new List<ContentItem>(library.Items(ContentTypeRegistry.Tile));
@@ -350,7 +391,7 @@ public static class RuntimeFactory
             roster.Add((GameContent.OperativeNames[i], template.ToProfile()));
         }
 
-        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster, TileEffects = tileEffects };
+        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster, TileEffects = tileEffects, DamageTypes = damageTypes };
     }
 
     private static UnitTemplate SkillFirst(UnitTemplate template, string skillId) =>

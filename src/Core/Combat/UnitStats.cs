@@ -24,6 +24,21 @@ public sealed record UnitStats
     /// <summary>PROTOTYPE_DEFAULT (spec part 3 §3, §11): normal attack range in hex steps (1 = adjacent).</summary>
     public int NormalAttackRangeHex { get; init; } = 1;
 
+    /// <summary>Damage type of the normal attack (spec part 5 §8.3); legacy units hit untyped.</summary>
+    public string AttackDamageTypeId { get; init; } = DamageTypes.Untyped;
+
+    /// <summary>
+    /// Area of the normal attack (spec part 5 §2.1, §8.3): 0 — the target only; N — every enemy of the attacker within N
+    /// hexes of the target's hex (the target included).
+    /// </summary>
+    public int AttackAreaRadius { get; init; }
+
+    /// <summary>For an area attack: false — full strength to every target (default); true — the strength is split among them.</summary>
+    public bool AttackAreaSplit { get; init; }
+
+    /// <summary>Base numeric resistances (spec part 5 §3); temporary changes come from statuses.</summary>
+    public ResistanceSet Resistances { get; init; } = ResistanceSet.Empty;
+
     /// <summary>Minimal game time between two normal attacks.</summary>
     public double AttackInterval => 1.0 / AttackRatePerSecond;
 

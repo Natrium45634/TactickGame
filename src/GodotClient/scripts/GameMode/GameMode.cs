@@ -170,6 +170,7 @@ public partial class GameMode : Node3D
                 DefaultSkillSet = _content.DefaultUnit.Skills,
                 DefaultUnitId = _content.DefaultUnit.Id,
                 TileEffects = _content.TileEffects,
+                DamageTypes = _content.DamageTypes,
             },
             _content.Squad.Count > 0
                 ? new RosterState(System.Linq.Enumerable.Select(_content.Squad, s => (s.Name, (HexTactics.Core.Units.UnitProfile?)s.Profile)))
@@ -1119,14 +1120,21 @@ public partial class GameMode : Node3D
 
             case "spawn":
                 {
+                    // spawn:enemy:c,r@Unit name — a debug unit of a library definition (tests of resistances etc.)
                     var a = arg.Split(':', 2);
+                    var at = a.Length > 1 ? a[1].Split('@', 2) : new[] { string.Empty };
                     var request = a[0] switch
                     {
                         "base" => SpawnRequest.AtBase(),
-                        "zone" => SpawnRequest.AtZone(int.Parse(a[1], CultureInfo.InvariantCulture)),
-                        "enemy" => SpawnRequest.AtCell(ParseHex(a[1]), HexTactics.Core.Units.Side.Enemy, HexDirection.South),
-                        _ => SpawnRequest.AtCell(ParseHex(a[1])),
+                        "zone" => SpawnRequest.AtZone(int.Parse(at[0], CultureInfo.InvariantCulture)),
+                        "enemy" => SpawnRequest.AtCell(ParseHex(at[0]), HexTactics.Core.Units.Side.Enemy, HexDirection.South),
+                        _ => SpawnRequest.AtCell(ParseHex(at[0])),
                     };
+                    if (at.Length > 1 && System.Linq.Enumerable.FirstOrDefault(_content.Units.Values, u => u.Name == at[1]) is { } template)
+                    {
+                        request = request with { Profile = template.ToProfile() };
+                    }
+
                     SpawnFromPanel(request);
                     return 2;
                 }
@@ -1391,6 +1399,17 @@ public partial class GameMode : Node3D
                 actual = _sim.State.Roster.Find(int.Parse(a[1], CultureInfo.InvariantCulture))?.State.ToString() ?? "none";
                 ok = actual == a[2];
                 break;
+            case "info":
+                {
+                    // expect:info:ID:text:yes|no — the unit card of the game shows (or must not show) the text
+                    var unit = Unit(1);
+                    var info = unit is null ? string.Empty : UiText.UnitInfo(unit, null, _sim.IsPaused, _sim.State.Roster.FindByUnit(unit.Id)?.Name);
+                    var has = info.Contains(a[2], StringComparison.Ordinal);
+                    actual = has ? "yes" : "no";
+                    ok = actual == a[3];
+                    break;
+                }
+
             case "lifecycle":
                 actual = Unit(1)?.Lifecycle.ToString() ?? "none";
                 ok = actual == a[2];
