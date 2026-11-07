@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "core.profile.armored",
+  "kind": "resistance_profile",
+  "name": "Бронированный",
+  "description": "Пример набора (ТЗ ч.5 §6.1): физический урон +50 %. Значения — временные (PROTOTYPE_DEFAULT), не баланс.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный",
+    "пример"
+  ],
+  "references": [
+    {
+      "kind": "damage_type",
+      "id": "core.damage.physical"
+    }
+  ],
+  "data": {
+    "parent": "",
+    "values": {
+      "core.damage.physical": 50
+    }
+  }
+}

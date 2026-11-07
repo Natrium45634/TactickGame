@@ -851,6 +851,34 @@ v0.24.0. **Статус:** принято.
 `core.rule.fire_convert_25_reflect_75` — только демонстрация и тестовые данные; элементальная система и её матрица не
 вводятся. Встроенные объекты только читаются; изменения сохраняются копией с новым ID. **Статус:** принято.
 
+## D-132. «Механики» в каталоге (ч.5 §6.1)
+Виды `damage_type`, `defense_rule`, `resistance_profile` — категории реестра с `Group = mechanics`. Каталог показывает
+«Механики» одной позицией: её первый экран строится из категорий группы (три крупные кнопки с описанием и числом
+объектов), разделы доступны и ссылками под ней (их ID для автоматизации прежние: `dev.cat.<вид>`). Отдельного моря вкладок
+нет; список, инспектор и редакторы — те же, что у остальных категорий. **Статус:** принято.
+
+## D-133. Наборы сопротивлений и слои (ч.5 §6.4)
+`resistance_profile`: `parent` (набор-основа или пусто) и `values` (ключи как у юнита). Значения набора = значения основы,
+перекрытые своими по ключу (цепочка до 8, цикл — ошибка проверки и остановка разрешения). Юнит: `resistanceProfiles` по
+порядку — более поздний набор перекрывает ранний по ключу; `resistances` — свои значения юнита поверх всех наборов (явный 0
+допустим). Итог — базовые значения формулы D-122 (слои «все типы + семейство + подтип» складываются как раньше). Набор —
+данные, а не боевой механизм; изменение набора действует на всех юнитов после сохранения. **Статус:** принято.
+
+## D-134. Конструктор типа урона (ч.5 §6.2)
+Новый тип создаётся только от явной основы: подтип физического/магического (стратегия — семейства), подтип чистого
+(`true_like`) или самостоятельное семейство (стратегия выбирается явно). ID — из пространства пользователя
+(`damage_type_<hex>`), встроенные `core.*` не меняются. Подтип не может стать семейством подтипа; семейство с подтипами
+не меняет стратегию (иначе их расчёт поменялся бы молча) — нужен новый тип; смена стратегии у семейства с пользователями
+показывает предупреждение и число затронутых объектов. **Статус:** принято.
+
+## D-135. Песочница «Проверить на ударе» (ч.5 §6.5)
+`HitSandbox` (Editor) строит одноразовую `GameSimulation` на пустом поле 7 × 7: цель в центре, атакующий рядом (или в трёх
+гексах), враги и союзники цели на соседних гексах; здоровье цели выставляется прямым уроном до удара. Удар — тот же
+`DamageResolver`, с трассировкой (`DamageResolver.Trace`, `RuleCheck`: применено / другой тип / тег / нет R / R ниже порога
+/ здоровье не ниже / перезарядка / иммунитет / нечего делать). Для правила — второй прогон без него. Черновики редакторов
+передаются как есть; библиотека, файлы и матч не затрагиваются (проверено тестом по `ContentLibrary.Version`). **Статус:**
+принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -977,3 +1005,11 @@ v0.24.0. **Статус:** принято.
   DefenseRuleEditorModel` (`DefenseRuleTemplates`, `DefenseRuleSummary`), `UnitEditorModel.AvailableRules/AddRule/RemoveRule/
   RuleSummaries/AddShield/RemoveShield/SetShield`. Клиент: `DefenseRuleEditor`, секция «Особые защиты и реакции»,
   `CombatView.Note`. Регрессионный сценарий v0.22 = v0.21 + правила, щиты и огонь 300 % в бою.
+- **v0.23.0: «Механики».** Content: вид `resistance_profile` (`ResistanceProfileData`, `ResistanceLayers`, `ResistanceValue`),
+  `UnitData.ResistanceProfiles`, схема `unit` 4, `ContentKind.Group`, `ContentTypeRegistry.ResistanceProfile/MechanicsGroup`,
+  «Типы урона» видимы, `RuntimeFactory.DamageTypeOf`, `RuntimeFactory.BuildUnit` — сопротивления по слоям. Simulation:
+  `DamageResolver.Trace`, `RuleCheck`, `RuleOutcome`. Editor (ссылается на Simulation): `Mechanics/HitSandbox`
+  (`SandboxSetup`, `SandboxRun`, `SandboxReport`), `ResistanceTable`, `DamageTypeEditorModel`, `ResistanceProfileEditorModel`;
+  `ResistanceRow.Source/Own/Inherited`, `UnitEditorModel.Layered/ResetResistance/AvailableProfiles/AddProfile/RemoveProfile/
+  SaveAsProfile/ProfileSummary`. Клиент: экран «Механики» каталога, `DamageTypeEditor`, `ResistanceProfileEditor`,
+  `SandboxPanel`. Регрессионный сценарий v0.23 = v0.22 + «Механики».

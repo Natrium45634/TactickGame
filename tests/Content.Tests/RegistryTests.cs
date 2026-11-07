@@ -17,8 +17,9 @@ public class RegistryTests
     public void The_default_catalog_has_maps_units_skills_tiles_in_this_order()
     {
         var registry = ContentTypeRegistry.CreateDefault();
-        Assert.Equal(new[] { "Карты", "Юниты", "Навыки", "Гексы", "Правила защиты" }, registry.Visible.Select(k => k.Title));
-        Assert.Equal(new[] { "maps", "units", "skills", "tiles", "defense_rules" }, registry.Visible.Select(k => k.Folder));
+        Assert.Equal(new[] { "Карты", "Юниты", "Навыки", "Гексы", "Типы урона", "Правила защиты", "Наборы сопротивлений" }, registry.Visible.Select(k => k.Title));
+        Assert.Equal(new[] { "maps", "units", "skills", "tiles", "damage_types", "defense_rules", "resistance_profiles" }, registry.Visible.Select(k => k.Folder));
+        Assert.Equal(new[] { "damage_type", "defense_rule", "resistance_profile" }, registry.Visible.Where(k => k.Group == ContentTypeRegistry.MechanicsGroup).Select(k => k.Id));
     }
 
     [Fact]
@@ -30,8 +31,8 @@ public class RegistryTests
             Id = "status", Title = "Статусы", Singular = "статус", Folder = "statuses", Order = 50, Available = false,
             Read = (o, i) => TileData.Read(o, i), CreateDefault = () => new TileData(),
         });
-        Assert.Equal(7, registry.All.Count); // maps, units, skills, tiles, damage types (hidden until «Механики»), defense rules, the new one
-        Assert.Equal(5, registry.Visible.Count);
+        Assert.Equal(8, registry.All.Count); // maps, units, skills, tiles, damage types, defense rules, resistance sets, the new one
+        Assert.Equal(7, registry.Visible.Count);
         Assert.Throws<InvalidOperationException>(() => registry.Register(registry.Find("map")!));
     }
 

@@ -34,6 +34,7 @@ public partial class DefenseRuleEditor : DefinitionEditorShell
     private string _template = "complex";
     private string _newAction = string.Empty;
     private bool _advanced;
+    private SandboxPanel? _sandbox;
 
     public override string Kind => ContentTypeRegistry.DefenseRule;
 
@@ -196,10 +197,20 @@ public partial class DefenseRuleEditor : DefinitionEditorShell
             }
         }
 
+        // «Проверить на ударе» (spec part 5 §6.5): the unsaved rule on the chosen target, compared with the same hit without it.
+        _sandbox ??= new SandboxPanel(IdPrefix, new HexTactics.Editor.Mechanics.SandboxSetup
+        {
+            DamageTypeId = _model.Rule.DamageType is { Length: > 0 } t && t != DefenseRuleData.AnyType ? t : HexTactics.Content.Registry.EffectTypeRegistry.DefaultDamageType,
+        });
+        _sandbox.Build(preview, Library, setup => HexTactics.Editor.Mechanics.HitSandbox.Run(Library, setup, _model.Item), () => Stamp++);
+
+        preview.Section("Как читать");
         preview.Hint("Порядок расчёта: иммунитет → поглощение/лечение/отражение из силы удара → сопротивление → плоское снижение и предел → щиты → HP → ответный удар и вампиризм. " +
                      "На поле: синий — защитник, красный — атакующий, оранжевый — куда уходит отражение по площади.");
         preview.Hint("В режиме «Играть» правила и числа не показываются; видны только «невосприимчив» и «щит».");
     }
+
+    protected override SandboxPanel? Sandbox => _sandbox;
 
     // ------------------------------------------------------------------ automation
 

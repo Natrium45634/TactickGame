@@ -230,15 +230,22 @@ public static class RuntimeFactory
                 continue;
             }
 
-            catalog[item.Id] = new DamageTypeDefinition(
-                item.Id,
-                item.Name,
-                d.Family.Length == 0 ? item.Id : d.Family,
-                d.Strategy == DamageTypeData.TrueLike ? DamageStrategy.TrueLike : DamageStrategy.ResistanceAffected,
-                d.Tags.ToArray());
+            catalog[item.Id] = DamageTypeOf(item);
         }
 
         return catalog;
+    }
+
+    /// <summary>The runtime definition of one damage type object (also an unsaved one, for previews).</summary>
+    public static DamageTypeDefinition DamageTypeOf(ContentItem item)
+    {
+        var d = (DamageTypeData)item.Data;
+        return new DamageTypeDefinition(
+            item.Id,
+            item.Name,
+            d.Family.Length == 0 ? item.Id : d.Family,
+            d.Strategy == DamageTypeData.TrueLike ? DamageStrategy.TrueLike : DamageStrategy.ResistanceAffected,
+            d.Tags.ToArray());
     }
 
     /// <summary>
@@ -284,7 +291,7 @@ public static class RuntimeFactory
             AttackDamageTypeId = unit.AttackDamageType,
             AttackAreaRadius = unit.AttackAreaRadius,
             AttackAreaSplit = unit.AttackAreaSplit,
-            Resistances = new ResistanceSet(unit.Resistances),
+            Resistances = new ResistanceSet(ResistanceLayers.Values(unit, library)),
             DefenseRules = rules,
             Shields = shields,
         };

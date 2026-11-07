@@ -12,5 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="../Core/HexTactics.Core.csproj" />
     <ProjectReference Include="../Content/HexTactics.Content.csproj" />
+    <!-- The «Проверить на ударе» sandbox runs a throwaway simulation (spec part 5 §6.5); Simulation has no Godot either. -->
+    <ProjectReference Include="../Simulation/HexTactics.Simulation.csproj" />
   </ItemGroup>
 </Project>

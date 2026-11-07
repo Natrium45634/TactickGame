@@ -34,6 +34,8 @@ public partial class UnitEditor : DefinitionEditorShell
     private string? _previewSkill;
     private string? _pick;
     private string _ruleFilter = string.Empty;
+    private string? _profilePick;
+    private SandboxPanel? _sandbox;
     private string? _rulePick;
 
     private static readonly HexCoord Center = HexCoord.FromOffset(3, 3);
@@ -192,6 +194,7 @@ public partial class UnitEditor : DefinitionEditorShell
 
         inspector.Section("Сопротивления");
         inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип, от −500 до +500 %; сверх 100 % урон просто 0 — лечения и отражения сам по себе не даёт.");
+        BuildProfiles(inspector);
         foreach (var row in _model.ResistanceRows())
         {
             var label = (row.Depth > 0 ? "    " : string.Empty) + row.Label;
@@ -210,6 +213,10 @@ public partial class UnitEditor : DefinitionEditorShell
                     Stamp++;
                 }
             }, Explain(row));
+            if (row.Own && unit.ResistanceProfiles.Count > 0)
+            {
+                inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Вернуть значение набора", () => _model.ResetResistance(key), ButtonKind.Flat, "Убрать своё значение юнита — действует значение набора (или 0)");
+            }
         }
 
         inspector.Text(_model.ResistanceSummary(), size: 12);
@@ -221,6 +228,46 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             inspector.Field(IdPrefix, field, unit, ApplyField);
         }
+    }
+
+    /// <summary>
+    /// Resistance sets of the unit (spec part 5 §6.4): applied by reference, in order (a later set wins per key); the rows below
+    /// say what is inherited and what is the unit's own; «Сохранить как набор» stores the current values for other units.
+    /// </summary>
+    private void BuildProfiles(Inspector inspector)
+    {
+        var unit = _model.Unit;
+        for (var i = 0; i < unit.ResistanceProfiles.Count; i++)
+        {
+            var id = unit.ResistanceProfiles[i];
+            var item = Library.Find(ContentTypeRegistry.ResistanceProfile, id);
+            var row = inspector.Row();
+            var title = new Label { Text = $"Набор: {item?.Name ?? "✗ " + id}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            row.AddChild(title);
+            row.AddChild(UiKit.Button("✕", () => _model.RemoveProfile(id), ButtonKind.Normal, $"{IdPrefix}profile.{i}.remove", "Убрать набор у юнита (сам набор остаётся в библиотеке)"));
+            inspector.Text(UnitEditorModel.ProfileSummary(Library, id), dim: true, size: 12);
+        }
+
+        var choices = _model.AvailableProfiles();
+        if (choices.Count > 0)
+        {
+            _profilePick = choices.Any(c => c.Id == _profilePick) ? _profilePick! : choices[0].Id;
+            inspector.Choice(IdPrefix + "profile.pick", "Набор сопротивлений", choices.Select(c => new ChoiceOption(c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (свой)"))).ToList(), _profilePick,
+                v => { _profilePick = v; Stamp++; }, choices.FirstOrDefault(c => c.Id == _profilePick)?.Summary);
+            inspector.Button(IdPrefix + "profile.add", "＋ Применить набор", () =>
+            {
+                if (_profilePick is not null && _model.AddProfile(_profilePick) is { } refusal)
+                {
+                    Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+                }
+            }, ButtonKind.Normal, "Значения набора — основа; свои значения юнита их перекрывают");
+        }
+
+        inspector.Button(IdPrefix + "profile.save", "Сохранить как набор", () =>
+        {
+            var result = _model.SaveAsProfile($"{_model.Item.Name}: защита");
+            Message(result.Ok ? $"Сохранён набор «{result.Item!.Name}» — его можно применить к другим юнитам." : "✗ " + result.Message, result.Ok ? null : HexTactics.Content.Model.IssueSeverity.Error);
+        }, ButtonKind.Flat, "Текущие сопротивления юнита — новым набором для других юнитов (юнит не меняется)");
     }
 
     /// <summary>
@@ -309,12 +356,17 @@ public partial class UnitEditor : DefinitionEditorShell
     private string? Explain(ResistanceRow row)
     {
         var total = row.Key == UnitData.GlobalResistance ? row.Value : _model.EffectiveResistance(row.Key);
-        if (row.Value == 0 && total == 0)
+        if (row.Value == 0 && total == 0 && row.Source is null)
         {
             return null;
         }
 
-        var own = row.Value == 0 ? "своего значения нет" : UnitEditorModel.Explain(row.Value);
+        var own = row.Value == 0 && !row.Own ? "значения нет" : UnitEditorModel.Explain(row.Value);
+        if (row.Source is { } source)
+        {
+            own = $"{source}: {own}";
+        }
+
         return total == row.Value ? own : $"{own} · итог: {UnitEditorModel.Explain(total)}";
     }
 
@@ -327,7 +379,13 @@ public partial class UnitEditor : DefinitionEditorShell
         }
 
         preview.Hint("Зона на поле — навык, выбранный в списке (для взгляда на север).");
+
+        // «Проверить на ударе» against this unit as edited (unsaved values, sets, rules and shields).
+        _sandbox ??= new SandboxPanel(IdPrefix, new HexTactics.Editor.Mechanics.SandboxSetup(), fixedTarget: true);
+        _sandbox.Build(preview, Library, setup => HexTactics.Editor.Mechanics.HitSandbox.Run(Library, setup, unitDraft: _model.Item), () => Stamp++);
     }
+
+    protected override SandboxPanel? Sandbox => _sandbox;
 
     protected override bool Expect(string[] a, out string actual, out bool ok)
     {
@@ -360,6 +418,20 @@ public partial class UnitEditor : DefinitionEditorShell
                 actual = string.Join(",", unit.Skills.Select(s => Library.Find(ContentTypeRegistry.Skill, s)?.Name ?? s));
                 ok = a[1] == unit.Skills.Count.ToString(CultureInfo.InvariantCulture) || actual == a[1];
                 return true;
+            case "profiles":
+                // expect:profiles:<N or names joined by ,>
+                actual = string.Join(",", unit.ResistanceProfiles.Select(p => Library.Find(ContentTypeRegistry.ResistanceProfile, p)?.Name ?? p));
+                ok = a[1] == unit.ResistanceProfiles.Count.ToString(CultureInfo.InvariantCulture) || actual == a[1];
+                return true;
+            case "resistance-source":
+                {
+                    // expect:resistance-source:<key>:own|inherited|none
+                    var row = _model.ResistanceRows().FirstOrDefault(r => r.Key == a[1]);
+                    actual = row is null || row.Source is null ? "none" : row.Own ? "own" : "inherited";
+                    ok = actual == a[2];
+                    return true;
+                }
+
             case "rules":
                 // expect:rules:N or expect:rules:<names joined by ,>
                 actual = string.Join(",", _model.RuleSummaries().Select(r => r.Name));

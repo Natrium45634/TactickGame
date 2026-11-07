@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text.Json.Nodes;
 using HexTactics.Content.Model;
 using HexTactics.Content.Schema;
@@ -40,6 +41,14 @@ public sealed class UnitData : IContentData
     /// (a family or a subtype). Missing keys are 0. Visible only in the developer mode.
     /// </summary>
     public SortedDictionary<string, double> Resistances { get; } = new(System.StringComparer.Ordinal);
+
+    /// <summary>
+    /// Resistance sets applied to the unit by reference, in order (spec part 5 §6.4 <c>resistanceProfileRefs</c>); a later set
+    /// replaces an earlier one per key, <see cref="Resistances"/> are the unit's own values over them.
+    /// </summary>
+    public List<string> ResistanceProfiles { get; } = new();
+
+    public const int MaxResistanceProfiles = 8;
 
     /// <summary>References to defense rules of the library (spec part 5 §6.4, §8.3 <c>defenseRuleRefs</c>), no copies.</summary>
     public List<string> DefenseRules { get; } = new();
@@ -159,6 +168,7 @@ public sealed class UnitData : IContentData
             ["attackAreaRadius"] = AttackAreaRadius,
             ["attackAreaSplit"] = AttackAreaSplit,
             ["resistances"] = ResistancesJson(),
+            ["resistanceProfiles"] = Strings(ResistanceProfiles),
             ["defenseRules"] = Strings(DefenseRules),
             ["shields"] = ShieldsJson(),
             ["side"] = Side,
@@ -203,6 +213,7 @@ public sealed class UnitData : IContentData
             issues.Error("resistances", "ожидается объект «тип урона → процент»");
         }
 
+        data.ResistanceProfiles.AddRange(JsonFields.TextList(obj, "resistanceProfiles", issues, string.Empty));
         data.DefenseRules.AddRange(JsonFields.TextList(obj, "defenseRules", issues, string.Empty));
         if (JsonFields.Array(obj, "shields", issues, string.Empty) is { } shields)
         {
@@ -276,6 +287,11 @@ public sealed class UnitData : IContentData
             }
         }
 
+        foreach (var p in ResistanceProfiles)
+        {
+            yield return new ContentRef("resistance_profile", p);
+        }
+
         foreach (var r in DefenseRules)
         {
             yield return new ContentRef("defense_rule", r);
@@ -312,6 +328,14 @@ public sealed class UnitData : IContentData
                 var value = Resistances[key];
                 Resistances.Remove(key);
                 Resistances[renamed] = value;
+            }
+        }
+
+        for (var i = 0; i < ResistanceProfiles.Count; i++)
+        {
+            if (newIds.TryGetValue(new ContentRef("resistance_profile", ResistanceProfiles[i]), out var profile))
+            {
+                ResistanceProfiles[i] = profile;
             }
         }
 
@@ -369,6 +393,16 @@ public sealed class UnitData : IContentData
             }
         }
 
+        if (ResistanceProfiles.Count > MaxResistanceProfiles)
+        {
+            context.Issues.Error("resistanceProfiles", $"не больше {MaxResistanceProfiles} наборов сопротивлений");
+        }
+
+        if (ResistanceProfiles.Distinct(System.StringComparer.Ordinal).Count() != ResistanceProfiles.Count)
+        {
+            context.Issues.Warning("resistanceProfiles", "набор сопротивлений указан дважды");
+        }
+
         if (DefenseRules.Count > MaxDefenseRules)
         {
             context.Issues.Error("defenseRules", $"не больше {MaxDefenseRules} правил защиты");
@@ -420,6 +454,7 @@ public sealed class UnitData : IContentData
             copy.Resistances[key] = value;
         }
 
+        copy.ResistanceProfiles.AddRange(ResistanceProfiles);
         copy.DefenseRules.AddRange(DefenseRules);
         foreach (var shield in Shields)
         {

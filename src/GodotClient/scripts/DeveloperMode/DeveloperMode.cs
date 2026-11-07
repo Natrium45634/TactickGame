@@ -46,6 +46,11 @@ public partial class DeveloperMode : Node
     private OptionButton _sort = null!;
     private Tree _tree = null!;
     private Label _listTitle = null!;
+    private Control _listPanel = null!;
+    private Control _hubPanel = null!;
+    private VBoxContainer _hubItems = null!;
+    private Button? _groupButton;
+    private bool _hub;
     private VBoxContainer _details = null!;
     private VBoxContainer _messageList = null!;
     private Button _create = null!;
@@ -74,9 +79,9 @@ public partial class DeveloperMode : Node
 
     public string? SelectedId => _selectedId;
 
-    public string Category => _browser.Kind;
+    public string Category => _hub ? HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup : _browser.Kind;
 
-    public int RowCount => _browser.Rows().Count;
+    public int RowCount => _hub ? 0 : _browser.Rows().Count;
 
     public IReadOnlyList<(string Text, IssueSeverity? Severity)> Messages => _messages;
 
@@ -110,6 +115,18 @@ public partial class DeveloperMode : Node
         Editors["defense_rule"] = (item, draft) =>
         {
             var editor = new DefenseRuleEditor { Name = "DefenseRuleEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["damage_type"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.DamageTypeEditor { Name = "DamageTypeEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["resistance_profile"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.ResistanceProfileEditor { Name = "ResistanceProfileEditor" };
             editor.Configure(_library, item, draft);
             return editor;
         };
@@ -147,7 +164,8 @@ public partial class DeveloperMode : Node
         body.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         column.AddChild(body);
         body.AddChild(BuildCategories());
-        body.AddChild(BuildList());
+        body.AddChild(_listPanel = BuildList());
+        body.AddChild(_hubPanel = BuildHub());
         body.AddChild(BuildDetails());
         column.AddChild(BuildMessages());
 
@@ -234,12 +252,34 @@ public partial class DeveloperMode : Node
         foreach (var entry in _browser.Categories())
         {
             var kind = entry.Kind.Id;
-            var button = UiKit.Button(entry.Kind.Title, () => SelectCategory(kind), ButtonKind.Flat, "dev.cat." + kind, entry.Kind.Description, 15);
+            var grouped = entry.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup;
+            if (grouped && _groupButton is null)
+            {
+                // Spec part 5 §6.1: «Механики» is one entry with its own first screen; its sections stay one click away below it.
+                _groupButton = UiKit.Button("Механики", () => SelectCategory(HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup), ButtonKind.Flat, "dev.cat.mechanics",
+                    "Типы урона, правила защиты, наборы сопротивлений и проверка на ударе", 15);
+                _groupButton.Alignment = HorizontalAlignment.Left;
+                _groupButton.ToggleMode = true;
+                _groupButton.CustomMinimumSize = new Vector2(0, 38);
+                column.AddChild(_groupButton);
+            }
+
+            var button = UiKit.Button(entry.Kind.Title, () => SelectCategory(kind), ButtonKind.Flat, "dev.cat." + kind, entry.Kind.Description, grouped ? 13 : 15);
             button.Alignment = HorizontalAlignment.Left;
             button.ToggleMode = true;
-            button.CustomMinimumSize = new Vector2(0, 38);
+            button.CustomMinimumSize = new Vector2(0, grouped ? 30 : 38);
             _categoryButtons[kind] = button;
-            column.AddChild(button);
+            if (grouped)
+            {
+                var indent = new MarginContainer();
+                indent.AddThemeConstantOverride("margin_left", 18);
+                indent.AddChild(button);
+                column.AddChild(indent);
+            }
+            else
+            {
+                column.AddChild(button);
+            }
         }
 
         column.AddChild(new HSeparator());
@@ -330,6 +370,52 @@ public partial class DeveloperMode : Node
         return panel;
     }
 
+    /// <summary>
+    /// The first screen of «Механики» (spec part 5 §6.1): three large actions — damage types, defense rules, resistance sets —
+    /// built from the registry, so a section registered later appears here too.
+    /// </summary>
+    private Control BuildHub()
+    {
+        var panel = UiKit.Panel(UiKit.PanelColor, 16);
+        panel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        panel.Visible = false;
+        var column = UiKit.Column(14);
+        panel.AddChild(column);
+        column.AddChild(UiKit.Label("Механики", 20));
+        column.AddChild(UiKit.Label("Из чего складывается урон и защита. Числа и правила отсюда видны только в режиме «Разработчик»; в игре — лишь последствия боя.", 13, dim: true, wrap: true));
+        _hubItems = UiKit.Column(12);
+        column.AddChild(_hubItems);
+        return panel;
+    }
+
+    private void FillHub()
+    {
+        foreach (var child in _hubItems.GetChildren())
+        {
+            child.QueueFree();
+        }
+
+        foreach (var entry in _browser.Categories().Where(c => c.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup))
+        {
+            var kind = entry.Kind.Id;
+            var card = UiKit.Panel(UiKit.Background, 12);
+            var row = UiKit.Row(14);
+            card.AddChild(row);
+            var open = UiKit.Button(entry.Kind.Title, () => SelectCategory(kind), ButtonKind.Primary, "mech." + kind, entry.Kind.Description, 17);
+            open.CustomMinimumSize = new Vector2(260, 56);
+            row.AddChild(open);
+            var text = UiKit.Column(4);
+            text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            text.AddChild(UiKit.Label(entry.Kind.Description, 13, wrap: true));
+            var own = _library.Items(kind).Count(i => !i.IsBuiltIn);
+            text.AddChild(UiKit.Label($"объектов: {entry.Count} · своих: {own}" + (entry.WithErrors > 0 ? $" · с ошибками: {entry.WithErrors}" : string.Empty), 12, dim: true));
+            row.AddChild(text);
+            _hubItems.AddChild(card);
+        }
+
+        _hubItems.AddChild(UiKit.Label("«Проверить на ударе» — в редакторе правила, типа урона и юнита: один удар в отдельной песочнице с разбором по стадиям; библиотека, матч и файлы не меняются.", 12, dim: true, wrap: true));
+    }
+
     private Control BuildDetails()
     {
         var panel = UiKit.Panel(UiKit.PanelColor, 14);
@@ -376,7 +462,12 @@ public partial class DeveloperMode : Node
 
     private void SelectCategory(string kind)
     {
-        _browser.Kind = kind;
+        _hub = kind == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup;
+        if (!_hub)
+        {
+            _browser.Kind = kind;
+        }
+
         _selectedId = null;
         Refresh();
     }
@@ -410,7 +501,21 @@ public partial class DeveloperMode : Node
         {
             var b = _categoryButtons[c.Kind.Id];
             b.Text = c.WithErrors > 0 ? $"{c.Kind.Title}   {c.Count}  ⚠{c.WithErrors}" : $"{c.Kind.Title}   {c.Count}";
-            b.SetPressedNoSignal(c.Kind.Id == _browser.Kind);
+            b.SetPressedNoSignal(!_hub && c.Kind.Id == _browser.Kind);
+        }
+
+        if (_groupButton is not null)
+        {
+            var mechanics = categories.Where(c => c.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup).ToList();
+            _groupButton.Text = $"Механики   {mechanics.Sum(c => c.Count)}" + (mechanics.Sum(c => c.WithErrors) is > 0 and var e ? $"  ⚠{e}" : string.Empty);
+            _groupButton.SetPressedNoSignal(_hub || mechanics.Any(c => c.Kind.Id == _browser.Kind));
+        }
+
+        _listPanel.Visible = !_hub;
+        _hubPanel.Visible = _hub;
+        if (_hub)
+        {
+            FillHub();
         }
 
         var kind = _library.Registry.Find(_browser.Kind)!;
@@ -627,6 +732,12 @@ public partial class DeveloperMode : Node
             return;
         }
 
+        if (kind.Id == HexTactics.Content.Registry.ContentTypeRegistry.DamageType)
+        {
+            ChooseDamageTypeBase();
+            return;
+        }
+
         var name = kind.Id switch
         {
             "map" => "Новая карта",
@@ -634,10 +745,26 @@ public partial class DeveloperMode : Node
             "skill" => "Новый навык",
             "tile" => "Новый тип гекса",
             "defense_rule" => "Новое правило защиты",
+            "resistance_profile" => "Новый набор сопротивлений",
             _ => "Новый объект",
         };
         OpenEditor(_library.Create(kind.Id, name), null);
         AddMessage($"Создан черновик: {kind.Singular} «{name}». Он появится в библиотеке после сохранения.", null);
+    }
+
+    /// <summary>Spec part 5 §6.2: «Создать тип» → on the basis of physical / magical / true / a new family → the editor.</summary>
+    private void ChooseDamageTypeBase()
+    {
+        var buttons = HexTactics.Editor.Mechanics.DamageTypeEditorModel.Bases
+            .Select(b => new DialogButton(b.Value switch { "physical" => "На основе физического", "magical" => "На основе магического", "true" => "На основе чистого", _ => "Новое семейство" },
+                "dialog.base." + b.Value, ButtonKind.Normal, () =>
+            {
+                OpenEditor(HexTactics.Editor.Mechanics.DamageTypeEditorModel.CreateFrom(_library, b.Value, "Новый тип урона"), null);
+                AddMessage($"Создан черновик типа урона ({b.Label}). Он появится в списках после сохранения.", null);
+            }))
+            .Append(new DialogButton("Отмена", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true))
+            .ToList();
+        ModalDialog.Show(this, "Создать тип урона", "Стратегия расчёта всегда явная: подтип берёт её у семейства, новое семейство выбирает само. Название не влияет на расчёт.", buttons, width: 820);
     }
 
     private void Open()

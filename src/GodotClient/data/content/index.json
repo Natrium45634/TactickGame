@@ -12,6 +12,8 @@
     "damage_types/core.damage.untyped.json",
     "defense_rules/core.rule.fire_convert_25_reflect_75.json",
     "maps/core.map.prototype.json",
+    "resistance_profiles/core.profile.armored.json",
+    "resistance_profiles/core.profile.weak_piercing.json",
     "skills/core.skill.linear_strike.json",
     "tiles/core.tile.deploy.json",
     "tiles/core.tile.enemy_base.json",

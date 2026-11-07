@@ -55,6 +55,7 @@ public static class Migrations
     /// <summary>
     /// Unit 1 → 2: the normal attack hits with the legacy neutral type; no resistances, no area (no hidden bonuses).
     /// Unit 2 → 3 (spec part 5 §9.5): no defense rules and no shields — nothing is invented for old units.
+    /// Unit 3 → 4: no resistance sets; the unit's resistances become its own values (same numbers).
     /// </summary>
     public static JsonObject? Unit(int from, JsonObject data, IssueList issues)
     {
@@ -67,6 +68,9 @@ public static class Migrations
             case 2:
                 copy["defenseRules"] ??= new JsonArray();
                 copy["shields"] ??= new JsonArray();
+                return copy;
+            case 3:
+                copy["resistanceProfiles"] ??= new JsonArray(); // spec part 5 §6.4: own values stay, no set is applied
                 return copy;
             default:
                 return null;

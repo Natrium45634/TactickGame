@@ -184,6 +184,17 @@ public sealed class ContentLibrary
             MapChecks.Validate(map, this, issues);
         }
 
+        if (item.Data is ResistanceProfileData profile)
+        {
+            foreach (var key in profile.Values.Keys)
+            {
+                if (key != UnitData.GlobalResistance && Find(ContentTypeRegistry.DamageType, key) is { Data: DamageTypeData { Strategy: DamageTypeData.TrueLike } } bypass)
+                {
+                    issues.Warning($"data.values.{key}", $"«{bypass.Name}» обходит численные сопротивления — значение не действует");
+                }
+            }
+        }
+
         if (item.Data is DamageTypeData type && type.Family.Length > 0 && Find(ContentTypeRegistry.DamageType, type.Family) is { Data: DamageTypeData family } familyItem)
         {
             // Spec part 5 §6.2: a subtype cannot change how its family is calculated.
@@ -199,6 +210,7 @@ public sealed class ContentLibrary
 
         if (item.Data is UnitData unit)
         {
+            var layered = ResistanceLayers.Values(unit, this);
             foreach (var r in unit.Resistances.Keys)
             {
                 if (r != UnitData.GlobalResistance && Find(ContentTypeRegistry.DamageType, r) is { Data: DamageTypeData { Strategy: DamageTypeData.TrueLike } } bypass)
@@ -215,7 +227,7 @@ public sealed class ContentLibrary
                 }
 
                 var familyId = d.Family.Length == 0 ? t.Id : d.Family;
-                var sum = Get(unit, UnitData.GlobalResistance) + Get(unit, familyId) + (familyId == t.Id ? 0 : Get(unit, t.Id));
+                var sum = Get(layered, UnitData.GlobalResistance) + Get(layered, familyId) + (familyId == t.Id ? 0 : Get(layered, t.Id));
                 if (sum > UnitData.MaxResistance || sum < UnitData.MinResistance)
                 {
                     issues.Warning("data.resistances", $"итог сопротивления «{t.Name}» = {sum:0.##} % вне −500…+500 — в бою будет ограничен");
@@ -225,7 +237,7 @@ public sealed class ContentLibrary
 
         return issues.Items;
 
-        static double Get(UnitData u, string key) => u.Resistances.TryGetValue(key, out var v) ? v : 0;
+        static double Get(IReadOnlyDictionary<string, double> values, string key) => values.TryGetValue(key, out var v) ? v : 0;
     }
 
     /// <summary>

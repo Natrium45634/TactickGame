@@ -412,6 +412,47 @@ $script:PersistenceScenarioV22 = (@(
     'expect:shield:0:Щит:15', 'expect:resistance:core.damage.fire_example:300', 'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV21
 
+# v0.23.0+ (spec part 5 §6.1–§6.5; acceptance §11.5 p.35–40): «Механики» — one catalog entry with three large actions; a new
+# damage type «Плазма» on the basis of magical (explicit family and strategy, tags, sandbox hit on «Огненный страж»); a
+# resistance set «Маг в латах» based on «Бронированный» (+60 % magical, 700 % refused); the example rule's «Проверить на
+# ударе» (heal 10, «без правила» 60 → 60; penetration 50 → «R после пробития = 250 %, порог 300 % не достигнут»); a unit
+# «Латник» with the set — inherited / own value / reset, sandbox plasma 40 → 16, and in its test match the slashing strike
+# takes 10, the game card shows nothing of the set.
+$script:RegressionScenarioV23 = $script:RegressionScenarioV22 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.mechanics', 'expect:category:mechanics', 'expect:rows:0', 'ui:mech.damage_type', 'expect:category:damage_type',
+    'expect:rows:9', 'ui:dev.create', 'expect:dialog:Создать тип урона', 'ui:dialog.base.magical', 'expect:editor:damage_type',
+    'field:dtype.name=Плазма', 'ui:dtype.more', 'field:dtype.tags=plasma, energy', 'expect:dtype:family:core.damage.magical',
+    'expect:dtype:strategy:resistance_affected', 'expect:dtype:tags:plasma,energy', 'expect:dtype-preview:Подтип семейства «Магический»',
+    'ui:dtype.sandbox', 'field:dtype.sandbox.target=Огненный страж', 'field:dtype.sandbox.amount=40', 'ui:dtype.sandbox.run',
+    'expect:sandbox:сила удара D0 = 40 (плазма)', 'ui:dtype.save', 'expect:dirty:no', 'expect:errors:0', 'ui:dtype.back', 'expect:rows:10',
+    'ui:dev.cat.resistance_profile', 'expect:rows:2', 'ui:dev.create', 'expect:editor:resistance_profile', 'field:profile.name=Маг в латах',
+    'field:profile.parent=Бронированный', 'field:profile.res.core.damage.magical=60', 'expect:profile-total:core.damage.slashing:50',
+    'expect:profile-total:core.damage.magical:60', 'field:profile.res.core.damage.blunt=700', 'expect:editor-message:от −500 до +500',
+    'expect:profile-preview:Сильные стороны', 'ui:profile.save', 'expect:dirty:no', 'expect:errors:0', 'ui:profile.back', 'expect:rows:3',
+    'ui:dev.cat.defense_rule', 'row:name=Огненная регенерация и круговое отражение (пример)', 'ui:dev.open', 'expect:editor:defense_rule',
+    'ui:rule.sandbox', 'field:rule.sandbox.target=Огненный страж', 'field:rule.sandbox.type=Огонь (пример)', 'field:rule.sandbox.amount=40',
+    'field:rule.sandbox.health=60', 'field:rule.sandbox.enemies=3', 'ui:rule.sandbox.run', 'expect:sandbox:лечение +10',
+    'expect:sandbox:(цель): сработало', 'expect:sandbox:Без правила: HP цели 60 → 60', 'field:rule.sandbox.penetration=50', 'ui:rule.sandbox.run',
+    'expect:sandbox:R после пробития = 250 %, порог 300 % не достигнут', 'expect:dirty:no', 'ui:rule.back',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Латник', 'field:unit.profile.pick=Маг в латах (свой)',
+    'ui:unit.profile.add', 'expect:profiles:Маг в латах', 'expect:resistance:core.damage.slashing:50',
+    'expect:resistance-source:core.damage.physical:inherited', 'field:unit.res.core.damage.physical=0', 'expect:resistance:core.damage.slashing:0',
+    'expect:resistance-source:core.damage.physical:own', 'ui:unit.res.core.damage.physical.reset', 'expect:resistance:core.damage.slashing:50',
+    'ui:unit.sandbox', 'field:unit.sandbox.type=Плазма', 'field:unit.sandbox.amount=40', 'ui:unit.sandbox.run',
+    'expect:sandbox:R после пробития = 60 %', 'expect:sandbox:HP цели: 100 → 84', 'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5', 'spawn:enemy:3,4@Латник', 'expect:units:2', 'select:1', 'key:R',
+    'move:3,3', 'click:3,3', 'advance:3', 'expect:hp:2:90', 'select:2', 'expect:info:2:Маг в латах:no', 'expect:info:2:%:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV23 = (@(
+    'ui:menu.dev', 'ui:dev.cat.damage_type', 'row:name=Плазма', 'ui:dev.open', 'expect:editor:damage_type', 'expect:dtype:tags:plasma,energy',
+    'expect:dtype:family:core.damage.magical', 'ui:dtype.back', 'ui:dev.cat.resistance_profile', 'row:name=Маг в латах', 'ui:dev.open',
+    'expect:profile-total:core.damage.magical:60', 'expect:profile-total:core.damage.slashing:50', 'ui:profile.back',
+    'ui:dev.cat.unit', 'row:name=Латник', 'ui:dev.open', 'expect:profiles:Маг в латах', 'expect:resistance:core.damage.slashing:50',
+    'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV22
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -472,7 +513,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
+            $scenario = if ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
+                        elseif ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
                         elseif ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }
                         elseif ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
                         elseif ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
@@ -490,7 +532,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }
+            if ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }
+            elseif ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }
             elseif ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
             elseif ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }
             elseif ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }

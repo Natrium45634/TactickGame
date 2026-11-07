@@ -503,6 +503,11 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
                 actual = LastMessage;
                 ok = actual.Contains(parts[1][(parts[1].IndexOf(':') + 1)..], StringComparison.Ordinal);
                 break;
+            case "sandbox":
+                // expect:sandbox:text — the last «Проверить на ударе» report contains text
+                actual = Sandbox?.Text.Replace('\n', ' ') ?? "none";
+                ok = actual.Contains(parts[1][(parts[1].IndexOf(':') + 1)..], StringComparison.Ordinal);
+                break;
             default:
                 if (Expect(a, out actual, out ok))
                 {
@@ -515,6 +520,9 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
         runner.ReportCheck(ok, $"expect:{parts[1]} (actual {actual})");
         return 1;
     }
+
+    /// <summary>The editor's «Проверить на ударе» panel, if it has one (spec part 5 §6.5).</summary>
+    protected virtual SharedInspector.SandboxPanel? Sandbox => null;
 
     /// <summary>Editor-specific checks; return false if the check is unknown.</summary>
     protected virtual bool Expect(string[] a, out string actual, out bool ok)

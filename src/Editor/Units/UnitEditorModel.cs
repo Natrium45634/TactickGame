@@ -20,7 +20,14 @@ public sealed record SkillChoice(string Id, string Name, string Icon, string Sum
 /// One row of the «Сопротивления» table (spec part 5 §7.2): the global row, a family, or a subtype under its family.
 /// <see cref="Bypass"/> rows (true-like types) have no number — they ignore numeric resistance.
 /// </summary>
-public sealed record ResistanceRow(string Key, string Label, double Value, int Depth, bool Bypass);
+public sealed record ResistanceRow(string Key, string Label, double Value, int Depth, bool Bypass, string? Source = null, bool Own = false)
+{
+    /// <summary>The value comes from a set (not the object's own) — «наследовано».</summary>
+    public bool Inherited => Source is not null && !Own;
+}
+
+/// <summary>A saved resistance set that can be applied to the unit.</summary>
+public sealed record ProfileChoice(string Id, string Name, string Summary, bool IsBuiltIn);
 
 /// <summary>
 /// Model of the unit editor (spec part 4 §5): the characteristics come from <see cref="UnitData.Fields"/>; the skill set is
@@ -277,65 +284,32 @@ public sealed class UnitEditorModel : DefinitionEditorModel
 
     // ------------------------------------------------------------------ resistances (spec part 5 §3, §7)
 
+    /// <summary>The unit's base resistances: its sets in order, then its own values (spec part 5 §6.4).</summary>
+    public IReadOnlyDictionary<string, ResistanceValue> Layered => ResistanceLayers.Effective(Unit, Library);
+
     /// <summary>
     /// The rows of the resistance table: «все сопротивляемые типы», then every family with its subtypes (physical, magical,
     /// custom families; legacy types only if this unit has a value for them), true-like types last as rows without a number.
+    /// Every row says whether its value is the unit's own or comes from a set.
     /// </summary>
-    public IReadOnlyList<ResistanceRow> ResistanceRows()
-    {
-        var rows = new List<ResistanceRow> { new(UnitData.GlobalResistance, "Все сопротивляемые типы", Value(UnitData.GlobalResistance), 0, false) };
-        var types = Library.Items(ContentTypeRegistry.DamageType)
-            .Where(t => t.Data is DamageTypeData d && (!d.Legacy || Unit.Resistances.ContainsKey(t.Id)))
-            .ToList();
-        var families = types.Where(t => ((DamageTypeData)t.Data).Family.Length == 0)
-            .OrderBy(t => ((DamageTypeData)t.Data).Strategy == DamageTypeData.TrueLike ? 1 : 0)
-            .ThenBy(t => t.Id == "core.damage.physical" ? 0 : t.Id == "core.damage.magical" ? 1 : 2)
-            .ThenBy(t => t.Name, StringComparer.CurrentCulture);
-        foreach (var family in families)
-        {
-            var bypass = ((DamageTypeData)family.Data).Strategy == DamageTypeData.TrueLike;
-            rows.Add(new ResistanceRow(family.Id, family.Name, Value(family.Id), 0, bypass));
-            foreach (var sub in types.Where(t => ((DamageTypeData)t.Data).Family == family.Id).OrderBy(t => t.Name, StringComparer.CurrentCulture))
-            {
-                rows.Add(new ResistanceRow(sub.Id, sub.Name, Value(sub.Id), 1, bypass));
-            }
-        }
+    public IReadOnlyList<ResistanceRow> ResistanceRows() => Mechanics.ResistanceTable.Rows(Library, Layered);
 
-        return rows;
-    }
-
-    /// <summary>Sets one resistance from input (−500…+500 %, decimal comma or dot); 0 removes the row's value.</summary>
+    /// <summary>
+    /// Sets the unit's own value from input (−500…+500 %, decimal comma or dot). 0 removes the own value unless a set gives
+    /// this key a value — then 0 is kept as an explicit override.
+    /// </summary>
     public ContentIssue? SetResistance(string key, object? input)
     {
-        double value;
-        switch (input)
+        if (Mechanics.ResistanceTable.Parse(Library, key, input, $"resistances.{key}", out var rounded) is { } issue)
         {
-            case double d:
-                value = d;
-                break;
-            case string text when double.TryParse(text.Trim().Replace(',', '.').TrimEnd('%').Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed):
-                value = parsed;
-                break;
-            default:
-                return ContentIssue.Error($"resistances.{key}", $"сопротивление: «{input}» — не число, значение не изменено");
+            return issue;
         }
 
-        if (!double.IsFinite(value) || value < UnitData.MinResistance || value > UnitData.MaxResistance)
-        {
-            return ContentIssue.Error($"resistances.{key}", $"сопротивление: от −500 до +500 %, а не {value.ToString("0.##", CultureInfo.InvariantCulture)} — значение не изменено");
-        }
-
-        if (key != UnitData.GlobalResistance && Library.Find(ContentTypeRegistry.DamageType, key) is null)
-        {
-            return ContentIssue.Error($"resistances.{key}", $"нет типа урона «{key}»");
-        }
-
-        var rounded = (double)Math.Round((decimal)value, 2, MidpointRounding.AwayFromZero); // spec part 5 §3.1: 0.01 point
-        var name = key == UnitData.GlobalResistance ? "все типы" : Library.Find(ContentTypeRegistry.DamageType, key)!.Name;
-        Apply($"Сопротивление «{name}»: {Explain(rounded)}", (d, _) =>
+        var inherited = Unit.ResistanceProfiles.Any(p => ResistanceLayers.Of(Library, p).ContainsKey(key));
+        Apply($"Сопротивление «{Mechanics.ResistanceTable.KeyName(Library, key)}»: {Explain(rounded)}", (d, _) =>
         {
             var u = (UnitData)d;
-            if (rounded == 0)
+            if (rounded == 0 && !inherited)
             {
                 u.Resistances.Remove(key);
             }
@@ -347,7 +321,74 @@ public sealed class UnitEditorModel : DefinitionEditorModel
         return null;
     }
 
-    private double Value(string key) => Unit.Resistances.TryGetValue(key, out var v) ? v : 0;
+    /// <summary>Drops the unit's own value: the set's value (or 0) applies again.</summary>
+    public void ResetResistance(string key) =>
+        Apply($"Сбросить своё сопротивление «{Mechanics.ResistanceTable.KeyName(Library, key)}»", (d, _) => ((UnitData)d).Resistances.Remove(key));
+
+    /// <summary>Saved sets without errors not applied yet, filtered by name or id.</summary>
+    public IReadOnlyList<ProfileChoice> AvailableProfiles(string filter = "") => Library.Items(ContentTypeRegistry.ResistanceProfile)
+        .Where(p => !p.HasErrors && !Unit.ResistanceProfiles.Contains(p.Id))
+        .Where(p => filter.Length == 0 || p.Name.Contains(filter, StringComparison.CurrentCultureIgnoreCase) || p.Id.Contains(filter, StringComparison.OrdinalIgnoreCase))
+        .Select(p => new ProfileChoice(p.Id, p.Name, ProfileSummary(Library, p.Id), p.IsBuiltIn))
+        .ToList();
+
+    /// <summary>«физический +50 %, колющий −50 %» — the effective values of a set.</summary>
+    public static string ProfileSummary(ContentLibrary library, string profileId)
+    {
+        var values = ResistanceLayers.Of(library, profileId);
+        return values.Count == 0 ? "пустой набор" : string.Join(", ", values.OrderBy(v => v.Key, StringComparer.Ordinal)
+            .Select(v => $"{Mechanics.ResistanceTable.KeyName(library, v.Key).ToLowerInvariant()} {v.Value.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} %"));
+    }
+
+    /// <summary>Applies a set by reference (after the others: it replaces their values per key).</summary>
+    public string? AddProfile(string profileId)
+    {
+        if (Library.Find(ContentTypeRegistry.ResistanceProfile, profileId) is not { } profile)
+        {
+            return $"набор «{profileId}» не найден";
+        }
+
+        if (Unit.ResistanceProfiles.Contains(profileId))
+        {
+            return $"набор «{profile.Name}» уже применён";
+        }
+
+        if (Unit.ResistanceProfiles.Count >= UnitData.MaxResistanceProfiles)
+        {
+            return $"не больше {UnitData.MaxResistanceProfiles} наборов";
+        }
+
+        Apply($"Применить набор «{profile.Name}»", (d, _) => ((UnitData)d).ResistanceProfiles.Add(profileId));
+        return null;
+    }
+
+    public void RemoveProfile(string profileId)
+    {
+        var name = Library.Find(ContentTypeRegistry.ResistanceProfile, profileId)?.Name ?? profileId;
+        Apply($"Убрать набор «{name}»", (d, _) => ((UnitData)d).ResistanceProfiles.Remove(profileId));
+    }
+
+    /// <summary>
+    /// Saves the unit's current resistances (sets + own values) as a new set for other units (spec part 5 §6.4); the unit
+    /// itself does not change. The set is written to the library at once.
+    /// </summary>
+    public ContentOperationResult SaveAsProfile(string name)
+    {
+        var item = Library.Create(ContentTypeRegistry.ResistanceProfile, name.Trim().Length == 0 ? $"{Item.Name}: защита" : name.Trim());
+        var data = (ResistanceProfileData)item.Data;
+        foreach (var (key, value) in Layered)
+        {
+            if (value.Value != 0)
+            {
+                data.Values[key] = value.Value;
+            }
+        }
+
+        item.Description = $"Сохранено из юнита «{Item.Name}».";
+        return Library.Save(item);
+    }
+
+    private double Value(string key) => Layered.TryGetValue(key, out var v) ? v.Value : 0;
 
     /// <summary>The resistance against a type with every layer of this unit (global + family + subtype, clamped).</summary>
     public double EffectiveResistance(string typeId)

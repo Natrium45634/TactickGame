@@ -7,6 +7,32 @@ using HexTactics.Core.Units;
 namespace HexTactics.Simulation;
 
 /// <summary>Technical limits of combat reactions (spec part 5 §5.5); documented in ARCHITECTURE.md.</summary>
+/// <summary>What happened to one defense rule on one hit (the trace of the developer sandbox).</summary>
+public enum RuleOutcome
+{
+    /// <summary>The rule acted on the hit.</summary>
+    Applied = 0,
+    TypeMismatch = 1,
+    TagMismatch = 2,
+
+    /// <summary>The hit's type ignores numeric resistance, so a resistance threshold is never met.</summary>
+    ResistanceUnused = 3,
+    ResistanceBelow = 4,
+    HealthNotBelow = 5,
+
+    /// <summary>Cooldown running or the activation limit of the match reached.</summary>
+    NotReady = 6,
+
+    /// <summary>The defender was immune and the rule does not act on immune contact.</summary>
+    SkippedByImmunity = 7,
+
+    /// <summary>The rule applied but had nothing to do (e.g. no budget left, a cap above the damage).</summary>
+    NothingToDo = 8,
+}
+
+/// <summary>One rule considered for one hit: <see cref="Value"/> is the measured R or health %, <see cref="Threshold"/> the rule's.</summary>
+public sealed record RuleCheck(long EventId, UnitId Unit, string RuleId, DefenseTrigger Trigger, RuleOutcome Outcome, double? Value = null, double? Threshold = null);
+
 public sealed record CombatLimits
 {
     /// <summary>Reactions may come from primary hits only: a reactive packet never produces another one.</summary>
@@ -59,6 +85,12 @@ public sealed class DamageResolver
 
     /// <summary>Every result of the current tick in resolution order, reactions included (tests, traces).</summary>
     public List<DamageResult> Results { get; } = new();
+
+    /// <summary>
+    /// When set, every rule considered for a hit is recorded with its outcome (spec part 5 §6.5: why a rule did or did not
+    /// act). Off in matches; the developer sandbox turns it on.
+    /// </summary>
+    public List<RuleCheck>? Trace { get; set; }
 
     public CombatLimits Limits => _settings.CombatLimits;
 
@@ -187,10 +219,7 @@ public sealed class DamageResolver
         var type = TypeOf(e.DamageTypeId);
         var r = EffectiveResistance(target, e.DamageTypeId, e.Penetration);
         var healthPercent = target.MaxHealth > 0 ? target.CurrentHealth / target.MaxHealth * 100 : 0;
-        var rules = target.Stats.DefenseRules
-            .Where(rule => rule.Trigger == DefenseTrigger.OnHit && Matches(rule, type) && Holds(rule, r, healthPercent) && Ready(target.Id, rule, tick))
-            .OrderBy(rule => rule.Priority).ThenBy(rule => rule.Id, StringComparer.Ordinal)
-            .ToList();
+        var rules = Eligible(target, DefenseTrigger.OnHit, type, r, healthPercent, tick, e.EventId);
 
         // 3. Explicit immunity: no health from this component; contact reactions only with «triggerOnImmuneContact».
         var immune = false;
@@ -316,16 +345,13 @@ public sealed class DamageResolver
         });
 
         // 7. Consequences of the actual loss: retaliation (needs a living defender), vampirism of the attacker.
+        var reported = new List<(UnitId Unit, DefenseRule Rule)>();
         if (!e.Reactive && target.IsAlive && (hpLoss > 0 || shieldLoss > 0))
         {
-            foreach (var rule in target.Stats.DefenseRules.Where(x => x.Trigger == DefenseTrigger.OnHealthLoss && Matches(x, type) && Holds(x, r, healthPercent))
-                         .OrderBy(x => x.Priority).ThenBy(x => x.Id, StringComparer.Ordinal))
+            var lossRules = Eligible(target, DefenseTrigger.OnHealthLoss, type, r, healthPercent, tick, e.EventId);
+            reported.AddRange(lossRules.Select(x => (target.Id, x)));
+            foreach (var rule in lossRules)
             {
-                if (!Ready(target.Id, rule, tick))
-                {
-                    continue;
-                }
-
                 var used = false;
                 for (var i = 0; i < rule.Actions.Count; i++)
                 {
@@ -349,15 +375,25 @@ public sealed class DamageResolver
         {
             // «Health below» of a vampirism rule refers to its owner — the attacker; resistance conditions do not apply.
             var attackerHealth = attacker.MaxHealth > 0 ? attacker.CurrentHealth / attacker.MaxHealth * 100 : 0;
-            foreach (var rule in attacker.Stats.DefenseRules
-                         .Where(x => x.Trigger == DefenseTrigger.OnDamageDealt && Matches(x, type) && Holds(x, null, attackerHealth, ignoreResistance: true) && Ready(attacker.Id, x, tick))
-                         .OrderBy(x => x.Priority).ThenBy(x => x.Id, StringComparer.Ordinal))
+            foreach (var rule in Eligible(attacker, DefenseTrigger.OnDamageDealt, type, null, attackerHealth, tick, e.EventId))
             {
+                reported.Add((attacker.Id, rule));
                 foreach (var a in rule.Actions.Where(a => a.Kind == DefenseActionKind.Vampirism))
                 {
                     _queue.Enqueue(new Pending(null, attacker.Id, Math.Max(0, Math.Min(10, a.Fraction)) * hpLoss));
                     Use(attacker.Id, rule, tick);
                 }
+            }
+        }
+
+        if (Trace is not null)
+        {
+            foreach (var (unit, rule) in rules.Select(x => (target.Id, x)).Concat(reported))
+            {
+                var acted = _ruleUse.TryGetValue((unit, rule.Id), out var use) && use.Hit == _hitSerial;
+                Trace.Add(new RuleCheck(e.EventId, unit, rule.Id, rule.Trigger,
+                    acted ? RuleOutcome.Applied : immune && !rule.TriggerOnImmuneContact && rule.Trigger == DefenseTrigger.OnHit ? RuleOutcome.SkippedByImmunity : RuleOutcome.NothingToDo,
+                    rule.Trigger == DefenseTrigger.OnHit ? r : null, rule.MinEffectiveResistance));
             }
         }
 
@@ -385,13 +421,61 @@ public sealed class DamageResolver
     private static bool IsConversion(DefenseAction a) =>
         a.Kind is DefenseActionKind.Negate or DefenseActionKind.ConvertToHealing or DefenseActionKind.ConvertToShield or DefenseActionKind.RedirectAsDamage;
 
-    private static bool Matches(DefenseRule rule, DamageTypeDefinition type) =>
-        (rule.DamageType is null || rule.DamageType == type.Id || rule.DamageType == type.FamilyId)
-        && (rule.DamageTag is null || type.Tags.Contains(rule.DamageTag));
+    /// <summary>
+    /// The rules of <paramref name="unit"/> for this trigger that apply to the hit now, in their order (priority, then id).
+    /// With <see cref="Trace"/> on, every rule that does not apply is recorded with the reason.
+    /// </summary>
+    private List<DefenseRule> Eligible(UnitState unit, DefenseTrigger trigger, DamageTypeDefinition type, double? r, double healthPercent, long tick, long eventId)
+    {
+        var list = new List<DefenseRule>();
+        foreach (var rule in unit.Stats.DefenseRules.Where(x => x.Trigger == trigger).OrderBy(x => x.Priority).ThenBy(x => x.Id, StringComparer.Ordinal))
+        {
+            var (outcome, value, threshold) = Check(rule, type, r, healthPercent, trigger == DefenseTrigger.OnDamageDealt, unit.Id, tick);
+            if (outcome == RuleOutcome.Applied)
+            {
+                list.Add(rule);
+            }
+            else
+            {
+                Trace?.Add(new RuleCheck(eventId, unit.Id, rule.Id, trigger, outcome, value, threshold));
+            }
+        }
 
-    private static bool Holds(DefenseRule rule, double? r, double healthPercent, bool ignoreResistance = false) =>
-        (ignoreResistance || rule.MinEffectiveResistance is not { } min || (r is { } value && value >= min - 1e-9))
-        && (rule.HealthBelowPercent is not { } below || healthPercent < below);
+        return list;
+    }
+
+    private (RuleOutcome Outcome, double? Value, double? Threshold) Check(DefenseRule rule, DamageTypeDefinition type, double? r, double healthPercent, bool ignoreResistance, UnitId unit, long tick)
+    {
+        if (rule.DamageType is not null && rule.DamageType != type.Id && rule.DamageType != type.FamilyId)
+        {
+            return (RuleOutcome.TypeMismatch, null, null);
+        }
+
+        if (rule.DamageTag is not null && !type.Tags.Contains(rule.DamageTag))
+        {
+            return (RuleOutcome.TagMismatch, null, null);
+        }
+
+        if (!ignoreResistance && rule.MinEffectiveResistance is { } min)
+        {
+            if (r is not { } value)
+            {
+                return (RuleOutcome.ResistanceUnused, null, min);
+            }
+
+            if (value < min - 1e-9)
+            {
+                return (RuleOutcome.ResistanceBelow, value, min);
+            }
+        }
+
+        if (rule.HealthBelowPercent is { } below && healthPercent >= below)
+        {
+            return (RuleOutcome.HealthNotBelow, healthPercent, below);
+        }
+
+        return Ready(unit, rule, tick) ? (RuleOutcome.Applied, null, null) : (RuleOutcome.NotReady, null, null);
+    }
 
     private bool Ready(UnitId unit, DefenseRule rule, long tick)
     {

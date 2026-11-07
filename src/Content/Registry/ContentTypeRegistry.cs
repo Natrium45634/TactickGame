@@ -31,6 +31,12 @@ public sealed class ContentKind
     /// <summary>Catalog order.</summary>
     public int Order { get; init; }
 
+    /// <summary>
+    /// Catalog group (spec part 5 §6.1: «Механики» holds damage types, defense rules and resistance sets as one entry with its
+    /// own first screen); null — a top-level category.
+    /// </summary>
+    public string? Group { get; init; }
+
     /// <summary>Current version of the serialization schema of the <c>data</c> part.</summary>
     public int SchemaVersion { get; init; } = 1;
 
@@ -61,6 +67,10 @@ public sealed class ContentTypeRegistry
     public const string Tile = "tile";
     public const string DamageType = "damage_type";
     public const string DefenseRule = "defense_rule";
+    public const string ResistanceProfile = "resistance_profile";
+
+    /// <summary>The «Механики» group of the catalog.</summary>
+    public const string MechanicsGroup = "mechanics";
 
     private readonly List<ContentKind> _kinds = new();
 
@@ -123,7 +133,7 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 3, Migrate = Migrations.Unit,
+            SchemaVersion = 4, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -143,14 +153,22 @@ public sealed class ContentTypeRegistry
         {
             Id = DamageType, Title = "Типы урона", Singular = "тип урона", Folder = "damage_types", Order = 50,
             Description = "Физический (колющий, режущий, дробящий), магический, чистый и свои типы: семейство и стратегия расчёта.",
-            Read = (o, i) => DamageTypeData.Read(o, i), CreateDefault = () => new DamageTypeData(),
-            Available = false, // the «Механики» category of the catalog arrives with its editors (spec part 5, v0.23.0)
+            Read = (o, i) => DamageTypeData.Read(o, i), CreateDefault = () => new DamageTypeData { Family = "core.damage.physical" },
+            Group = MechanicsGroup,
         });
         registry.Register(new ContentKind
         {
             Id = DefenseRule, Title = "Правила защиты", Singular = "правило защиты", Folder = "defense_rules", Order = 60,
             Description = "Иммунитеты, поглощение, лечение, отражение, щиты и ответные удары: «когда → от чего → при условии → что сделать».",
             Read = (o, i) => DefenseRuleData.Read(o, i), CreateDefault = () => DefenseRuleData.CreateDefault(), Fields = DefenseRuleData.Fields,
+            Group = MechanicsGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = ResistanceProfile, Title = "Наборы сопротивлений", Singular = "набор сопротивлений", Folder = "resistance_profiles", Order = 70,
+            Description = "Готовые таблицы сопротивлений («Бронированный», «Слаб к колющему»): применяются к юнитам ссылкой, значения юнита их перекрывают.",
+            Read = (o, i) => ResistanceProfileData.Read(o, i), CreateDefault = () => new ResistanceProfileData(),
+            Group = MechanicsGroup,
         });
         return registry;
     }
