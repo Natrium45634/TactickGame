@@ -245,26 +245,30 @@ if ($Run -and $errors.Count -eq 0) {
         New-Item -ItemType Directory -Force -Path $userRoot | Out-Null
         $userArg = if ($Launcher) { 'Z:' + ($userRoot -replace '/', '\') } else { $userRoot }
 
+        # Wine decodes the command line with the Unix locale: without UTF-8 the Cyrillic steps of the scenario
+        # (names, dialog titles) arrive garbled. Native Windows passes UTF-16 and needs nothing.
+        if ($Launcher) { $env:LC_ALL = 'C.UTF-8'; $env:LANG = 'C.UTF-8' }
+
         $runs = @(@{ Name = 'smoke'; Script = $scenario })
         if ($persistence) { $runs += @{ Name = 'restart'; Script = $persistence } }
-        foreach ($run in $runs) {
-            $log = Join-Path $tmp "$($run.Name).log"
+        foreach ($pass in $runs) {
+            $log = Join-Path $tmp "$($pass.Name).log"
             $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
             if ([version]$Version -ge [version]'0.15.0') { $smokeArgs += "--hx-user-root=$userArg" }
-            if ($run.Script) { $smokeArgs += "--hx-script=$($run.Script)" }
-            Write-Step ("{0} ({1}): {2}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $run.Name, $exe))
+            if ($pass.Script) { $smokeArgs += "--hx-script=$($pass.Script)" }
+            Write-Step ("{0} ({1}): {2}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $pass.Name, $exe))
             if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }
             else { & $exe @smokeArgs *> $log }
             $exitCode = $LASTEXITCODE
             $text = Get-Content -Raw $log
-            if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Run '$($run.Name)' did not report HexTactics v$Version. Log: $log") }
-            elseif ($text -notmatch '\[automation\] done') { $errors.Add("Run '$($run.Name)' did not finish. Log: $log") }
+            if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Run '$($pass.Name)' did not report HexTactics v$Version. Log: $log") }
+            elseif ($text -notmatch '\[automation\] done') { $errors.Add("Run '$($pass.Name)' did not finish. Log: $log") }
             elseif ($regression -and ($exitCode -ne 0 -or $text -notmatch '\[automation\] checks passed: \d+' -or $text -match 'CHECK FAILED')) {
-                $errors.Add("Regression scenario '$($run.Name)' failed (exit $exitCode). Log: $log")
+                $errors.Add("Regression scenario '$($pass.Name)' failed (exit $exitCode). Log: $log")
             }
             else {
-                if ($regression) { ($text -split "`n" | Where-Object { $_ -match '\[automation\] checks passed' }) | ForEach-Object { Write-Host "$($run.Name): $($_.Trim())" } }
-                Write-Host "Run '$($run.Name)' OK"
+                if ($regression) { ($text -split "`n" | Where-Object { $_ -match '\[automation\] checks passed' }) | ForEach-Object { Write-Host "$($pass.Name): $($_.Trim())" } }
+                Write-Host "Run '$($pass.Name)' OK"
             }
         }
     }

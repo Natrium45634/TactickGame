@@ -1,0 +1,14 @@
+product=HexTactics
+version=0.15.0
+tag=v0.15.0
+commit=98cb4f30ce1ad56f3d3d8fc8e37ad1e54c87ddef
+build_date_utc=2026-11-07T09:37:06Z
+godot=4.7.2.stable.mono.official.ed1daf0bf
+dotnet_sdk=8.0.133
+target_framework=net8.0
+platform=windows-x86_64
+renderer=gl_compatibility
+run=HexTactics.exe
+zip=HexTactics_v0.15.0_windows_x64.zip
+sha256=9b62f1b21f605b446b25f0668baded366d312f7de901820cf8e20078f39026bc
+size_bytes=75542002
