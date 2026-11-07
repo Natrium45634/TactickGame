@@ -36,7 +36,7 @@ public sealed class UnitData : IContentData
     {
         new()
         {
-            Key = "maxHealth", Label = "Максимум HP", Kind = FieldKind.Integer, Default = 100.0, Min = 1, Max = 100000, Unit = "HP",
+            Key = "maxHealth", Label = "Максимум здоровья", Kind = FieldKind.Integer, Default = 100.0, Min = 1, Max = 100000, Unit = "HP",
             Hint = "Здоровье нового юнита; текущее здоровье в бою хранится отдельно.",
             Get = o => ((UnitData)o).MaxHealth, Set = (o, v) => ((UnitData)o).MaxHealth = (double)v!,
         },

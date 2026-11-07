@@ -26,11 +26,15 @@ public enum RosterEntryState
 /// <summary>One operative of the roster.</summary>
 public sealed class RosterEntry
 {
-    internal RosterEntry(int id, string name)
+    internal RosterEntry(int id, string name, UnitProfile? profile = null)
     {
         Id = id;
         Name = name;
+        Profile = profile;
     }
+
+    /// <summary>The unit definition this operative is made of (null = the simulation's default unit).</summary>
+    public UnitProfile? Profile { get; }
 
     public int Id { get; }
 
@@ -53,6 +57,16 @@ public sealed class RosterState
         foreach (var name in names)
         {
             _entries.Add(new RosterEntry(id++, name));
+        }
+    }
+
+    /// <summary>A roster whose operatives are made of unit definitions (spec part 4 §5: a test squad).</summary>
+    public RosterState(IEnumerable<(string Name, UnitProfile? Profile)> entries)
+    {
+        var id = 1;
+        foreach (var (name, profile) in entries)
+        {
+            _entries.Add(new RosterEntry(id++, name, profile));
         }
     }
 

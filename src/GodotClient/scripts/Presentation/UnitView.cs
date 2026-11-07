@@ -35,14 +35,14 @@ public partial class UnitView : Node3D
     public UnitId UnitId { get; private set; }
 
     /// <param name="caption">Name shown above the unit (roster operatives), or null.</param>
-    public void Build(UnitState unit, string? caption = null)
+    public void Build(UnitState unit, string? caption = null, Color? tint = null, float scale = 1f)
     {
         UnitId = unit.Id;
         Name = $"Unit{unit.Id.Value}";
 
         _bodyMaterial = new StandardMaterial3D
         {
-            AlbedoColor = unit.Side == HexTactics.Core.Units.Side.Player ? VisualConfig.UnitPlayer : VisualConfig.UnitEnemy,
+            AlbedoColor = tint ?? (unit.Side == HexTactics.Core.Units.Side.Player ? VisualConfig.UnitPlayer : VisualConfig.UnitEnemy),
             Roughness = 0.75f,
         };
 
@@ -51,7 +51,8 @@ public partial class UnitView : Node3D
             Name = "Body",
             Mesh = new CylinderMesh { TopRadius = BodyRadius, BottomRadius = BodyRadius, Height = BodyHeight, RadialSegments = 32 },
             MaterialOverride = _bodyMaterial,
-            Position = new Vector3(0, BodyHeight * 0.5f, 0),
+            Position = new Vector3(0, BodyHeight * 0.5f * scale, 0),
+            Scale = new Vector3(scale, scale, scale),
         });
 
         _facingPivot = new Node3D { Name = "Facing" };

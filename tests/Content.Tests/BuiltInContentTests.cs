@@ -98,7 +98,7 @@ public class BuiltInContentTests
         Assert.Equal(100, unit.Stats.MaxHealth);
         Assert.Equal(1.0, unit.Stats.MoveSpeedHexPerSecond);
         Assert.Equal(3.0, unit.Stats.AttackRatePerSecond);
-        Assert.Equal(10, unit.Stats.NormalAttackDamage);
+        Assert.Equal(10, unit.Stats.AttackPower);
         Assert.Equal(1, unit.Stats.NormalAttackRangeHex);
         Assert.Equal(new[] { SkillCatalog.LinearStrikeId }, unit.Skills);
     }

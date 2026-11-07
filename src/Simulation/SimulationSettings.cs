@@ -23,6 +23,9 @@ public sealed record SimulationSettings
     /// <summary>Skill set of new units (prototype: every unit has «Линейный удар»).</summary>
     public IReadOnlyList<string> DefaultSkillSet { get; init; } = new[] { HexTactics.Core.Skills.SkillCatalog.LinearStrikeId };
 
+    /// <summary>Unit definition id of units created without a profile (enemy targets, debug spawns).</summary>
+    public string? DefaultUnitId { get; init; }
+
     /// <summary>Characteristics of new units (spec part 3 §3); the client loads them from balance data.</summary>
     public HexTactics.Core.Combat.UnitStats DefaultStats { get; init; } = HexTactics.Core.Combat.UnitStats.Default;
 

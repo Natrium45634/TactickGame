@@ -15,8 +15,11 @@ public sealed record UnitStats
     /// <summary>Spec part 3 §3: 3 normal attacks per second (interval 1/3 s).</summary>
     public double AttackRatePerSecond { get; init; } = 3.0;
 
-    /// <summary>PROTOTYPE_DEFAULT (spec part 3 §3, §11): the author has not set normal attack damage yet.</summary>
-    public int NormalAttackDamage { get; init; } = 10;
+    /// <summary>
+    /// Attack Power (spec part 4 §5.1): damage of one normal attack and the base of «% от Attack Power» skill effects.
+    /// PROTOTYPE_DEFAULT 10 (spec part 3 §11). A number, not the attack rate.
+    /// </summary>
+    public double AttackPower { get; init; } = 10;
 
     /// <summary>PROTOTYPE_DEFAULT (spec part 3 §3, §11): normal attack range in hex steps (1 = adjacent).</summary>
     public int NormalAttackRangeHex { get; init; } = 1;

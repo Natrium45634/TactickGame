@@ -86,8 +86,13 @@ public partial class GameMode : Node3D
 
     private bool _isTest;
 
-    /// <summary>The skill of the HUD button, the R key and the ТД menu: the first skill of the default unit.</summary>
-    private string PrimarySkill => _content.DefaultUnit.Skills.Count > 0 ? _content.DefaultUnit.Skills[0] : HexTactics.Core.Skills.SkillCatalog.LinearStrikeId;
+    /// <summary>
+    /// The skill of the HUD button, the R key and the ТД menu: the first skill of the selected unit (its definition's
+    /// order, spec part 4 §5.2), else of the default unit.
+    /// </summary>
+    private string PrimarySkill =>
+        (_fsm?.SelectedUnit is { } id && _sim.State.FindUnit(id) is { Skills.Count: > 0 } unit ? unit.Skills[0] : null)
+        ?? (_content.DefaultUnit.Skills.Count > 0 ? _content.DefaultUnit.Skills[0] : HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
 
     private string PrimarySkillName => _content.Skills.TryGetValue(PrimarySkill, out var skill) ? skill.Name : PrimarySkill;
 
@@ -103,8 +108,11 @@ public partial class GameMode : Node3D
                 DefaultStats = _content.DefaultUnit.Stats,
                 Skills = _content.Skills,
                 DefaultSkillSet = _content.DefaultUnit.Skills,
+                DefaultUnitId = _content.DefaultUnit.Id,
             },
-            RosterState.Prototype());
+            _content.Squad.Count > 0
+                ? new RosterState(System.Linq.Enumerable.Select(_content.Squad, s => (s.Name, (HexTactics.Core.Units.UnitProfile?)s.Profile)))
+                : RosterState.Prototype());
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
@@ -134,6 +142,9 @@ public partial class GameMode : Node3D
 
         _units = new UnitsView { Name = "Units" };
         _units.Initialize(_layout);
+        _units.LookOf = unit => unit.DefinitionId is { } def && _content.Units.TryGetValue(def, out var template) && unit.Side == HexTactics.Core.Units.Side.Player
+            ? (Color.FromHtml(template.Color), (float)template.Scale)
+            : (null, 1f);
         AddChild(_units);
 
         _motionDebug = new MotionDebugView { Name = "MotionDebug" };
@@ -1338,7 +1349,7 @@ public partial class GameMode : Node3D
                 }
 
             case "hp":
-                actual = Unit(1)?.CurrentHealth.ToString(CultureInfo.InvariantCulture) ?? "none";
+                actual = Unit(1)?.CurrentHealth.ToString("0.###", CultureInfo.InvariantCulture) ?? "none";
                 ok = actual == a[2];
                 break;
             case "movefill":

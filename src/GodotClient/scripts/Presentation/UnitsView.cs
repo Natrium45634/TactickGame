@@ -16,6 +16,9 @@ public partial class UnitsView : Node3D
 
     public void Initialize(HexLayout layout) => _layout = layout;
 
+    /// <summary>Tint and size of a unit from its definition (spec part 4 §5.1 «Внешний вид»); null tint = side colour.</summary>
+    public System.Func<UnitState, (Color? Tint, float Scale)>? LookOf { get; set; }
+
     public IReadOnlyDictionary<UnitId, UnitView> Views => _views;
 
     /// <summary>Creates/removes views to match the state and updates positions and facing.</summary>
@@ -43,7 +46,8 @@ public partial class UnitsView : Node3D
             {
                 view = new UnitView();
                 AddChild(view);
-                view.Build(unit, state.Roster.FindByUnit(unit.Id)?.Name);
+                var (tint, size) = LookOf?.Invoke(unit) ?? (null, 1f);
+                view.Build(unit, state.Roster.FindByUnit(unit.Id)?.Name, tint, size);
                 _views.Add(unit.Id, view);
             }
 

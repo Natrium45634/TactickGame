@@ -32,6 +32,7 @@ public partial class AppRoot : Node
     private DeveloperMode.DeveloperMode? _developer;
     private ContentItem? _pendingTest;
     private string _mapId = RuntimeFactory.DefaultMapId;
+    private string _squadUnit = RuntimeFactory.DefaultUnitId;
 
     public Screen Current { get; private set; }
 
@@ -73,6 +74,8 @@ public partial class AppRoot : Node
             Footer = $"Пользовательский контент: {_library.User?.Root}" + (_library.Problems.Count > 0 ? $"\nНе загружено файлов: {_library.Problems.Count} (подробности — в режиме разработчика)" : string.Empty),
             Maps = PlayableMaps(),
             SelectedMap = _mapId,
+            Units = PlayableUnits(),
+            SelectedUnit = _squadUnit,
         };
         _menu.PlayPressed += () => CallDeferred(MethodName.StartGame);
         _menu.DeveloperPressed += () => CallDeferred(MethodName.OpenDeveloper);
@@ -95,6 +98,20 @@ public partial class AppRoot : Node
         return list;
     }
 
+    private System.Collections.Generic.List<(string Id, string Name)> PlayableUnits()
+    {
+        var list = new System.Collections.Generic.List<(string Id, string Name)>();
+        foreach (var unit in _library.Items(HexTactics.Content.Registry.ContentTypeRegistry.Unit))
+        {
+            if (!unit.HasErrors && unit.Data is HexTactics.Content.Kinds.UnitData { Side: "player" })
+            {
+                list.Add((unit.Id, unit.IsBuiltIn ? $"{unit.Name} × 5" : $"{unit.Name} (свой) × 5"));
+            }
+        }
+
+        return list;
+    }
+
     private void StartGame()
     {
         if (_menu?.SelectedMap is { } chosen && _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, chosen) is not null)
@@ -102,8 +119,14 @@ public partial class AppRoot : Node
             _mapId = chosen;
         }
 
+        if (_menu?.SelectedUnit is { } unitChoice && _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Unit, unitChoice) is not null)
+        {
+            _squadUnit = unitChoice;
+        }
+
         CloseModes();
-        var content = RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, _mapId) is not null ? _mapId : RuntimeFactory.DefaultMapId);
+        var squad = new[] { _squadUnit, _squadUnit, _squadUnit, _squadUnit, _squadUnit };
+        var content = RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, _mapId) is not null ? _mapId : RuntimeFactory.DefaultMapId, squad: squad);
         foreach (var issue in content.Issues)
         {
             GD.PushWarning($"[content] {issue}");
@@ -146,7 +169,12 @@ public partial class AppRoot : Node
         _pendingTest = null;
         ModalDialog.Open?.Close();
         RemoveChild(_developer);
-        var content = RuntimeFactory.BuildGame(_library, item);
+        var content = item.Kind.Id switch
+        {
+            // Unit test: the prototype map, the edited unit is operative «Альфа», the others are the default unit.
+            HexTactics.Content.Registry.ContentTypeRegistry.Unit => RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, squad: new[] { item.Id }, extraUnits: new[] { item }),
+            _ => RuntimeFactory.BuildGame(_library, item),
+        };
         _game = new GameMode { Name = "TestGame", Automation = _automation };
         _game.Configure(content, $"тест «{item.Name}»", isTest: true);
         _game.ExitRequested += () => CallDeferred(MethodName.EndTest);
@@ -207,6 +235,16 @@ public partial class AppRoot : Node
                         return 1;
                     }
 
+                    // A control inside a scrolled panel is scrolled into view first (like a user would), then clicked
+                    // on the next frame when the layout has moved it.
+                    if (_scrolledFor != arg && control.GetParent() is not null && FindScroll(control) is { } scroll)
+                    {
+                        scroll.EnsureControlVisible(control);
+                        _scrolledFor = arg;
+                        return AutomationRunner.Repeat;
+                    }
+
+                    _scrolledFor = null;
                     AutomationInput.Click(AutomationIds.ScreenCenter(control));
                     return 3;
                 }
@@ -264,6 +302,21 @@ public partial class AppRoot : Node
         GD.PushWarning($"[automation] step '{step}' needs the game screen");
         _automation.ReportCheck(false, $"{step} (not on the game screen)");
         return 1;
+    }
+
+    private string? _scrolledFor;
+
+    private static ScrollContainer? FindScroll(Node node)
+    {
+        for (var n = node.GetParent(); n is not null; n = n.GetParent())
+        {
+            if (n is ScrollContainer scroll)
+            {
+                return scroll;
+            }
+        }
+
+        return null;
     }
 
     private static bool SetField(string id, string value)

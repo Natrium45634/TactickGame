@@ -62,8 +62,14 @@ public sealed class UnitState
 
     public int MaxHealth => Stats.MaxHealth;
 
-    /// <summary>Current health, 0 … <see cref="MaxHealth"/>; damage lowers it, never below 0.</summary>
-    public int CurrentHealth { get; internal set; }
+    /// <summary>
+    /// Current health, 0 … <see cref="MaxHealth"/>; damage lowers it, never below 0. Fractional values are kept exactly
+    /// (e.g. 75 % of an attack power of 10 = 7.5) — the UI rounds only for display.
+    /// </summary>
+    public double CurrentHealth { get; internal set; }
+
+    /// <summary>Unit definition (content id) the unit was created from, if any (spec part 4 §5, §8.4).</summary>
+    public string? DefinitionId { get; internal set; }
 
     public LifeState LifeState { get; internal set; }
 

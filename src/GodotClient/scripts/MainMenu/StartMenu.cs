@@ -31,6 +31,12 @@ public partial class StartMenu : CanvasLayer
     /// <summary>The map chosen for «Играть».</summary>
     public string? SelectedMap { get; set; }
 
+    /// <summary>Unit definitions available for the squad (id, label).</summary>
+    public IReadOnlyList<(string Id, string Name)> Units { get; set; } = Array.Empty<(string, string)>();
+
+    /// <summary>The unit definition of the five roster operatives.</summary>
+    public string? SelectedUnit { get; set; }
+
     public override void _Ready()
     {
         Layer = 20;
@@ -69,6 +75,23 @@ public partial class StartMenu : CanvasLayer
         maps.ItemSelected += index => SelectedMap = maps.GetItemMetadata((int)index).AsString();
         mapRow.AddChild(maps);
         column.AddChild(mapRow);
+        var squadRow = UiKit.Row(8);
+        squadRow.AddChild(UiKit.Label("Отряд:", 13, dim: true));
+        var units = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "menu.squad");
+        for (var i = 0; i < Units.Count; i++)
+        {
+            units.AddItem(Units[i].Name, i);
+            units.SetItemMetadata(i, Units[i].Id);
+            if (Units[i].Id == SelectedUnit)
+            {
+                units.Select(i);
+            }
+        }
+
+        SelectedUnit ??= Units.Count > 0 ? Units[0].Id : null;
+        units.ItemSelected += index => SelectedUnit = units.GetItemMetadata((int)index).AsString();
+        squadRow.AddChild(units);
+        column.AddChild(squadRow);
         column.AddChild(BigButton("✎  Разработчик", "Редакторы карт, юнитов, навыков и типов гексов; библиотека контента.", ButtonKind.Normal, "menu.dev", () => DeveloperPressed?.Invoke()));
         column.AddChild(new Control { CustomMinimumSize = new Vector2(0, 4) });
         var quit = UiKit.Button("Выход", () => QuitPressed?.Invoke(), ButtonKind.Flat, "menu.quit");

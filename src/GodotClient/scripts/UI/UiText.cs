@@ -77,11 +77,17 @@ public static class UiText
         };
     }
 
+    /// <summary>
+    /// Health shown to the player (spec part 4 §6.4: rounding only for display): one decimal, trailing ",0" dropped —
+    /// 77.5 → «77,5», 80 → «80». The simulation keeps the exact value.
+    /// </summary>
+    public static string Hp(double value) => value.ToString("0.#", System.Globalization.CultureInfo.GetCultureInfo("ru-RU"));
+
     public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false, string? name = null)
     {
         var text = $"Юнит {u.Id}{(name is null ? string.Empty : $" «{name}»")} · {SideName(u.Side)}{(u.IsActive ? string.Empty : " · ожидает взгляда (не активен)")}\n" +
                    $"клетка {Cell(u.Cell)} · взгляд: {(u.Facing is { } f ? $"{Direction(f)} ({f.ShortName()})" : "не задан — выберите сектор у ребра")}\n" +
-                   $"здоровье {u.CurrentHealth}/{u.MaxHealth} · скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД: {u.Orders.OrderCount}\n" +
+                   $"здоровье {Hp(u.CurrentHealth)}/{u.MaxHealth} · атака {Hp(u.Stats.AttackPower)} · скорость {u.SpeedHexesPerSecond:0.#} гекс/с · ТД: {u.Orders.OrderCount}\n" +
                    $"движение: {Motion(u)}{(paused && u.Motion.Status != MovementStatus.Idle ? " (пауза)" : string.Empty)}";
         if (u.Orders.AttackTarget is { } target)
         {

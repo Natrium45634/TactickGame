@@ -117,23 +117,44 @@ public sealed class GameState
     /// Lowers the unit's health (never below 0); at 0 the unit is dead at once — it no longer attacks, moves or accepts
     /// orders — and is removed by <see cref="RemoveDead"/> at the end of the tick. Returns the damage actually dealt.
     /// </summary>
-    public int ApplyDamage(UnitId id, int amount)
+    public double ApplyDamage(UnitId id, double amount)
     {
         var unit = GetUnit(id);
-        if (!unit.IsAlive || amount <= 0)
+        if (!unit.IsAlive || !(amount > 0) || double.IsInfinity(amount))
         {
             return 0;
         }
 
         var dealt = Math.Min(amount, unit.CurrentHealth);
         unit.CurrentHealth -= dealt;
-        if (unit.CurrentHealth == 0)
+        if (unit.CurrentHealth <= HealthEpsilon)
         {
+            unit.CurrentHealth = 0;
             unit.LifeState = LifeState.Dead;
         }
 
         return dealt;
     }
+
+    /// <summary>Below this health a unit counts as dead (guards against floating-point remainders).</summary>
+    public const double HealthEpsilon = 1e-9;
+
+    /// <summary>Raises the health of a living unit, never above its maximum (spec part 4 §6.3 p.2). Returns the amount healed.</summary>
+    public double Heal(UnitId id, double amount)
+    {
+        var unit = GetUnit(id);
+        if (!unit.IsAlive || !(amount > 0) || double.IsInfinity(amount))
+        {
+            return 0;
+        }
+
+        var healed = Math.Min(amount, unit.MaxHealth - unit.CurrentHealth);
+        unit.CurrentHealth += healed;
+        return Math.Max(0, healed);
+    }
+
+    /// <summary>Records which unit definition a unit was created from.</summary>
+    public void SetDefinition(UnitId id, string? definitionId) => GetUnit(id).DefinitionId = definitionId;
 
     /// <summary>
     /// Removes dead units from the map (deterministic id order): their hex and every reservation they hold are freed,

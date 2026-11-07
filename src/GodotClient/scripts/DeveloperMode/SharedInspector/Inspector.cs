@@ -170,6 +170,79 @@ public sealed class Inspector
         return button;
     }
 
+    public ColorPickerButton ColorField(string id, string label, string value, Action<string> commit, string? hint = null)
+    {
+        var picker = AutomationIds.Register(new ColorPickerButton { Color = Color.FromHtml(value), CustomMinimumSize = new Vector2(0, 30), EditAlpha = false }, id);
+        picker.ColorChanged += c => commit("#" + c.ToHtml(false).ToUpperInvariant());
+        Add(label, picker, hint);
+        return picker;
+    }
+
+    /// <summary>
+    /// A control for a schema field (spec part 4 §9.2: the UI is built from the same field schemas as validation).
+    /// Numbers are typed as text so every input — also «abc» or «-5» — goes through <paramref name="apply"/>, which
+    /// refuses invalid values with an explanation.
+    /// </summary>
+    public Control? Field(string idPrefix, HexTactics.Content.Schema.FieldSchema field, object target, Action<HexTactics.Content.Schema.FieldSchema, object?> apply)
+    {
+        if (field.VisibleWhen is { } visible && !visible(target))
+        {
+            return null;
+        }
+
+        var id = idPrefix + field.Key;
+        var value = field.Get?.Invoke(target) ?? field.Default;
+        var label = field.Unit is null ? field.Label : $"{field.Label}, {field.Unit}";
+        switch (field.Kind)
+        {
+            case HexTactics.Content.Schema.FieldKind.Number:
+            case HexTactics.Content.Schema.FieldKind.Integer:
+                {
+                    var shown = HexTactics.Content.Schema.FieldSchema.TryNumber(value, out var d) ? (field.Percent ? Num(d * 100) : Num(d)) : string.Empty;
+                    var hint = field.Hint;
+                    if (field.Min is { } min && field.Max is { } max)
+                    {
+                        var range = field.Percent ? $"{Num(min * 100)}–{Num(max * 100)} %" : $"{Num(min)}–{Num(max)}";
+                        hint = hint is null ? $"Допустимо: {range}." : $"{hint} Допустимо: {range}.";
+                    }
+
+                    return LineText(id, field.Percent ? $"{field.Label}, %" : label, shown, text =>
+                    {
+                        if (field.Percent && double.TryParse(text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var p))
+                        {
+                            apply(field, Num(p / 100));
+                        }
+                        else
+                        {
+                            apply(field, text);
+                        }
+                    }, hint);
+                }
+
+            case HexTactics.Content.Schema.FieldKind.Choice:
+                {
+                    var options = new List<ChoiceOption>();
+                    foreach (var o in field.Options)
+                    {
+                        options.Add(new ChoiceOption(o.Value, o.Label));
+                    }
+
+                    return Choice(id, label, options, value as string ?? string.Empty, v => apply(field, v), field.Hint);
+                }
+
+            case HexTactics.Content.Schema.FieldKind.Flag:
+                return Check(id, label, value is true, on => apply(field, on), field.Hint);
+            case HexTactics.Content.Schema.FieldKind.Color:
+                return ColorField(id, label, value as string ?? "#FFFFFF", v => apply(field, v), field.Hint);
+            case HexTactics.Content.Schema.FieldKind.LongText:
+                return LongText(id, label, value as string ?? string.Empty, v => apply(field, v), field.Hint);
+            case HexTactics.Content.Schema.FieldKind.Text:
+                return LineText(id, label, value as string ?? string.Empty, v => apply(field, v), field.Hint);
+            default:
+                return null; // references are edited by the editor's own list controls
+        }
+    }
+
     public HBoxContainer Row()
     {
         var row = UiKit.Row(6);

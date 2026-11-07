@@ -68,11 +68,11 @@ public partial class CombatFxView : Node3D
 {
     private readonly List<(Node3D Node, double Age, double Life, Vector3 Start)> _items = new();
 
-    public void Damage(Vector3 at, int amount, bool skill)
+    public void Damage(Vector3 at, double amount, bool skill)
     {
         var label = new Label3D
         {
-            Text = $"−{amount}",
+            Text = $"−{HexTactics.Client.UI.UiText.Hp(amount)}",
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             NoDepthTest = true,
             FontSize = 52,

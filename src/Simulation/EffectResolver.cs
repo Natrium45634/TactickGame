@@ -91,7 +91,7 @@ public sealed class EffectResolver
     /// <summary>Shared health rule: lowers health (not below 0) and reports the damage; death is processed after the tick.</summary>
     public void DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageKind kind)
     {
-        var dealt = State.ApplyDamage(target.Id, (int)Math.Round(Math.Max(0, amount), MidpointRounding.AwayFromZero));
+        var dealt = State.ApplyDamage(target.Id, Math.Max(0, amount));
         Events.Add(new DamageApplied(tick, target.Id, source?.Id ?? target.Id, dealt, target.CurrentHealth, kind));
     }
 }

@@ -61,3 +61,47 @@ public class EffectResolverTests
         Assert.Empty(sim.DrainEvents().OfType<SkillActivated>().Single().Hit);
     }
 }
+
+/// <summary>Unit definitions in the simulation (spec part 4 §5): profiles, fractional attack power and health.</summary>
+public class UnitProfileTests
+{
+    private static HexCoord C(int col, int row) => HexCoord.FromOffset(col, row);
+
+    [Fact]
+    public void A_profile_gives_the_unit_its_characteristics_and_a_fractional_attack_power_is_dealt_exactly()
+    {
+        var profile = new UnitProfile("unit_test0001", "Тест", new HexTactics.Core.Combat.UnitStats { MaxHealth = 175, MoveSpeedHexPerSecond = 1.5, AttackRatePerSecond = 2, AttackPower = 12.5 }, System.Array.Empty<string>());
+        var sim = new GameSimulation(TestMaps.Empty(), new SimulationSettings { DefaultUnitId = "core.unit.operative" });
+        var a = sim.Spawn(SpawnRequest.AtCell(C(5, 5), Side.Player, HexDirection.North) with { Profile = profile }).Unit!.Value;
+        var e = sim.Spawn(SpawnRequest.AtCell(C(5, 4), Side.Enemy, HexDirection.South)).Unit!.Value;
+        var attacker = sim.State.GetUnit(a);
+        Assert.Equal(175, attacker.CurrentHealth);
+        Assert.Equal(1.5, attacker.SpeedHexesPerSecond);
+        Assert.Equal("unit_test0001", attacker.DefinitionId);
+        Assert.Equal("core.unit.operative", sim.State.GetUnit(e).DefinitionId);
+
+        Assert.True(sim.ApplyOrder(HexTactics.Core.Orders.IndividualOrder.Attack(a, System.Array.Empty<HexCoord>(), e, HexDirection.North)).Success);
+        for (var i = 0; i < 15; i++)
+        {
+            sim.Step(); // 0.5 s at 2 attacks/s: exactly one hit
+        }
+
+        Assert.Equal(87.5, sim.State.GetUnit(e).CurrentHealth);
+        Assert.Equal(new[] { 12.5 }, sim.DrainEvents().OfType<DamageApplied>().Select(d => d.Amount));
+    }
+
+    [Fact]
+    public void Health_never_drops_below_zero_or_rises_above_the_maximum()
+    {
+        var sim = new GameSimulation(TestMaps.Empty());
+        var u = sim.Spawn(SpawnRequest.AtCell(C(5, 5), Side.Player, HexDirection.North)).Unit!.Value;
+        Assert.Equal(30.25, sim.State.ApplyDamage(u, 30.25));
+        Assert.Equal(69.75, sim.State.GetUnit(u).CurrentHealth);
+        Assert.Equal(30.25, sim.State.Heal(u, 50));
+        Assert.Equal(100, sim.State.GetUnit(u).CurrentHealth);
+        Assert.Equal(0, sim.State.ApplyDamage(u, double.NaN));
+        Assert.Equal(100, sim.State.ApplyDamage(u, 1000));
+        Assert.False(sim.State.GetUnit(u).IsAlive);
+        Assert.Equal(0, sim.State.Heal(u, 10)); // the dead are not healed
+    }
+}

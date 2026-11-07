@@ -73,7 +73,7 @@ public sealed record GroupOrderFinished(long Tick, int GroupId) : SimulationEven
 public sealed record TeammateYielded(long Tick, UnitId Unit, UnitId For, HexCoord Aside) : SimulationEvent(Tick);
 
 /// <summary>Health was lowered (spec part 3 §3, §8). <paramref name="HealthAfter"/> 0 means the target is dead.</summary>
-public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, int Amount, int HealthAfter, DamageKind Kind) : SimulationEvent(Tick);
+public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, double Amount, double HealthAfter, DamageKind Kind) : SimulationEvent(Tick);
 
 /// <summary>A dead unit was removed from the map at the end of the tick; its hex is free (spec part 3 §3).</summary>
 public sealed record UnitDied(long Tick, UnitId Unit, Side Side, HexCoord Cell) : SimulationEvent(Tick);

@@ -199,6 +199,31 @@ $script:PersistenceScenarioV16 = (@(
     'expect:testpoints:2', 'ui:map.back', 'expect:editor:none', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV15
 
+# v0.17.0+ (spec part 4 §5, §12.2 p.10–11): the unit editor through its real controls — invalid values (−5 HP, a word for
+# the speed) are refused with an explanation and change nothing; HP 175, 1.5 hex/s, 2 attacks/s, attack power 12.5, a
+# skill added from the catalog (undo/redo); saved; a test match with the unit as roster card 1: 175 HP and three hexes
+# in exactly 2.0 game seconds; then «Играть» with the squad of this unit.
+$script:RegressionScenarioV17 = $script:RegressionScenarioV16 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'expect:rows:1', 'ui:dev.create', 'expect:editor:unit',
+    'field:unit.maxHealth=-5', 'expect:editor-message:не меньше', 'expect:unit-field:maxHealth:100',
+    'field:unit.moveSpeed=быстро', 'expect:editor-message:не число', 'expect:unit-field:moveSpeed:1',
+    'field:unit.maxHealth=175', 'field:unit.moveSpeed=1,5', 'field:unit.attackRate=2', 'field:unit.attackPower=12.5',
+    'field:unit.name=Тяжёлый', 'field:unit.description=Медленный, но живучий', 'expect:name:Тяжёлый',
+    'ui:unit.skill.add', 'expect:skills:1', 'key:ctrl+z', 'expect:skills:0', 'key:ctrl+y', 'expect:skills:1',
+    'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'roster:1>0,5', 'click:3,5', 'click:3,5@North:0.6', 'mark', 'pause:off',
+    'waitidle:1:900', 'expect:arrived:1:2.0', 'expect:hp:1:175', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit',
+    'ui:unit.back', 'expect:editor:none', 'expect:rows:2', 'expect:item:unit:Тяжёлый:yes', 'ui:dev.back',
+    'field:menu.map=Прототип 12×10', 'field:menu.squad=Тяжёлый (свой) × 5', 'ui:menu.play', 'expect:screen:play', 'roster:2>1,5', 'click:1,5@North:0.6', 'expect:lifecycle:1:Active', 'expect:hp:1:175',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV17 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'expect:item:unit:Тяжёлый:yes', 'row:name=Тяжёлый', 'ui:dev.open', 'expect:editor:unit',
+    'expect:unit-field:maxHealth:175', 'expect:unit-field:moveSpeed:1.5', 'expect:unit-field:attackRate:2',
+    'expect:unit-field:attackPower:12.5', 'expect:skills:1', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV16
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -259,7 +284,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
+            $scenario = if ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
+                        elseif ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
                         elseif ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
                         elseif ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
                         elseif ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
@@ -271,7 +297,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
+            if ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }
+            elseif ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
             elseif ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }
         }
 

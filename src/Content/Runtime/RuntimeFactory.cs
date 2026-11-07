@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Content.Kinds;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
@@ -17,7 +18,11 @@ namespace HexTactics.Content.Runtime;
 public sealed record TileVisual(string Id, string Name, string Color, int Level, TileType Type);
 
 /// <summary>A unit definition turned into runtime values.</summary>
-public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IReadOnlyList<string> Skills, Side Side, string Color, double Scale);
+public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IReadOnlyList<string> Skills, Side Side, string Color, double Scale)
+{
+    /// <summary>What the simulation needs to create a unit of this definition.</summary>
+    public UnitProfile ToProfile() => new(Id, Name, Stats, Skills);
+}
 
 /// <summary>Everything a match needs, built from content definitions by one factory (spec part 4 §9.2 <c>RuntimeFactory</c>).</summary>
 public sealed record GameContent(
@@ -25,7 +30,17 @@ public sealed record GameContent(
     IReadOnlyDictionary<string, SkillDefinition> Skills,
     UnitTemplate DefaultUnit,
     IReadOnlyDictionary<string, TileVisual> TileVisuals,
-    IReadOnlyList<ContentIssue> Issues);
+    IReadOnlyList<ContentIssue> Issues)
+{
+    /// <summary>Every valid unit definition of the library (looks of units on the map, skill buttons).</summary>
+    public IReadOnlyDictionary<string, UnitTemplate> Units { get; init; } = new Dictionary<string, UnitTemplate>();
+
+    /// <summary>The roster of the match: operative names and the unit definitions they are made of.</summary>
+    public IReadOnlyList<(string Name, UnitProfile Profile)> Squad { get; init; } = Array.Empty<(string, UnitProfile)>();
+
+    /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
+    public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
+}
 
 /// <summary>
 /// Turns library definitions into the runtime model of Core (spec part 4 §8.4: a definition is not the live object).
@@ -162,7 +177,7 @@ public static class RuntimeFactory
             MaxHealth = (int)Math.Round(unit.MaxHealth),
             MoveSpeedHexPerSecond = unit.MoveSpeed,
             AttackRatePerSecond = unit.AttackRate,
-            NormalAttackDamage = (int)Math.Round(unit.AttackPower),
+            AttackPower = unit.AttackPower,
             NormalAttackRangeHex = unit.AttackRange,
         };
         return new UnitTemplate(unitItem.Id, unitItem.Name, stats, unit.Skills.ToArray(), unit.Side == "enemy" ? Side.Enemy : Side.Player, unit.Color, unit.Scale);
@@ -172,11 +187,15 @@ public static class RuntimeFactory
     /// Builds a match from the library: the map, every valid skill, the default unit and the look of every tile type.
     /// Objects with errors are skipped and reported, never half-loaded.
     /// </summary>
-    public static GameContent BuildGame(ContentLibrary library, string mapId = DefaultMapId, string unitId = DefaultUnitId) =>
-        BuildGame(library, library.Find(ContentTypeRegistry.Map, mapId) ?? throw new InvalidOperationException($"Map '{mapId}' is not in the content library."), unitId);
+    public static GameContent BuildGame(ContentLibrary library, string mapId = DefaultMapId, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null) =>
+        BuildGame(library, library.Find(ContentTypeRegistry.Map, mapId) ?? throw new InvalidOperationException($"Map '{mapId}' is not in the content library."), unitId, squad);
 
-    /// <summary>A match on a map that need not be saved (test runs from the map editor use a temporary copy).</summary>
-    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId)
+    /// <summary>
+    /// A match on a map that need not be saved (test runs from the map editor use a temporary copy). <paramref name="squad"/>
+    /// lists the unit definitions of the five roster operatives (missing entries = <paramref name="unitId"/>);
+    /// <paramref name="extraUnits"/> are unsaved unit definitions to include (test runs of the unit editor).
+    /// </summary>
+    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null, IReadOnlyList<ContentItem>? extraUnits = null)
     {
         var issues = new IssueList();
         var unitItem = library.Find(ContentTypeRegistry.Unit, unitId) ?? throw new InvalidOperationException($"Unit '{unitId}' is not in the content library.");
@@ -214,6 +233,34 @@ public static class RuntimeFactory
             }
         }
 
-        return new GameContent(map, skills, unit with { Skills = known }, tiles, issues.Items);
+        var units = new Dictionary<string, UnitTemplate>(StringComparer.Ordinal);
+        var unitItems = new List<ContentItem>(library.Items(ContentTypeRegistry.Unit));
+        if (extraUnits is not null)
+        {
+            unitItems.RemoveAll(u => extraUnits.Any(e => e.Id == u.Id));
+            unitItems.AddRange(extraUnits);
+        }
+
+        foreach (var item in unitItems)
+        {
+            if (item.HasErrors && (extraUnits is null || !extraUnits.Contains(item)))
+            {
+                continue;
+            }
+
+            var template = BuildUnit(item);
+            units[item.Id] = template with { Skills = template.Skills.Where(skills.ContainsKey).ToArray() };
+        }
+
+        var defaultUnit = units.TryGetValue(unitItem.Id, out var known2) ? known2 : unit with { Skills = known };
+        var roster = new List<(string, UnitProfile)>();
+        for (var i = 0; i < GameContent.OperativeNames.Count; i++)
+        {
+            var id = squad is not null && i < squad.Count ? squad[i] : unitItem.Id;
+            var template = units.TryGetValue(id, out var t) ? t : defaultUnit;
+            roster.Add((GameContent.OperativeNames[i], template.ToProfile()));
+        }
+
+        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster };
     }
 }

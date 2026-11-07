@@ -609,6 +609,25 @@ Ctrl+Z возвращает всё. Тип гекса в библиотеке п
 цветом и высотой своего типа (`TilePalette`). Стартовый экран получил список карт для «Играть» (встроенные и свои без
 ошибок). **Статус:** принято.
 
+## D-098. Сила атаки и дробное здоровье (§5.1, §6.4)
+`UnitStats.AttackPower` (дробное) — урон обычного удара и база будущих эффектов «% от Attack Power»; скорость атак —
+отдельное поле. Здоровье и урон хранятся как `double` без округления (12,5 и 7,5 считаются точно); юнит мёртв при
+здоровье ≤ 1e-9 (остаток плавающей точки). Отображение — до десятых (`UiText.Hp`: 77,5; 80). `GameState.Heal` не
+поднимает выше максимума и не лечит мёртвых. **Статус:** принято (правило отображения — проектное, §13).
+
+## D-099. Определение юнита в бою (§5.1, §8.4)
+`UnitProfile` (Core): id определения, имя, характеристики, навыки. Ростер (`RosterEntry.Profile`) и `SpawnRequest.Profile`
+создают юнита из профиля; без профиля — юнит по умолчанию (`SimulationSettings.DefaultUnitId`). У живого юнита —
+`DefinitionId`, своё текущее здоровье, путь и взгляд; определение он не меняет. Вид (оттенок, размер) клиент берёт из
+определения по `DefinitionId`. Кнопка навыка, R и меню ТД используют первый навык выбранного юнита. **Статус:** принято.
+
+## D-100. Редактор юнитов (§5)
+Поля — из `UnitData.Fields` (`Inspector.Field`); числа вводятся текстом, чтобы любой ввод прошёл проверку схемы
+(`DefinitionEditorModel.TrySetField`): недопустимое значение не применяется, причина — в сообщениях. Навыки — ссылки по
+ID (добавление только существующих из каталога с поиском; порядок важен; не больше 8). Предпросмотр «В бою» показывает
+числа для этого юнита. «Тест юнита» — карта «Прототип», юнит — карточка «Альфа». На стартовом экране — выбор отряда
+(5 карточек из одного определения игрока). Встроенный юнит сохраняется копией. **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -677,3 +696,10 @@ Ctrl+Z возвращает всё. Тип гекса в библиотеке п
   `HexTactics.Editor.Maps.MapEditorModel`; клиент: `MapEditor`, `IContentEditor`, `Inspector`, `DeveloperMode.Editors` — фабрики
   редакторов, `GameMode.Configure(…, isTest)`, `StartMenu.Maps/SelectedMap`, `CameraRig.Zoom/Pan`, `PointerInput` молчит под
   модальным окном. Регрессионный сценарий v0.16 = v0.15 + редактор карт + тест + игра на сохранённой карте.
+- **v0.17.0: редактор юнитов.** Core: `UnitStats.NormalAttackDamage` (int) → `AttackPower` (double); `UnitState.CurrentHealth` — double,
+  `UnitState.DefinitionId`; `GameState.ApplyDamage(double)`, `Heal`, `SetDefinition`, `HealthEpsilon`; `UnitProfile`;
+  `RosterEntry.Profile`, `RosterState((name, profile)…)`; `SpawnRequest.Profile`. Simulation: `SimulationSettings.DefaultUnitId`;
+  `DamageApplied.Amount/HealthAfter` — double. Content: `UnitTemplate.ToProfile`, `GameContent.Units/Squad`,
+  `RuntimeFactory.BuildGame(…, squad, extraUnits)`. Editor: `DefinitionEditorModel`, `UnitEditorModel`, `CombatPreviewText`.
+  Клиент: `DefinitionEditorShell`, `UnitEditor`, `Inspector.Field/ColorField`, `StartMenu.Units/SelectedUnit`,
+  `UnitsView.LookOf`, `UnitView.Build(…, tint, scale)`. Регрессионный сценарий v0.17 = v0.16 + редактор юнитов.

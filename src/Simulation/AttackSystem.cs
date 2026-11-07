@@ -137,7 +137,7 @@ internal sealed class AttackSystem : ISimulationSystem
         }
 
         combat.AttackTimer -= unit.Stats.AttackInterval;
-        var dealt = _state.ApplyDamage(target.Id, unit.Stats.NormalAttackDamage);
+        var dealt = _state.ApplyDamage(target.Id, unit.Stats.AttackPower);
         combat.HitsDelivered++;
         _events.Add(new DamageApplied(tick, target.Id, unit.Id, dealt, target.CurrentHealth, DamageKind.NormalAttack));
     }

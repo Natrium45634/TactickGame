@@ -55,7 +55,7 @@ public class CombatTests
         }
 
         // PROTOTYPE_DEFAULT values (not yet set by the author) are configuration, not code in the input layer.
-        Assert.Equal(10, UnitStats.Default.NormalAttackDamage);
+        Assert.Equal(10, UnitStats.Default.AttackPower);
         Assert.Equal(1, UnitStats.Default.NormalAttackRangeHex);
     }
 

@@ -151,8 +151,10 @@ public sealed class GameSimulation
 
         var cell = resolution.Cell!.Value;
         var facing = request.Facing ?? SpawnRules.DefaultFacing(State.Grid, cell);
-        var unit = State.CreateUnit(request.Side, cell, facing, Settings.DefaultUnitSpeed, stats: Settings.DefaultStats);
-        State.SetSkills(unit.Id, Settings.DefaultSkillSet);
+        var stats = request.Profile?.Stats ?? Settings.DefaultStats;
+        var unit = State.CreateUnit(request.Side, cell, facing, stats.MoveSpeedHexPerSecond, stats: stats);
+        State.SetSkills(unit.Id, request.Profile?.Skills ?? Settings.DefaultSkillSet);
+        State.SetDefinition(unit.Id, request.Profile?.DefinitionId ?? Settings.DefaultUnitId);
         _events.Add(new UnitSpawned(Tick, unit.Id, cell, request.Method));
         return new SpawnResult(unit.Id, cell, SpawnError.None, null);
     }
@@ -214,8 +216,10 @@ public sealed class GameSimulation
             return new PlacementResult(null, cell, error);
         }
 
-        var unit = State.CreateUnit(Side.Player, cell, null, Settings.DefaultUnitSpeed, UnitLifecycle.PlacedPendingFacing, entryId, Settings.DefaultStats);
-        State.SetSkills(unit.Id, Settings.DefaultSkillSet);
+        var stats = entry!.Profile?.Stats ?? Settings.DefaultStats;
+        var unit = State.CreateUnit(Side.Player, cell, null, stats.MoveSpeedHexPerSecond, UnitLifecycle.PlacedPendingFacing, entryId, stats);
+        State.SetSkills(unit.Id, entry.Profile?.Skills ?? Settings.DefaultSkillSet);
+        State.SetDefinition(unit.Id, entry.Profile?.DefinitionId ?? Settings.DefaultUnitId);
         State.Roster.Set(entry!, RosterEntryState.PlacedPendingFacing, unit.Id);
         _events.Add(new UnitPlacedFromRoster(Tick, entryId, unit.Id, cell));
         return new PlacementResult(unit.Id, cell, PlacementError.None);

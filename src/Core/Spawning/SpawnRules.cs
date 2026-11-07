@@ -40,6 +40,9 @@ public enum SpawnError
 /// </summary>
 public sealed record SpawnRequest(SpawnMethod Method, Side Side, int ZoneId = 0, HexCoord? Cell = null, HexDirection? Facing = null)
 {
+    /// <summary>The unit definition to create (null = the simulation's default unit).</summary>
+    public HexTactics.Core.Units.UnitProfile? Profile { get; init; }
+
     public static SpawnRequest AtBase(Side side = Side.Player, HexCoord? cell = null) => new(SpawnMethod.PlayerBase, side, Cell: cell);
 
     public static SpawnRequest AtZone(int zoneId, Side side = Side.Player, HexCoord? cell = null) => new(SpawnMethod.SpawnZone, side, zoneId, cell);
