@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using HexTactics.Core.Hex;
+using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Spawning;
 using HexTactics.Core.Units;
@@ -215,6 +216,17 @@ public class DraftTests
         Assert.Null(_fsm.Draft);
         Assert.True(Unit.Orders.IsEmpty);
         Assert.Equal(InputMode.UnitSelected, _fsm.Mode);
+    }
+
+    [Fact]
+    public void A_tile_type_without_waypoints_is_red_for_a_waypoint_but_a_route_may_cross_it()
+    {
+        _sim.State.Grid.SetTile(C(3, 2), TileType.Walkable, "test.tile.ford", 0, allowsWaypoints: false);
+        Chain(C(3, 1));
+        _fsm.PointerMove(AtHex(C(3, 2)));
+        Assert.Equal(DraftTargetStatus.WaypointsForbidden, _fsm.Draft!.Status);
+        _fsm.PointerMove(AtHex(C(3, 3)));
+        Assert.Equal(DraftTargetStatus.Valid, _fsm.Draft!.Status);
     }
 
     [Fact]

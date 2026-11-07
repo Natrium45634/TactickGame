@@ -20,6 +20,9 @@ public sealed class TileData : IContentData
     public const string Deploy = "deploy";
     public const string Spawn = "spawn";
 
+    /// <summary>A walkable surface with its own rules (spec part 4 §7.1 «особый»): burning, healing…</summary>
+    public const string Special = "special";
+
     public string Category { get; set; } = Ground;
 
     public bool Passable { get; set; } = true;
@@ -29,7 +32,16 @@ public sealed class TileData : IContentData
 
     public string Color { get; set; } = "#CCCCCF";
 
-    /// <summary>Effects of the tile type (periodic effects follow with the tile editor).</summary>
+    /// <summary>Up to 4 characters drawn on every hex of this type (empty — none).</summary>
+    public string Icon { get; set; } = string.Empty;
+
+    /// <summary>Whether ТД/КТД may be put on hexes of this type (spec part 4 §7.1); walking across is not affected.</summary>
+    public bool Waypoints { get; set; } = true;
+
+    /// <summary>
+    /// Effects of the tile type with their triggers (<c>trigger</c>: stay / enter / exit, spec part 4 §7.1–7.2); executed
+    /// by the simulation's effect resolver for the unit's logical hex.
+    /// </summary>
     public List<EffectData> Effects { get; } = new();
 
     public static IReadOnlyList<FieldOption> Categories { get; } = new[]
@@ -40,6 +52,7 @@ public sealed class TileData : IContentData
         new FieldOption(EnemyBase, "база врага"),
         new FieldOption(Deploy, "зона выставления"),
         new FieldOption(Spawn, "край / зона появления"),
+        new FieldOption(Special, "особый (поверхность)"),
     };
 
     public static IReadOnlyList<FieldSchema> Fields { get; } = new FieldSchema[]
@@ -58,6 +71,12 @@ public sealed class TileData : IContentData
         },
         new()
         {
+            Key = "waypoints", Label = "Можно ставить ТД/КТД", Kind = FieldKind.Flag, Default = true,
+            Hint = "Если снято, гекс красный при прокладке маршрута: по нему можно пройти, но остановиться в ТД нельзя.",
+            Get = o => ((TileData)o).Waypoints, Set = (o, v) => ((TileData)o).Waypoints = (bool)v!,
+        },
+        new()
+        {
             Key = "level", Label = "Уровень (высота)", Kind = FieldKind.Integer, Default = 0, Min = 0, Max = 3,
             Section = FieldSections.Appearance, Hint = "Только вид гекса: правила боя от высоты не меняются.",
             Get = o => (double)((TileData)o).Level, Set = (o, v) => ((TileData)o).Level = (int)System.Math.Round((double)v!),
@@ -66,6 +85,12 @@ public sealed class TileData : IContentData
         {
             Key = "color", Label = "Цвет", Kind = FieldKind.Color, Default = "#CCCCCF", Section = FieldSections.Appearance,
             Get = o => ((TileData)o).Color, Set = (o, v) => ((TileData)o).Color = (string)v!,
+        },
+        new()
+        {
+            Key = "icon", Label = "Значок на гексе (до 4 символов)", Kind = FieldKind.Text, Default = string.Empty, MaxLength = 4,
+            Section = FieldSections.Appearance, Hint = "Рисуется на каждом гексе этого типа — в игре и в редакторе карт.",
+            Get = o => ((TileData)o).Icon, Set = (o, v) => ((TileData)o).Icon = ((string?)v ?? string.Empty).Trim(),
         },
     };
 
@@ -96,6 +121,8 @@ public sealed class TileData : IContentData
             ["passable"] = Passable,
             ["level"] = Level,
             ["color"] = Color,
+            ["icon"] = Icon,
+            ["waypoints"] = Waypoints,
             ["effects"] = effects,
         };
     }
@@ -108,6 +135,8 @@ public sealed class TileData : IContentData
             Passable = JsonFields.Flag(obj, "passable", true, issues, string.Empty),
             Level = JsonFields.Integer(obj, "level", 0, issues, string.Empty),
             Color = JsonFields.Text(obj, "color", "#CCCCCF", issues, string.Empty),
+            Icon = JsonFields.Text(obj, "icon", string.Empty, issues, string.Empty),
+            Waypoints = JsonFields.Flag(obj, "waypoints", true, issues, string.Empty),
         };
         if (JsonFields.Array(obj, "effects", issues, string.Empty) is { } effects)
         {
@@ -142,9 +171,19 @@ public sealed class TileData : IContentData
             context.Issues.Error("passable", $"«{CategoryLabel(Category)}» должна быть проходимой");
         }
 
+        if (Effects.Count > 8)
+        {
+            context.Issues.Error("effects", "у типа гекса не больше 8 эффектов");
+        }
+
         for (var i = 0; i < Effects.Count; i++)
         {
             Effects[i].Validate(context, $"effects[{i}]", EffectContext.Tile);
+        }
+
+        if (Effects.Count > 0 && !Passable)
+        {
+            context.Issues.Warning("effects", "по непроходимому гексу никто не ходит — его эффекты не сработают");
         }
     }
 
@@ -166,7 +205,7 @@ public sealed class TileData : IContentData
 
     public IContentData Clone()
     {
-        var copy = new TileData { Category = Category, Passable = Passable, Level = Level, Color = Color };
+        var copy = new TileData { Category = Category, Passable = Passable, Level = Level, Color = Color, Icon = Icon, Waypoints = Waypoints };
         foreach (var e in Effects)
         {
             copy.Effects.Add(e.Clone());

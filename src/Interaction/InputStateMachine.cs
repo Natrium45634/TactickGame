@@ -1155,6 +1155,7 @@ public sealed partial class InputStateMachine
         WaypointError.None => DraftTargetStatus.Valid,
         WaypointError.OutOfBounds => DraftTargetStatus.OutOfBounds,
         WaypointError.NotWalkable => DraftTargetStatus.NotWalkable,
+        WaypointError.WaypointsForbidden => DraftTargetStatus.WaypointsForbidden,
         WaypointError.Occupied => DraftTargetStatus.Occupied,
         WaypointError.Unreachable => DraftTargetStatus.Unreachable,
         WaypointError.SameAsSource => DraftTargetStatus.Neutral,

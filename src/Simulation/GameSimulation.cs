@@ -31,6 +31,7 @@ public sealed class GameSimulation
         Effects = new EffectResolver(State, _events);
         AddSystem(new SkillSystem(State, _events, Settings, Effects));
         AddSystem(new AttackSystem(State, _events, Settings));
+        AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
     }
 

@@ -13,6 +13,7 @@ namespace HexTactics.Client.Presentation;
 public sealed class TilePalette
 {
     private readonly Dictionary<string, (Color Color, string Name)> _types = new();
+    private readonly Dictionary<string, string> _icons = new();
 
     /// <summary>The palette of the scene currently shown (one mode is active at a time).</summary>
     public static TilePalette Current { get; set; } = new();
@@ -26,8 +27,15 @@ public sealed class TilePalette
         foreach (var (id, v) in visuals)
         {
             _types[id] = (Color.FromHtml(v.Color), v.Name);
+            if (!string.IsNullOrWhiteSpace(v.Icon))
+            {
+                _icons[id] = v.Icon;
+            }
         }
     }
+
+    /// <summary>The icon of the cell's tile type (spec part 4 §7.1), or null.</summary>
+    public string? IconOf(TileState tile) => tile.TileId is { } id && _icons.TryGetValue(id, out var icon) ? icon : null;
 
     /// <summary>Height of the top face above the ground for a relief level 0…3.</summary>
     public static float LevelHeight(int level) => level switch

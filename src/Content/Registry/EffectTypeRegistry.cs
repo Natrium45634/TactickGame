@@ -20,12 +20,22 @@ public enum EffectContext
     Tile = 2,
 }
 
-/// <summary>A registered effect type: its fields (with ranges and defaults) and where it may be used.</summary>
+/// <summary>
+/// A registered effect type: its fields (with ranges and defaults) and where it may be used. <see cref="Fields"/> are the
+/// fields on a skill cell; <see cref="TileFields"/> — on a tile type (no source unit: fixed amounts, a trigger and a side
+/// filter instead of «enemies/allies», spec part 4 §7.1).
+/// </summary>
 public sealed record EffectTypeDescriptor(string Type, string Label, string Description, EffectContext Contexts, IReadOnlyList<FieldSchema> Fields)
 {
-    public FieldSchema? FindField(string key)
+    public IReadOnlyList<FieldSchema>? TileFields { get; init; }
+
+    /// <summary>The fields of the effect where it is used.</summary>
+    public IReadOnlyList<FieldSchema> FieldsFor(EffectContext context) =>
+        context == EffectContext.Tile && TileFields is not null ? TileFields : Fields;
+
+    public FieldSchema? FindField(string key, EffectContext context = EffectContext.Skill)
     {
-        foreach (var f in Fields)
+        foreach (var f in FieldsFor(context))
         {
             if (f.Key == key)
             {
@@ -37,10 +47,10 @@ public sealed record EffectTypeDescriptor(string Type, string Label, string Desc
     }
 
     /// <summary>A new effect of this type with every field at its default.</summary>
-    public EffectData CreateDefault()
+    public EffectData CreateDefault(EffectContext context = EffectContext.Skill)
     {
         var effect = new EffectData(Type);
-        foreach (var f in Fields)
+        foreach (var f in FieldsFor(context))
         {
             if (f.Default is { } d)
             {
@@ -150,6 +160,35 @@ public sealed class EffectTypeRegistry
         Options = StackingOptions, Hint = "Что делать, если цель уже под этим эффектом.",
     };
 
+    public static IReadOnlyList<FieldOption> SideOptions { get; } = new[]
+    {
+        new FieldOption(TileSides.All, "все юниты"),
+        new FieldOption(TileSides.Player, "только юниты игрока"),
+        new FieldOption(TileSides.Enemy, "только враги"),
+    };
+
+    public static IReadOnlyList<FieldOption> TriggerOptions { get; } = new[]
+    {
+        new FieldOption("stay", "пока юнит на гексе"),
+        new FieldOption("enter", "при входе на гекс"),
+        new FieldOption("exit", "при выходе с гекса"),
+    };
+
+    private static FieldSchema Sides() => Param("sides", "На кого действует", FieldKind.Choice, TileSides.All) with
+    {
+        Options = SideOptions, Hint = "У гекса нет «своих» и «чужих»: выбирается сторона юнитов.",
+    };
+
+    private static FieldSchema Trigger(bool stay) => Param("trigger", "Когда", FieldKind.Choice, stay ? "stay" : "enter") with
+    {
+        Options = stay ? TriggerOptions : new[] { TriggerOptions[1], TriggerOptions[2] },
+        Hint = stay
+            ? "«Пока на гексе» — непрерывно по игровому времени нахождения в логическом гексе (5 HP/с × 2 с = 10 HP)."
+            : "Один раз, когда логический гекс юнита сменяется (появление на гексе — тоже вход).",
+    };
+
+    private static bool NotStay(object o) => (((EffectData)o).Get("trigger") as string ?? "stay") != "stay";
+
     /// <summary>The effect types of this version of the game (spec part 4 §6.3).</summary>
     public static EffectTypeRegistry CreateDefault()
     {
@@ -159,7 +198,7 @@ public sealed class EffectTypeRegistry
             EffectTypes.Damage,
             "Урон",
             "Отнимает здоровье у целей в клетке: фиксированное число или процент от силы атаки источника.",
-            EffectContext.Skill,
+            EffectContext.Skill | EffectContext.Tile,
             new[]
             {
                 Param("formula", "Расчёт", FieldKind.Choice, "fixed") with { Options = amountFormula, Hint = "150 % — это 1,5 × сила атаки, а не доля здоровья цели." },
@@ -168,12 +207,20 @@ public sealed class EffectTypeRegistry
                 Hits(),
                 Interval(),
                 Targets("enemies"),
-            }));
+            })
+        {
+            TileFields = new[]
+            {
+                Trigger(stay: false),
+                Param("amount", "Урон", FieldKind.Number, 10.0) with { Min = 0, Max = 10000, Unit = "HP" },
+                Sides(),
+            },
+        });
         registry.Register(new EffectTypeDescriptor(
             EffectTypes.Heal,
             "Лечение",
             "Восстанавливает здоровье целей, не выше максимума.",
-            EffectContext.Skill,
+            EffectContext.Skill | EffectContext.Tile,
             new[]
             {
                 Param("formula", "Расчёт", FieldKind.Choice, "fixed") with
@@ -185,32 +232,44 @@ public sealed class EffectTypeRegistry
                 Hits(),
                 Interval(),
                 Targets("allies"),
-            }));
+            })
+        {
+            TileFields = new[]
+            {
+                Trigger(stay: false),
+                Param("amount", "Лечение", FieldKind.Number, 10.0) with { Min = 0, Max = 10000, Unit = "HP" },
+                Sides(),
+            },
+        });
         foreach (var (type, label, text, targets) in new[]
         {
             (EffectTypes.Buff, "Бафф", "Временно увеличивает характеристику целей.", "allies"),
             (EffectTypes.Debuff, "Дебафф", "Временно уменьшает характеристику целей (не ниже безопасного минимума).", "enemies"),
         })
         {
-            registry.Register(new EffectTypeDescriptor(type, label, text, EffectContext.Skill, new[]
+            var stat = Param("stat", "Характеристика", FieldKind.Choice, Stats.MoveSpeed) with { Options = StatOptions };
+            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") } };
+            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => Is(o, "mode", "percent") };
+            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с или урон." };
+            registry.Register(new EffectTypeDescriptor(type, label, text, EffectContext.Skill | EffectContext.Tile, new[]
             {
-                Param("stat", "Характеристика", FieldKind.Choice, Stats.MoveSpeed) with { Options = StatOptions },
-                Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") } },
-                Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => Is(o, "mode", "percent") },
-                Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с или урон." },
+                stat, mode, percent, delta,
                 Duration(5),
                 Stacking(),
                 Hits(),
                 Interval(),
                 Targets(targets),
-            }));
+            })
+            {
+                TileFields = new[] { Trigger(stay: false), stat, mode, percent, delta, Duration(5), Stacking(), Sides() },
+            });
         }
 
         registry.Register(new EffectTypeDescriptor(
             EffectTypes.Periodic,
             "Периодический эффект",
-            "Урон или лечение каждую игровую секунду в течение длительности.",
-            EffectContext.Skill,
+            "Урон или лечение N HP за игровую секунду — непрерывно по игровому времени (дробно, без зависимости от FPS).",
+            EffectContext.Skill | EffectContext.Tile,
             new[]
             {
                 Param("kind", "Что", FieldKind.Choice, "damage") with { Options = new[] { new FieldOption("damage", "урон"), new FieldOption("heal", "лечение") } },
@@ -218,7 +277,18 @@ public sealed class EffectTypeRegistry
                 Duration(3),
                 Stacking(),
                 Targets("enemies"),
-            }));
+            })
+        {
+            TileFields = new[]
+            {
+                Trigger(stay: true),
+                Param("kind", "Что", FieldKind.Choice, "damage") with { Options = new[] { new FieldOption("damage", "урон"), new FieldOption("heal", "лечение") } },
+                Param("perSecond", "В секунду", FieldKind.Number, 5.0) with { Min = 0, Max = 10000, Unit = "HP/с" },
+                Duration(3) with { VisibleWhen = NotStay, Hint = "После входа/выхода эффект действует столько игровых секунд (статус)." },
+                Stacking() with { VisibleWhen = NotStay },
+                Sides(),
+            },
+        });
         return registry;
     }
 }

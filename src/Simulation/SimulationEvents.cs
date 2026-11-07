@@ -93,8 +93,11 @@ public enum DamageKind
     Skill = 1,
     Debug = 2,
 
-    /// <summary>A periodic effect (status of a skill, later a tile surface).</summary>
+    /// <summary>A periodic status (of a skill or a tile's enter/exit trigger).</summary>
     Periodic = 3,
+
+    /// <summary>A tile type acting on the unit standing on it or entering/leaving it (spec part 4 §7).</summary>
+    Surface = 4,
 }
 
 /// <summary>Health was restored (spec part 4 §6.3 p.2), never above the maximum.</summary>

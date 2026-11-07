@@ -57,4 +57,25 @@ public class RegistryTests
         Assert.Equal(EffectTargets.Enemies, spec.Targets);
         Assert.Equal(FieldKind.Number, damage.FindField("amount")!.Kind);
     }
+
+    [Fact]
+    public void Every_effect_usable_on_tiles_has_tile_fields_with_a_trigger_and_a_side_filter_and_no_source_formulas()
+    {
+        var registry = EffectTypeRegistry.CreateDefault();
+        var onTiles = registry.For(EffectContext.Tile).ToList();
+        Assert.Equal(new[] { "damage", "heal", "buff", "debuff", "periodic" }, onTiles.Select(t => t.Type));
+        foreach (var type in onTiles)
+        {
+            var fields = type.FieldsFor(EffectContext.Tile).Select(f => f.Key).ToList();
+            Assert.Contains("trigger", fields);
+            Assert.Contains("sides", fields);
+            Assert.DoesNotContain("formula", fields);
+            Assert.DoesNotContain("targets", fields);
+            Assert.DoesNotContain("hits", fields);
+        }
+
+        var stay = registry.Find(EffectTypes.Periodic)!.FindField("trigger", EffectContext.Tile)!;
+        Assert.Equal(new[] { "stay", "enter", "exit" }, stay.Options.Select(o => o.Value));
+        Assert.DoesNotContain(registry.Find(EffectTypes.Damage)!.FindField("trigger", EffectContext.Tile)!.Options, o => o.Value == "stay");
+    }
 }

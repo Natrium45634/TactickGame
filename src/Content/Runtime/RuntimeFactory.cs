@@ -15,7 +15,7 @@ using HexTactics.Core.Units;
 namespace HexTactics.Content.Runtime;
 
 /// <summary>How a tile type looks (presentation reads it; rules use the tile's <see cref="TileType"/>).</summary>
-public sealed record TileVisual(string Id, string Name, string Color, int Level, TileType Type);
+public sealed record TileVisual(string Id, string Name, string Color, int Level, TileType Type, string Icon = "");
 
 /// <summary>A unit definition turned into runtime values.</summary>
 public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IReadOnlyList<string> Skills, Side Side, string Color, double Scale)
@@ -38,6 +38,12 @@ public sealed record GameContent(
     /// <summary>The roster of the match: operative names and the unit definitions they are made of.</summary>
     public IReadOnlyList<(string Name, UnitProfile Profile)> Squad { get; init; } = Array.Empty<(string, UnitProfile)>();
 
+    /// <summary>
+    /// Effects of tile types by type id (spec part 4 §7) for <c>SimulationSettings.TileEffects</c>: map cells refer to a
+    /// type, the logic exists once per type.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<TileEffect>> TileEffects { get; init; } = new Dictionary<string, IReadOnlyList<TileEffect>>();
+
     /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
     public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
 }
@@ -50,6 +56,16 @@ public static class RuntimeFactory
 {
     public const string DefaultMapId = "core.map.prototype";
     public const string DefaultUnitId = "core.unit.operative";
+
+    /// <summary>
+    /// Hexes of the prototype map that a test run of the tile editor turns into the tested type: a 2 × 3 block right in
+    /// front of the player base, crossed by every route out of it.
+    /// </summary>
+    public static IReadOnlyList<HexCoord> TileTestCells { get; } = new[]
+    {
+        HexCoord.FromOffset(2, 4), HexCoord.FromOffset(2, 5), HexCoord.FromOffset(2, 6),
+        HexCoord.FromOffset(3, 4), HexCoord.FromOffset(3, 5), HexCoord.FromOffset(3, 6),
+    };
 
     public static TileType TypeOf(TileData tile)
     {
@@ -69,7 +85,31 @@ public static class RuntimeFactory
     }
 
     public static TileVisual Visual(ContentItem tile) =>
-        tile.Data is TileData t ? new TileVisual(tile.Id, tile.Name, t.Color, t.Level, TypeOf(t)) : throw new ArgumentException("Not a tile type.", nameof(tile));
+        tile.Data is TileData t ? new TileVisual(tile.Id, tile.Name, t.Color, t.Level, TypeOf(t), t.Icon) : throw new ArgumentException("Not a tile type.", nameof(tile));
+
+    /// <summary>The runtime effects of a tile type with their triggers (fields of the tile context, spec part 4 §7.1).</summary>
+    public static IReadOnlyList<TileEffect> BuildTileEffects(ContentItem tile, EffectTypeRegistry effects)
+    {
+        if (tile.Data is not TileData data)
+        {
+            throw new ArgumentException("Not a tile type.", nameof(tile));
+        }
+
+        var list = new List<TileEffect>(data.Effects.Count);
+        foreach (var effect in data.Effects)
+        {
+            var spec = effect.ToSpec(effects, EffectContext.Tile);
+            var trigger = spec.Text("trigger", effect.Type == EffectTypes.Periodic ? "stay" : "enter") switch
+            {
+                "stay" => TileTrigger.Stay,
+                "exit" => TileTrigger.Exit,
+                _ => TileTrigger.Enter,
+            };
+            list.Add(new TileEffect(trigger, spec));
+        }
+
+        return list;
+    }
 
     /// <summary>
     /// The map: a workspace of <c>columns × rows</c> where only the listed tiles exist (the rest are empty places).
@@ -108,7 +148,7 @@ public static class RuntimeFactory
 
             var tileType = TypeOf(type);
             var zone = tileType == TileType.SpawnZone ? t.Zone ?? 1 : 0;
-            grid.SetTile(coord, tileType, t.Tile, t.Level ?? type.Level, zone);
+            grid.SetTile(coord, tileType, t.Tile, t.Level ?? type.Level, zone, type.Waypoints);
             switch (tileType)
             {
                 case TileType.SpawnZone:
@@ -195,7 +235,7 @@ public static class RuntimeFactory
     /// lists the unit definitions of the five roster operatives (missing entries = <paramref name="unitId"/>);
     /// <paramref name="extraUnits"/> are unsaved unit definitions to include (test runs of the unit editor).
     /// </summary>
-    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null, IReadOnlyList<ContentItem>? extraUnits = null, ContentItem? testSkill = null)
+    public static GameContent BuildGame(ContentLibrary library, ContentItem mapItem, string unitId = DefaultUnitId, IReadOnlyList<string>? squad = null, IReadOnlyList<ContentItem>? extraUnits = null, ContentItem? testSkill = null, ContentItem? testTile = null)
     {
         var issues = new IssueList();
         var unitItem = library.Find(ContentTypeRegistry.Unit, unitId) ?? throw new InvalidOperationException($"Unit '{unitId}' is not in the content library.");
@@ -220,12 +260,42 @@ public static class RuntimeFactory
         }
 
         var tiles = new Dictionary<string, TileVisual>(StringComparer.Ordinal);
-        foreach (var item in library.Items(ContentTypeRegistry.Tile))
+        var tileEffects = new Dictionary<string, IReadOnlyList<TileEffect>>(StringComparer.Ordinal);
+        var tileItems = new List<ContentItem>(library.Items(ContentTypeRegistry.Tile));
+        if (testTile is not null)
+        {
+            tileItems.RemoveAll(t => t.Id == testTile.Id);
+            tileItems.Add(testTile);
+        }
+
+        foreach (var item in tileItems)
         {
             tiles[item.Id] = Visual(item);
+            if (item.HasErrors && !ReferenceEquals(item, testTile))
+            {
+                issues.Warning(item.Id, $"тип гекса «{item.Name}» с ошибками — его эффекты не действуют");
+                continue;
+            }
+
+            if (BuildTileEffects(item, library.Registry.Effects) is { Count: > 0 } list)
+            {
+                tileEffects[item.Id] = list;
+            }
         }
 
         var map = BuildMap(mapItem, library, issues);
+        if (testTile?.Data is TileData tested)
+        {
+            // Tile test run: a block in front of the base becomes the tested type (an unsaved copy is fine).
+            foreach (var cell in TileTestCells)
+            {
+                if (map.Grid.Contains(cell) && map.Grid.Exists(cell) && map.Grid[cell].Type == TileType.Walkable)
+                {
+                    map.Grid.SetTile(cell, TypeOf(tested) is TileType.Blocked ? TileType.Blocked : TileType.Walkable, testTile.Id, tested.Level, 0, tested.Waypoints);
+                }
+            }
+        }
+
         var unit = BuildUnit(unitItem);
         var known = new List<string>();
         foreach (var s in unit.Skills)
@@ -280,7 +350,7 @@ public static class RuntimeFactory
             roster.Add((GameContent.OperativeNames[i], template.ToProfile()));
         }
 
-        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster };
+        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster, TileEffects = tileEffects };
     }
 
     private static UnitTemplate SkillFirst(UnitTemplate template, string skillId) =>

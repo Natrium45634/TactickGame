@@ -23,6 +23,13 @@ public sealed record SimulationSettings
     /// <summary>Skill set of new units (prototype: every unit has «Линейный удар»).</summary>
     public IReadOnlyList<string> DefaultSkillSet { get; init; } = new[] { HexTactics.Core.Skills.SkillCatalog.LinearStrikeId };
 
+    /// <summary>
+    /// Effects of tile types by tile type id (spec part 4 §7): executed by <see cref="TileEffectSystem"/> for the unit's
+    /// logical hex. Map cells only refer to a type (<c>TileState.TileId</c>); the logic exists once, here.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<HexTactics.Core.Effects.TileEffect>> TileEffects { get; init; } =
+        new Dictionary<string, IReadOnlyList<HexTactics.Core.Effects.TileEffect>>();
+
     /// <summary>Unit definition id of units created without a profile (enemy targets, debug spawns).</summary>
     public string? DefaultUnitId { get; init; }
 

@@ -3,6 +3,7 @@ using HexTactics.Content.Kinds;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
 using HexTactics.Content.Registry;
+using HexTactics.Core.Effects;
 using HexTactics.Tests.Support;
 using Xunit;
 
@@ -179,6 +180,53 @@ public class SerializerAndValidationTests
         tile.Category = TileData.Deploy;
         tile.Passable = false;
         Assert.Contains(library.Validate(item), i => i.IsError && i.Path == "data.passable");
+    }
+
+    [Fact]
+    public void Tile_types_round_trip_icon_waypoints_and_triggered_effects_and_old_files_keep_their_meaning()
+    {
+        var library = ContentTestKit.Library(null);
+        var item = library.Create(ContentTypeRegistry.Tile, "Брод");
+        var tile = (TileData)item.Data;
+        tile.Category = TileData.Special;
+        tile.Icon = "≈";
+        tile.Waypoints = false;
+        var slow = _registry.Effects.Find("debuff")!.CreateDefault(EffectContext.Tile);
+        slow.Set("percent", 0.5);
+        tile.Effects.Add(slow);
+        tile.Effects.Add(_registry.Effects.Find("periodic")!.CreateDefault(EffectContext.Tile));
+        Assert.DoesNotContain(library.Validate(item), i => i.IsError);
+
+        var back = Read(ContentSerializer.Write(item));
+        var read = (TileData)back.Item!.Data;
+        Assert.Equal(("≈", false, 2), (read.Icon, read.Waypoints, read.Effects.Count));
+        var cloned = (TileData)tile.Clone();
+        Assert.Equal(("≈", false, 2, TileData.Special), (cloned.Icon, cloned.Waypoints, cloned.Effects.Count, cloned.Category));
+        Assert.Equal("enter", read.Effects[0].Get("trigger"));
+        Assert.Equal("stay", read.Effects[1].Get("trigger"));
+
+        // A v0.15–v0.18 tile file has neither field: ТД allowed, no icon (no migration needed).
+        var old = (TileData)library.Find(ContentTypeRegistry.Tile, "core.tile.ground")!.Data;
+        Assert.Equal(("", true), (old.Icon, old.Waypoints));
+    }
+
+    [Fact]
+    public void Tile_effects_are_checked_with_their_tile_fields()
+    {
+        var library = ContentTestKit.Library(null);
+        var item = library.Create(ContentTypeRegistry.Tile, "Лава");
+        var tile = (TileData)item.Data;
+        var burn = _registry.Effects.Find("periodic")!.CreateDefault(EffectContext.Tile);
+        burn.Set("perSecond", -5.0);
+        tile.Effects.Add(burn);
+        var hit = _registry.Effects.Find("damage")!.CreateDefault(EffectContext.Tile);
+        hit.Set("trigger", "stay");
+        tile.Effects.Add(hit);
+        tile.Icon = "ЛАВА!";
+        var issues = library.Validate(item);
+        Assert.Contains(issues, i => i.Path == "data.effects[0].perSecond" && i.IsError);
+        Assert.Contains(issues, i => i.Path == "data.effects[1].trigger" && i.IsError);
+        Assert.Contains(issues, i => i.Path == "data.icon" && i.IsError);
     }
 
     [Fact]

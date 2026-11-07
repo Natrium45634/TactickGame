@@ -277,6 +277,44 @@ $script:PersistenceScenarioV18 = (@(
     'expect:skills:Тройной удар,Линейный удар', 'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + ($script:PersistenceScenarioV17 -replace 'expect:skills:1;', 'expect:skills:2;')
 
+# v0.19.0+ (spec part 4 §7, §12.3 p.21–23): the tile type editor through its real controls — «Жгучая поверхность»
+# (special, orange, icon, periodic damage 5 HP/s while on the hex; −5 HP/s and a 5-letter icon refused; undo/redo),
+# its test run (a unit on it loses exactly 10 HP in 2 game seconds — 60 ticks, none while paused), «Целебная
+# поверхность» (+5 HP/s); a new map in the map editor with both user types placed by reference; its test run: a unit walks
+# onto the burning hex (−10 HP over 2 s of logical presence), onto the healing one (+), off it (healing stops) and back
+# (never above the maximum).
+$script:RegressionScenarioV19 = $script:RegressionScenarioV18 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.tile', 'expect:rows:8', 'ui:dev.create', 'expect:editor:tile', 'field:tile.name=Жгучая поверхность',
+    'field:tile.category=special', 'field:tile.color=#E0805A', 'field:tile.icon=♨', 'field:tile.addtype=periodic', 'ui:tile.add',
+    'expect:effects:1', 'expect:tile-preview:1:урон 5 HP за игровую секунду нахождения (за 2 с — 10 HP)',
+    'field:tile.e0.perSecond=-5', 'expect:editor-message:не меньше', 'field:tile.icon=ОГОНЬ', 'expect:editor-message:не длиннее',
+    'expect:tile-field:icon:♨', 'key:ctrl+z', 'expect:effects:0', 'key:ctrl+y', 'expect:effects:1',
+    'ui:tile.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:tile.test', 'expect:screen:play', 'pause:on', 'spawn:cell:2,5', 'expect:hp:1:100', 'advance:60', 'expect:hp:1:90',
+    'wait:20', 'expect:hp:1:90', 'spawn:cell:4,5', 'advance:30', 'expect:hp:2:100', 'expect:hp:1:85',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:tile', 'ui:tile.back', 'expect:rows:9',
+    'ui:dev.create', 'expect:editor:tile', 'field:tile.name=Целебная поверхность', 'field:tile.category=special',
+    'field:tile.color=#8FD19E', 'field:tile.icon=+', 'field:tile.addtype=periodic', 'ui:tile.add', 'field:tile.e0.kind=heal',
+    'expect:tile-preview:1:лечение 5 HP за игровую секунду', 'ui:tile.save', 'expect:errors:0', 'ui:tile.back', 'expect:rows:10',
+    'ui:dev.cat.map', 'ui:dev.create', 'expect:editor:map', 'click:2,4', 'field:map.tile.type=База игрока',
+    'click:3,4', 'field:map.tile.type=Жгучая поверхность (свой)', 'expect:tile:3,4:Жгучая поверхность',
+    'click:4,4', 'field:map.tile.type=Целебная поверхность (свой)', 'expect:tile:4,4:Целебная поверхность', 'click:5,4',
+    'expect:tiles:4', 'ui:map.tab.map', 'field:map.name=Поверхности', 'ui:map.save', 'expect:dirty:no', 'expect:map-errors:0',
+    'ui:map.test', 'expect:screen:play', 'pause:on', 'spawn:base', 'expect:cell:1:2,4', 'expect:hp:1:100',
+    'drag:2,4>3,4', 'click:3,4@North:0.6', 'expect:draft:none', 'advance:75', 'expect:cell:1:3,4', 'expect:hp:1:90~0.2',
+    'drag:3,4>4,4', 'click:4,4@North:0.6', 'advance:45', 'expect:cell:1:4,4', 'expect:hp:1:92.5~0.4',
+    'drag:4,4>5,4', 'click:5,4@North:0.6', 'advance:60', 'expect:cell:1:5,4', 'expect:hp:1:95~0.6', 'advance:60', 'expect:hp:1:95~0.6',
+    'drag:5,4>4,4', 'click:4,4@North:0.6', 'advance:300', 'expect:hp:1:100',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back', 'expect:item:map:Поверхности:yes', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV19 = (@(
+    'ui:menu.dev', 'ui:dev.cat.tile', 'expect:item:tile:Жгучая поверхность:yes', 'row:name=Жгучая поверхность', 'ui:dev.open',
+    'expect:editor:tile', 'expect:effects:1', 'expect:tile-field:icon:♨', 'expect:tile-field:category:special',
+    'expect:tile-preview:1:урон 5 HP за игровую секунду', 'ui:tile.back', 'ui:dev.cat.map', 'row:name=Поверхности', 'ui:dev.open',
+    'expect:editor:map', 'expect:tile:3,4:Жгучая поверхность', 'expect:tile:4,4:Целебная поверхность', 'ui:map.back', 'ui:dev.back'
+) -join ';') + ';' + ($script:PersistenceScenarioV18 -replace 'ui:dev.cat.tile;expect:rows:8', 'ui:dev.cat.tile;expect:rows:10')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -337,7 +375,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
+            $scenario = if ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
+                        elseif ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
                         elseif ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
                         elseif ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
                         elseif ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
@@ -351,7 +390,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }
+            if ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }
+            elseif ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }
             elseif ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }
             elseif ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
             elseif ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }

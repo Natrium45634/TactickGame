@@ -103,7 +103,7 @@ public sealed class HexGrid
     }
 
     /// <summary>Places a tile that is an instance of a library tile type (spec part 4 §4.2, §7.1).</summary>
-    public void SetTile(HexCoord coord, TileType type, string? tileId, int level, int zoneId = 0)
+    public void SetTile(HexCoord coord, TileType type, string? tileId, int level, int zoneId = 0, bool allowsWaypoints = true)
     {
         if (!Contains(coord))
         {
@@ -111,7 +111,7 @@ public sealed class HexGrid
         }
 
         var o = coord.ToOffset();
-        _tiles[Index(o.Col, o.Row)] = new TileState(coord, type, type == TileType.SpawnZone ? zoneId : 0, 1, tileId, level);
+        _tiles[Index(o.Col, o.Row)] = new TileState(coord, type, type == TileType.SpawnZone ? zoneId : 0, 1, tileId, level, allowsWaypoints);
         Version++;
     }
 

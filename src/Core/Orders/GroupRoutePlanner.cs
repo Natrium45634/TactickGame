@@ -30,6 +30,9 @@ public enum GroupPlanError
 
     /// <summary>Not enough free reachable hexes around the КТД for every companion (spec part 2 §6.2).</summary>
     NotEnoughSlots,
+
+    /// <summary>The tile type of the КТД hex forbids waypoints (spec part 4 §7.1).</summary>
+    WaypointsForbidden,
 }
 
 /// <summary>The formation at one КТД: captain on the КТД, every companion on its own neighbouring slot.</summary>
@@ -307,6 +310,11 @@ public sealed class GroupStageEvaluator
         if (!_state.Grid[target].IsWalkable)
         {
             return GroupPlanError.NotWalkable;
+        }
+
+        if (!_state.Grid[target].AllowsWaypoints)
+        {
+            return GroupPlanError.WaypointsForbidden;
         }
 
         // Only the captain may stand on its КТД; a hex being entered/left by a non-member is taken as well.

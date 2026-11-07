@@ -27,6 +27,9 @@ public enum DraftTargetStatus
 
     /// <summary>An enemy unit is under the pointer: reserved future <see cref="OrderKind.AttackTarget"/>; nothing happens now.</summary>
     AttackTarget,
+
+    /// <summary>The tile type forbids waypoints (spec part 4 §7.1): the hex is red, units may still walk across it.</summary>
+    WaypointsForbidden,
 }
 
 public enum DraftCancelReason

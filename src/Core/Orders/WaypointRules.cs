@@ -31,6 +31,9 @@ public enum WaypointError
 
     /// <summary>A planned waypoint skill is unknown to the unit or refers to no waypoint (spec part 3 §6.5).</summary>
     InvalidSkill,
+
+    /// <summary>The tile type forbids waypoints on it (spec part 4 §7.1).</summary>
+    WaypointsForbidden,
 }
 
 /// <summary>
@@ -70,6 +73,11 @@ public static class WaypointRules
         if (!state.Grid[target].IsWalkable)
         {
             return WaypointError.NotWalkable;
+        }
+
+        if (!state.Grid[target].AllowsWaypoints)
+        {
+            return WaypointError.WaypointsForbidden;
         }
 
         if (state.IsOccupiedByOther(target, unit))

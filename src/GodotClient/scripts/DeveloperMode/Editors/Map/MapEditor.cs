@@ -726,7 +726,25 @@ public partial class MapEditor : Node3D, IContentEditor
             _ => "нельзя",
         });
         _inspector.ReadOnly("Цвет типа", data.Color, Color.FromHtml(data.Color));
-        _inspector.ReadOnly("Эффекты типа", data.Effects.Count == 0 ? "нет" : string.Join(", ", data.Effects.Select(e => e.Type)));
+        if (data.Passable && data.Category != TileData.Obstacle && !data.Waypoints)
+        {
+            _inspector.ReadOnly("ТД / КТД", "нельзя ставить (из типа), пройти можно");
+        }
+
+        if (data.Effects.Count == 0)
+        {
+            _inspector.ReadOnly("Эффекты типа", "нет");
+        }
+        else
+        {
+            _inspector.Section("Эффекты типа (общие для всех его гексов)");
+            foreach (var effect in data.Effects)
+            {
+                _inspector.Text(HexTactics.Editor.Tiles.TilePreview.DescribeEffect(effect, _library.Registry.Effects), size: 12);
+            }
+
+            _inspector.Hint("Гекс карты ссылается на тип: изменить эффекты — в редакторе гексов («Гексы»), они изменятся на всех картах.");
+        }
         var levels = new List<ChoiceOption> { new(string.Empty, $"как у типа ({data.Level})") };
         for (var l = 0; l <= 3; l++)
         {
@@ -885,9 +903,9 @@ public partial class MapEditor : Node3D, IContentEditor
                 break;
             case "tile":
                 {
-                    // expect:tile:c,r:<tile id>|none
+                    // expect:tile:c,r:<tile id or tile type name>|none — the hex refers to that library type
                     actual = _model.TileAt(ParseHex(a[1]))?.Tile ?? "none";
-                    ok = actual == a[2];
+                    ok = actual == a[2] || _library.Find(ContentTypeRegistry.Tile, actual)?.Name == a[2];
                     break;
                 }
 

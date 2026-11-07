@@ -15,7 +15,11 @@ namespace HexTactics.Core.Map;
 /// the content library (tests, legacy <c>.hexmap</c>).
 /// </param>
 /// <param name="Level">Relief level of the cell (spec part 4 §4.2) — appearance only, no combat rules.</param>
-public readonly record struct TileState(HexCoord Coord, TileType Type, int ZoneId = 0, int MoveCost = 1, string? TileId = null, int Level = 0)
+/// <param name="AllowsWaypoints">
+/// False if the tile type forbids ТД/КТД on it (spec part 4 §7.1: «возможность стать целью ТД»); units may still walk
+/// across it and stand on it by other means (spawn, companions of a command order).
+/// </param>
+public readonly record struct TileState(HexCoord Coord, TileType Type, int ZoneId = 0, int MoveCost = 1, string? TileId = null, int Level = 0, bool AllowsWaypoints = true)
 {
     public bool IsWalkable => Type is not (TileType.Blocked or TileType.Void);
 

@@ -234,6 +234,7 @@ public static class UiText
         {
             GroupTargetStatus.OutOfBounds or GroupTargetStatus.NoTarget => "точка вне поля",
             GroupTargetStatus.NotWalkable => $"клетка {c} непроходима",
+            GroupTargetStatus.WaypointsForbidden => $"клетка {c}: на этом типе гекса нельзя ставить КТД",
             GroupTargetStatus.Occupied => $"клетка {c} занята",
             GroupTargetStatus.CaptainUnreachable => $"капитан не может дойти до {c}",
             GroupTargetStatus.NotEnoughSlots => $"вокруг {c} не хватает свободных достижимых клеток для всей команды",
@@ -247,6 +248,7 @@ public static class UiText
         GroupPlanError.NotEnoughSlots => "не хватает мест для команды",
         GroupPlanError.Occupied => "клетка занята",
         GroupPlanError.NotWalkable => "клетка непроходима",
+        GroupPlanError.WaypointsForbidden => "на этом типе гекса нельзя ставить КТД",
         GroupPlanError.OutOfBounds => "вне поля",
         _ => error.ToString(),
     };
@@ -258,6 +260,7 @@ public static class UiText
         {
             DraftTargetStatus.OutOfBounds or DraftTargetStatus.NoTarget => "точка вне поля",
             DraftTargetStatus.NotWalkable => $"клетка {c} непроходима",
+            DraftTargetStatus.WaypointsForbidden => $"клетка {c}: на этом типе гекса нельзя ставить ТД",
             DraftTargetStatus.Occupied => $"клетка {c} занята",
             DraftTargetStatus.Unreachable => $"до клетки {c} нет пути",
             _ => "недопустимая клетка",
@@ -268,6 +271,7 @@ public static class UiText
     {
         WaypointError.OutOfBounds => "точка вне поля",
         WaypointError.NotWalkable => $"клетка {(cell is { } c ? Cell(c) : string.Empty)} непроходима",
+        WaypointError.WaypointsForbidden => $"клетка {(cell is { } c2 ? Cell(c2) : string.Empty)}: на этом типе гекса нельзя ставить ТД",
         WaypointError.Occupied => "клетка занята",
         WaypointError.Unreachable => "нет пути",
         WaypointError.SameAsSource => "совпадает с исходной клеткой",

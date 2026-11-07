@@ -169,6 +169,7 @@ public partial class GameMode : Node3D
                 Skills = _content.Skills,
                 DefaultSkillSet = _content.DefaultUnit.Skills,
                 DefaultUnitId = _content.DefaultUnit.Id,
+                TileEffects = _content.TileEffects,
             },
             _content.Squad.Count > 0
                 ? new RosterState(System.Linq.Enumerable.Select(_content.Squad, s => (s.Name, (HexTactics.Core.Units.UnitProfile?)s.Profile)))
@@ -1241,6 +1242,22 @@ public partial class GameMode : Node3D
                     return 1;
                 }
 
+            case "advance":
+                {
+                    // advance:N — exactly N simulation ticks inside this frame, also on pause (the pause is kept): a
+                    // deterministic check of timed rules (tile surfaces, statuses) without real frames in between.
+                    var n = int.Parse(arg, CultureInfo.InvariantCulture);
+                    var paused = _sim.IsPaused;
+                    _sim.SetPaused(false);
+                    for (var i = 0; i < n; i++)
+                    {
+                        _sim.Advance(_sim.Settings.TickDuration);
+                    }
+
+                    _sim.SetPaused(paused);
+                    return 2;
+                }
+
             case "waitidle":
                 {
                     // waitidle:<unit>[:<maxFrames>] — polls until the unit has finished its orders.
@@ -1411,9 +1428,16 @@ public partial class GameMode : Node3D
                 }
 
             case "hp":
-                actual = Unit(1)?.CurrentHealth.ToString("0.###", CultureInfo.InvariantCulture) ?? "none";
-                ok = actual == a[2];
-                break;
+                {
+                    // expect:hp:ID:value or expect:hp:ID:value~tolerance
+                    var health = Unit(1)?.CurrentHealth;
+                    actual = health?.ToString("0.###", CultureInfo.InvariantCulture) ?? "none";
+                    var tilde = a[2].IndexOf('~');
+                    ok = tilde < 0
+                        ? actual == a[2]
+                        : health is { } h && Math.Abs(h - double.Parse(a[2][..tilde], CultureInfo.InvariantCulture)) <= double.Parse(a[2][(tilde + 1)..], CultureInfo.InvariantCulture) + 1e-9;
+                    break;
+                }
             case "movefill":
                 // expect:movefill:on|off — the green/red movement fills are shown (a draft or a command stage)
                 actual = MovementFillsAllowed && (_fsm.Draft is not null || _fsm.Group?.NextStage is not null) ? "on" : "off";

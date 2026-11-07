@@ -1,9 +1,9 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.18.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.19.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
-стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов и
-навыков, ядро эффектов). Формат контента —
+стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
+навыков и типов гексов, ядро эффектов, поверхности). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -41,10 +41,11 @@ TactickGame/                     корень репозитория (логич
       Combat/                    UnitStats, LifeState, AttackStatus, CombatState (с v0.12.0)
       Skills/                    SkillDefinition (+SkillCell), SkillCatalog, SkillAction, WaypointSkillSpec (с v0.13.0/v0.14.0)
       Effects/                   EffectSpec, EffectTargets, EffectTypes (с v0.15.0); StatusEffect, StackingPolicy, Stats,
-                                 StatModifiers (с v0.18.0)
+                                 StatModifiers (с v0.18.0); TileTrigger, TileEffect, TileSides (с v0.19.0)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
-                                 MovementSystem, SkillSystem, AttackSystem, StatusSystem (с v0.18.0), EffectResolver,
+                                 MovementSystem, SkillSystem, AttackSystem, TileEffectSystem (с v0.19.0), StatusSystem
+                                 (с v0.18.0), EffectResolver,
                                  события (без Godot)
     Content/                     HexTactics.Content (с v0.15.0) — Model (ContentRef, ContentIssue, ContentIds), Schema
                                  (FieldSchema), Kinds (MapData, UnitData, SkillData, TileData, EffectData), Registry
@@ -53,7 +54,7 @@ TactickGame/                     корень репозитория (логич
     Editor/                      HexTactics.Editor (с v0.15.0) — History (CommandHistory, команды), Library (LibraryBrowser,
                                  LibraryCommands), Maps (MapEditorModel, с v0.16.0), Definitions (DefinitionEditorModel),
                                  Units (UnitEditorModel, CombatPreviewText — с v0.17.0), Skills (SkillEditorModel,
-                                 EffectPreview — с v0.18.0)
+                                 EffectPreview — с v0.18.0), Tiles (TileEditorModel, TilePreview — с v0.19.0)
     Interaction/                 HexTactics.Interaction — InputStateMachine (+ .Group.cs — режим «Команда»), DraftView,
                                  PlacementView, GroupDraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
@@ -65,6 +66,7 @@ TactickGame/                     корень репозитория (логич
       scripts/DeveloperMode/     DeveloperMode (каталог категорий, список, свойства, сообщения, реестр редакторов, черновики),
                                  Editors/IContentEditor, Editors/DefinitionEditorShell, Editors/Map/MapEditor (с v0.16.0),
                                  Editors/Unit/UnitEditor (с v0.17.0), Editors/Skill/SkillEditor (с v0.18.0),
+                                 Editors/Tile/TileEditor (с v0.19.0),
                                  SharedInspector/Inspector
       scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView,
                                  OrdersView (стрелки и ТД), VisualConfig, TilePalette (вид типов гексов из библиотеки)
@@ -334,8 +336,14 @@ tests/*  ──► соответствующие сборки
   на каждом тике: цели клетки — на этом тике, эффект — через `EffectResolver` (урон/лечение — сразу, бафф/дебафф/
   периодический — `GameState.AddStatus` с политикой повтора). Пока статус действия `Executing`, юнит стоит в точке;
   по завершении — `SkillCompleted`, отмена (удаление ТД, смерть) — `SkillInterrupted`. `StatusSystem` (после атак) стареет
-  статусы, тикает периодические раз в секунду, снимает истёкшие и пересчитывает `UnitState.Stats` из `BaseStats`
-  (`StatModifiers.Effective` с безопасными минимумами). Порядок систем: Movement → Skills → Attack → Statuses → смерти.
+  статусы, применяет периодические непрерывно (perSecond × время тика), снимает истёкшие и пересчитывает `UnitState.Stats` из `BaseStats`
+  (`StatModifiers.Effective` с безопасными минимумами). Порядок систем: Movement → Skills → Attack → Tiles (с v0.19.0) →
+  Statuses → смерти.
+- **Поверхности (v0.19.0, ТЗ ч.4 §7, D-107–D-110).** `SimulationSettings.TileEffects` (ID типа → `TileEffect`: триггер +
+  `EffectSpec`) строит `RuntimeFactory` из библиотеки; клетка карты хранит только `TileState.TileId`. `TileEffectSystem`
+  смотрит логический гекс (`UnitState.Cell`) каждого живого юнита: смена — `exit`/`enter`, каждый тик — `stay`
+  (`EffectInvocation.Slice` = время тика, периодический применяется сразу на эту долю). Без источника цели фильтрует
+  `sides`. `TileState.AllowsWaypoints` проверяют `WaypointRules` и проверка КТД (красная подсветка, путь через гекс разрешён).
 
 ## 7.7. Контент, режимы и редакторы (с v0.15.0, ТЗ ч.4, D-080–D-091)
 
@@ -365,6 +373,11 @@ tests/*  ──► соответствующие сборки
   Клик → смещение от центра → `SkillEditorModel.Click` (поворот к хранимому для взгляда на север). Панель: клетка (свои
   эффекты / наследование с переопределениями), поля эффектов из `EffectTypeRegistry`; справа — `Preview()` с выбранной
   силой атаки. «Тест навыка» — `RuntimeFactory.BuildGame(…, testSkill)`.
+- **Редактор типов гексов (с v0.19.0, D-111).** `TileEditor`: доска 7 × 7 — тип (несохранённые значения) на центре и
+  кольце, обычные гексы вокруг (`TilePalette` с видом рабочей копии); поля `TileData.Fields`; эффекты — поля для гексов
+  (`EffectTypeDescriptor.FieldsFor(Tile)`); справа — `TilePreview`. «Тест гекса» — `RuntimeFactory.BuildGame(…, testTile)`.
+  Редактор карт берёт типы из библиотеки (свои — с пометкой «(свой)»), панель гекса показывает правила типа словами.
+  Значки типов — `BoardView` (Label3D на гексе).
 - **Постоянное правило (ТЗ ч.4 §9.3).** Любая новая редактируемая механика в том же релизе получает: правила в ТЗ,
   версионированную схему, проверку и миграцию, единый обработчик в симуляции, поля и предпросмотр в режиме разработчика,
   сохранение/импорт/экспорт и тесты (игра, редактирование, загрузка, совместимость, откат). Новые категории — через реестр,
@@ -468,6 +481,10 @@ tests/*  ──► соответствующие сборки
 `skill.previewUnit`, `skill.previewAp`; проверки `expect:cells:N`, `expect:selected-cell:q,r|none`, `expect:skill-facing:Dir`,
 `expect:cell-color:q,r:#RRGGBB|default|none`, `expect:preview:N:<текст>` (строка N предпросмотра содержит текст). В бою:
 `menu-skill:N` — N-я кнопка навыка в меню ТД.
+С v0.19.0: редактор гексов — поля `tile.category|passable|waypoints|level|color|icon`, эффекты `tile.e<i>.<ключ>`,
+`tile.e<i>.remove`, `tile.addtype`, `tile.add`; проверки `expect:tile-field:<ключ>:<значение>`, `expect:effects:N`,
+`expect:tile-preview:N:<текст>`; в редакторе карт `expect:tile:c,r:` принимает и название типа. В бою: `advance:N` — ровно N
+тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
@@ -475,8 +492,9 @@ tests/*  ──► соответствующие сборки
 меню для v0.14.0, `$RegressionScenarioV141` = V14 + подсветка при меню/прицеливании для v0.14.1, `$RegressionScenarioV15` =
 «Играть» + V141 + выход в меню + каталог разработчика для v0.15.0, `$RegressionScenarioV16` = V15 + редактор карт, тест,
 игра на сохранённой карте для v0.16.0, `$RegressionScenarioV17` = V16 + редактор юнитов, тест, отряд для v0.17.0,
-`$RegressionScenarioV18` = V17 + редактор навыков, тест навыка, навык своего юнита из меню ТД для v0.18.0+;
-`$PersistenceScenarioV15/V16/V17/V18` — второй запуск с той же папкой пользователя:
+`$RegressionScenarioV18` = V17 + редактор навыков, тест навыка, навык своего юнита из меню ТД для v0.18.0,
+`$RegressionScenarioV19` = V18 + редактор гексов, тест гекса, карта с жгучей и целебной поверхностями для v0.19.0+;
+`$PersistenceScenarioV15/V16/V17/V18/V19` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

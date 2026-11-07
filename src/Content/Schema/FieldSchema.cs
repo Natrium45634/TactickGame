@@ -76,6 +76,9 @@ public sealed partial record FieldSchema
 
     public bool ReadOnly { get; init; }
 
+    /// <summary>Maximum length of a text field in characters (text elements); null — unlimited.</summary>
+    public int? MaxLength { get; init; }
+
     public IReadOnlyList<FieldOption> Options { get; init; } = Array.Empty<FieldOption>();
 
     /// <summary>Kind of the referenced objects for <see cref="FieldKind.Reference"/> / <see cref="FieldKind.ReferenceList"/>.</summary>
@@ -173,6 +176,11 @@ public sealed partial record FieldSchema
                 }
 
             default:
+                if (value is string text && MaxLength is { } limit && new StringInfo(text).LengthInTextElements > limit)
+                {
+                    return ContentIssue.Error(path, $"«{Label}»: не длиннее {limit} символов");
+                }
+
                 return value is string || value is null ? null : ContentIssue.Error(path, $"«{Label}»: ожидается текст");
         }
     }

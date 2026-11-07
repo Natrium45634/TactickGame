@@ -292,6 +292,7 @@ public sealed partial class InputStateMachine
         GroupPlanError.None => GroupTargetStatus.Valid,
         GroupPlanError.OutOfBounds => GroupTargetStatus.OutOfBounds,
         GroupPlanError.NotWalkable => GroupTargetStatus.NotWalkable,
+        GroupPlanError.WaypointsForbidden => GroupTargetStatus.WaypointsForbidden,
         GroupPlanError.Occupied => GroupTargetStatus.Occupied,
         GroupPlanError.SameAsSource => GroupTargetStatus.Neutral,
         GroupPlanError.CaptainUnreachable => GroupTargetStatus.CaptainUnreachable,

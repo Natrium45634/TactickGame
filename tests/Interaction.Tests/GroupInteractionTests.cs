@@ -214,6 +214,15 @@ public class GroupInteractionTests
     }
 
     [Fact]
+    public void A_tile_type_without_waypoints_is_red_for_a_KTD()
+    {
+        _sim.State.Grid.SetTile(C(3, 2), HexTactics.Core.Map.TileType.Walkable, "test.tile.ford", 0, allowsWaypoints: false);
+        Collect(_a, _b);
+        _fsm.PointerMove(AtHex(C(3, 2)));
+        Assert.Equal(GroupTargetStatus.WaypointsForbidden, _fsm.Group!.Status);
+    }
+
+    [Fact]
     public void Unreachable_or_walled_KTD_is_red()
     {
         Collect(_a, _b);

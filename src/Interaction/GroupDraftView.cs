@@ -41,6 +41,9 @@ public enum GroupTargetStatus
 
     /// <summary>An enemy unit: future attack order (reserved, spec part 2 §7).</summary>
     AttackTarget,
+
+    /// <summary>The tile type of the hex forbids КТД (spec part 4 §7.1).</summary>
+    WaypointsForbidden,
 }
 
 /// <summary>

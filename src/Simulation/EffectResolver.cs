@@ -18,7 +18,14 @@ public enum EffectSource
 /// One application of an effect to one target. <paramref name="SourceKey"/> identifies the origin (skill id, tile type
 /// id) for the stacking of statuses.
 /// </summary>
-public sealed record EffectInvocation(EffectSpec Effect, UnitState? Source, UnitState Target, long Tick, EffectSource Origin, string SourceKey = "");
+public sealed record EffectInvocation(EffectSpec Effect, UnitState? Source, UnitState Target, long Tick, EffectSource Origin, string SourceKey = "")
+{
+    /// <summary>
+    /// Game time of a continuous application (a «stay» effect of a tile for one tick, spec part 4 §7.2); 0 for one-off
+    /// applications. A periodic effect with a slice acts at once for that time instead of putting a status.
+    /// </summary>
+    public double Slice { get; init; }
+}
 
 /// <summary>Executes one registered effect type (spec part 4 §6.3, §9.2: only shared services resolve effects).</summary>
 public interface IEffectHandler
@@ -74,7 +81,13 @@ public sealed class EffectResolver
 
         if (source is null)
         {
-            return true;
+            // Tile effects have no source unit: they filter by side (spec part 4 §7.1 «условие выбора фракции»).
+            return effect.Text("sides", TileSides.All) switch
+            {
+                TileSides.Player => target.Side == Side.Player,
+                TileSides.Enemy => target.Side == Side.Enemy,
+                _ => true,
+            };
         }
 
         return effect.Targets switch
@@ -146,7 +159,7 @@ internal sealed class DamageEffectHandler : IEffectHandler
     public string Type => EffectTypes.Damage;
 
     public void Apply(EffectInvocation invocation, EffectResolver resolver) =>
-        resolver.DealDamage(invocation.Target, invocation.Source, EffectResolver.Amount(invocation.Effect, invocation.Source), invocation.Tick, invocation.Origin == EffectSource.Tile ? DamageKind.Periodic : DamageKind.Skill);
+        resolver.DealDamage(invocation.Target, invocation.Source, EffectResolver.Amount(invocation.Effect, invocation.Source), invocation.Tick, invocation.Origin == EffectSource.Tile ? DamageKind.Surface : DamageKind.Skill);
 }
 
 /// <summary><c>heal</c>: fixed HP or a multiple of a source characteristic; capped at the target's maximum (§6.3 p.2).</summary>
@@ -155,7 +168,7 @@ internal sealed class HealEffectHandler : IEffectHandler
     public string Type => EffectTypes.Heal;
 
     public void Apply(EffectInvocation invocation, EffectResolver resolver) =>
-        resolver.Heal(invocation.Target, invocation.Source, EffectResolver.Amount(invocation.Effect, invocation.Source), invocation.Tick, invocation.Origin == EffectSource.Tile ? DamageKind.Periodic : DamageKind.Skill);
+        resolver.Heal(invocation.Target, invocation.Source, EffectResolver.Amount(invocation.Effect, invocation.Source), invocation.Tick, invocation.Origin == EffectSource.Tile ? DamageKind.Surface : DamageKind.Skill);
 }
 
 /// <summary>
@@ -192,7 +205,11 @@ internal sealed class ModifierEffectHandler : IEffectHandler
     }
 }
 
-/// <summary><c>periodic</c>: damage or healing per game second for a duration — a status ticked by the status system.</summary>
+/// <summary>
+/// <c>periodic</c>: damage or healing of N HP per game second, applied continuously (N × game time every tick). From a
+/// skill or a tile's enter/exit trigger — a status for a duration, ticked by the status system; from a tile's «stay»
+/// trigger — directly for the time slice the unit spent on the tile this tick (spec part 4 §7.2).
+/// </summary>
 internal sealed class PeriodicEffectHandler : IEffectHandler
 {
     public string Type => EffectTypes.Periodic;
@@ -201,6 +218,20 @@ internal sealed class PeriodicEffectHandler : IEffectHandler
     {
         var e = invocation.Effect;
         var heals = e.Text("kind", "damage") == "heal";
+        if (invocation.Slice > 0)
+        {
+            var amount = Math.Max(0, e.Number("perSecond", 5)) * invocation.Slice;
+            if (heals)
+            {
+                resolver.Heal(invocation.Target, invocation.Source, amount, invocation.Tick, DamageKind.Surface);
+            }
+            else
+            {
+                resolver.DealDamage(invocation.Target, invocation.Source, amount, invocation.Tick, DamageKind.Surface);
+            }
+
+            return;
+        }
         resolver.AddStatus(invocation, new StatusEffect
         {
             Key = $"{invocation.SourceKey}|{Type}|{(heals ? "heal" : "damage")}",

@@ -68,6 +68,37 @@ public partial class CombatFxView : Node3D
 {
     private readonly List<(Node3D Node, double Age, double Life, Vector3 Start)> _items = new();
 
+    // Continuous effects (periodic statuses, tile surfaces) change health every tick by fractions; they are summed per
+    // unit and shown once per game second (or when they stop), not as 30 tiny numbers a second.
+    private readonly Dictionary<(UnitId Unit, bool Heal), (double Amount, long FirstTick, double Idle, Vector3 At)> _continuous = new();
+
+    private void Accumulate(UnitId unit, bool heal, double amount, long tick, Vector3 at)
+    {
+        var key = (unit, heal);
+        if (_continuous.TryGetValue(key, out var acc))
+        {
+            acc = (acc.Amount + amount, acc.FirstTick, 0, at);
+            _continuous[key] = acc;
+            if (tick - acc.FirstTick >= 29)
+            {
+                Flush(key);
+            }
+        }
+        else
+        {
+            _continuous[key] = (amount, tick, 0, at);
+        }
+    }
+
+    private void Flush((UnitId Unit, bool Heal) key)
+    {
+        if (_continuous.Remove(key, out var acc) && acc.Amount >= 0.05)
+        {
+            var text = (key.Heal ? "+" : "−") + HexTactics.Client.UI.UiText.Hp(acc.Amount);
+            Float(acc.At, text, key.Heal ? new Color(0.45f, 0.95f, 0.55f) : new Color(1f, 0.62f, 0.3f), 44, 1.0);
+        }
+    }
+
     public void Damage(Vector3 at, double amount, bool skill) =>
         Float(at, $"−{HexTactics.Client.UI.UiText.Hp(amount)}", skill ? new Color(1f, 0.45f, 0.35f) : new Color(1f, 0.95f, 0.85f), 52, 0.9);
 
@@ -113,6 +144,17 @@ public partial class CombatFxView : Node3D
 
     public override void _Process(double delta)
     {
+        foreach (var key in new List<(UnitId, bool)>(_continuous.Keys))
+        {
+            var acc = _continuous[key];
+            acc.Idle += delta;
+            _continuous[key] = acc;
+            if (acc.Idle > 0.35)
+            {
+                Flush(key); // the unit left the surface, the status ended or the game is paused
+            }
+        }
+
         for (var i = _items.Count - 1; i >= 0; i--)
         {
             var (node, age, life, start) = _items[i];
@@ -175,6 +217,12 @@ public partial class CombatFxView : Node3D
     {
         switch (e)
         {
+            case DamageApplied pd when pd.Amount > 0 && pd.Kind is DamageKind.Periodic or DamageKind.Surface && positionOf(pd.Target) is { } pp:
+                Accumulate(pd.Target, false, pd.Amount, pd.Tick, pp);
+                break;
+            case HealApplied ph when ph.Amount > 0 && ph.Kind is DamageKind.Periodic or DamageKind.Surface && positionOf(ph.Target) is { } php:
+                Accumulate(ph.Target, true, ph.Amount, ph.Tick, php);
+                break;
             case DamageApplied d when d.Amount > 0 && positionOf(d.Target) is { } p:
                 Damage(p, d.Amount, d.Kind == DamageKind.Skill);
                 break;

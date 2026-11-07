@@ -102,7 +102,7 @@ public sealed class EffectData
             context.Issues.Error(path, $"эффект «{descriptor.Label}» здесь не поддерживается");
         }
 
-        foreach (var field in descriptor.Fields)
+        foreach (var field in descriptor.FieldsFor(usage))
         {
             if (field.VisibleWhen is { } visible && !visible(this))
             {
@@ -118,7 +118,7 @@ public sealed class EffectData
 
         foreach (var key in Params.Keys)
         {
-            if (descriptor.FindField(key) is null)
+            if (descriptor.FindField(key, usage) is null)
             {
                 context.Issues.Warning(JsonFields.Join(path, key), $"поле «{key}» не используется эффектом «{descriptor.Label}»");
             }
@@ -126,12 +126,12 @@ public sealed class EffectData
     }
 
     /// <summary>The runtime effect: every field of the type with its value or default (unknown fields are dropped).</summary>
-    public EffectSpec ToSpec(EffectTypeRegistry registry)
+    public EffectSpec ToSpec(EffectTypeRegistry registry, EffectContext context = EffectContext.Skill)
     {
         var values = new Dictionary<string, object>(StringComparer.Ordinal);
         if (registry.Find(Type) is { } descriptor)
         {
-            foreach (var field in descriptor.Fields)
+            foreach (var field in descriptor.FieldsFor(context))
             {
                 if ((Get(field.Key) ?? field.Default) is { } value)
                 {
