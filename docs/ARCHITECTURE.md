@@ -1,9 +1,9 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.19.1** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.20.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
-навыков и типов гексов, ядро эффектов, поверхности). Формат контента —
+навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -50,11 +50,13 @@ TactickGame/                     корень репозитория (логич
     Content/                     HexTactics.Content (с v0.15.0) — Model (ContentRef, ContentIssue, ContentIds), Schema
                                  (FieldSchema), Kinds (MapData, UnitData, SkillData, TileData, EffectData), Registry
                                  (ContentTypeRegistry, EffectTypeRegistry), Storage (ContentRepository), Library
-                                 (ContentLibrary, ContentItem, ContentSerializer, MapChecks), Runtime (RuntimeFactory)
+                                 (ContentLibrary, ContentItem, ContentSerializer, MapChecks), Runtime (RuntimeFactory),
+                                 Transfer (ContentExporter, ContentImporter, PackageManifest — с v0.20.0)
     Editor/                      HexTactics.Editor (с v0.15.0) — History (CommandHistory, команды), Library (LibraryBrowser,
                                  LibraryCommands), Maps (MapEditorModel, с v0.16.0), Definitions (DefinitionEditorModel),
                                  Units (UnitEditorModel, CombatPreviewText — с v0.17.0), Skills (SkillEditorModel,
-                                 EffectPreview — с v0.18.0), Tiles (TileEditorModel, TilePreview — с v0.19.0)
+                                 EffectPreview — с v0.18.0), Tiles (TileEditorModel, TilePreview — с v0.19.0),
+                                 Transfer (ExportPlan, ImportSession — с v0.20.0)
     Interaction/                 HexTactics.Interaction — InputStateMachine (+ .Group.cs — режим «Команда»), DraftView,
                                  PlacementView, GroupDraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
@@ -380,6 +382,11 @@ tests/*  ──► соответствующие сборки
   (`EffectTypeDescriptor.FieldsFor(Tile)`); справа — `TilePreview`. «Тест гекса» — `RuntimeFactory.BuildGame(…, testTile)`.
   Редактор карт берёт типы из библиотеки (свои — с пометкой «(свой)»), панель гекса показывает правила типа словами.
   Значки типов — `BoardView` (Label3D на гексе).
+- **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
+  замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
+  (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
+  пишет транзакционно с резервными копиями и откатом. Миграция старых файлов — при загрузке библиотеки с копией оригинала.
+  Окна — `ModalDialog` с содержимым из `DeveloperMode` (модели `ExportPlan`, `ImportSession`).
 - **Постоянное правило (ТЗ ч.4 §9.3).** Любая новая редактируемая механика в том же релизе получает: правила в ТЗ,
   версионированную схему, проверку и миграцию, единый обработчик в симуляции, поля и предпросмотр в режиме разработчика,
   сохранение/импорт/экспорт и тесты (игра, редактирование, загрузка, совместимость, откат). Новые категории — через реестр,
@@ -487,6 +494,10 @@ tests/*  ──► соответствующие сборки
 `tile.e<i>.remove`, `tile.addtype`, `tile.add`; проверки `expect:tile-field:<ключ>:<значение>`, `expect:effects:N`,
 `expect:tile-preview:N:<текст>`; в редакторе карт `expect:tile:c,r:` принимает и название типа. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
+С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
+`export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
+`import.browse`, `import.preview`, `import.res.<N>` (`install|skip|replace|copy`), `import.install`, `import.cancel`;
+проверка `expect:import:<текст>` (итог последнего предпросмотра).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
@@ -495,8 +506,10 @@ tests/*  ──► соответствующие сборки
 «Играть» + V141 + выход в меню + каталог разработчика для v0.15.0, `$RegressionScenarioV16` = V15 + редактор карт, тест,
 игра на сохранённой карте для v0.16.0, `$RegressionScenarioV17` = V16 + редактор юнитов, тест, отряд для v0.17.0,
 `$RegressionScenarioV18` = V17 + редактор навыков, тест навыка, навык своего юнита из меню ТД для v0.18.0,
-`$RegressionScenarioV19` = V18 + редактор гексов, тест гекса, карта с жгучей и целебной поверхностями для v0.19.0+;
-`$PersistenceScenarioV15/V16/V17/V18/V19` — второй запуск с той же папкой пользователя:
+`$RegressionScenarioV19` = V18 + редактор гексов, тест гекса, карта с жгучей и целебной поверхностями для v0.19.x,
+`$RegressionScenarioV20` = V19 + экспорт, импорт, конфликты для v0.20.0+, `$CleanImportScenarioV20` — третий запуск с чистой
+папкой: импорт пакета первого запуска и игра на нём;
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

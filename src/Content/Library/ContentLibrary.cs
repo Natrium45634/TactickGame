@@ -361,8 +361,46 @@ public sealed class ContentLibrary
             return;
         }
 
+        if (origin == ContentOrigin.User && result.MigratedFrom is { } from && User is not null)
+        {
+            // Spec part 4 §8.4, §12.3 p.29: an older file is upgraded with a backup of the original; if writing fails, the
+            // original stays as it was and the object is still used from memory.
+            try
+            {
+                var backup = User.Backup(item.Kind.Folder, item.Id, $"migration-schema{from}");
+                var upgraded = ContentSerializer.Write(item);
+                User.SaveAtomic(item.Kind.Folder, item.Id, upgraded, written => ContentSerializer.Read(written, Registry, ContentOrigin.User, Limits).Item is not null);
+                User.Log($"migrated {item.Kind.Folder}/{item.Id}: schema {from} → {item.Kind.SchemaVersion}, original in {backup}");
+                issues.Add(ContentIssue.Warning("schemaVersion", $"обновлён со схемы {from} до {item.Kind.SchemaVersion}; исходный файл сохранён в backups"));
+            }
+            catch (Exception e) when (e is ContentSaveException or System.IO.IOException or UnauthorizedAccessException)
+            {
+                issues.Add(ContentIssue.Warning("schemaVersion", $"обновлён в памяти, файл не перезаписан: {e.Message}"));
+            }
+        }
+
         item.Issues = issues;
         _items[(item.Kind.Id, item.Id)] = item;
+    }
+
+    /// <summary>
+    /// A read-only view of this library with <paramref name="items"/> added or replacing objects of the same
+    /// <c>kind + id</c> — to validate imported objects and their links before anything is written.
+    /// </summary>
+    public ContentLibrary Overlay(IEnumerable<ContentItem> items)
+    {
+        var copy = new ContentLibrary(Registry, null, Limits, _clock);
+        foreach (var (key, value) in _items)
+        {
+            copy._items[key] = value;
+        }
+
+        foreach (var item in items)
+        {
+            copy._items[(item.Kind.Id, item.Id)] = item;
+        }
+
+        return copy;
     }
 
     private bool HasCycle(ContentItem start)

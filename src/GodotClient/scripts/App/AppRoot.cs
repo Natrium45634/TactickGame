@@ -432,6 +432,14 @@ public partial class AppRoot : Node
                 actual = _developer?.UndoCount.ToString(CultureInfo.InvariantCulture) ?? "none";
                 ok = actual == a[1];
                 break;
+            case "import":
+                {
+                    // expect:import:TEXT — the summary of the last import preview contains TEXT
+                    actual = _developer?.LastImportSummary ?? "none";
+                    ok = actual.Contains(arg[(arg.IndexOf(':') + 1)..], StringComparison.Ordinal);
+                    break;
+                }
+
             case "message":
                 {
                     // expect:message:TEXT — the newest developer message contains TEXT

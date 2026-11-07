@@ -229,6 +229,17 @@ public sealed class MapData : IContentData
         return data;
     }
 
+    public void RemapReferences(IReadOnlyDictionary<ContentRef, string> newIds)
+    {
+        foreach (var t in Tiles)
+        {
+            if (newIds.TryGetValue(new ContentRef("tile", t.Tile), out var id))
+            {
+                t.Tile = id;
+            }
+        }
+    }
+
     public IEnumerable<ContentRef> References()
     {
         var seen = new HashSet<string>();

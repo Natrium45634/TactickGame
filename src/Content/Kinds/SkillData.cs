@@ -277,6 +277,21 @@ public sealed class SkillData : IContentData
             BaseEffects[i].Validate(context, $"baseEffects[{i}]", EffectContext.Skill);
         }
 
+        // «Computational cost» of one use (spec part 4 §8.3): every effect application of every cell.
+        var events = 0L;
+        foreach (var cell in Cells)
+        {
+            foreach (var effect in EffectsOf(cell))
+            {
+                events += Math.Max(1, (long)Math.Round(Schema.FieldSchema.TryNumber(effect.Get("hits"), out var h) && !double.IsNaN(h) ? Math.Min(h, 1e6) : 1));
+            }
+        }
+
+        if (events > context.Limits.MaxSkillHitEvents)
+        {
+            issues.Error("cells", $"слишком дорогой навык: {events} применений эффектов за использование (предел {context.Limits.MaxSkillHitEvents})");
+        }
+
         var seen = new HashSet<(int, int)>();
         for (var i = 0; i < Cells.Count; i++)
         {

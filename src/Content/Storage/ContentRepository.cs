@@ -53,9 +53,12 @@ public sealed class ContentRepository
 
     public string PacksDir => Path.Combine(Root, "packs");
 
+    /// <summary>Where exported objects and packages are written (spec part 4 §8.3).</summary>
+    public string ExportsDir => Path.Combine(Root, "exports");
+
     public void EnsureLayout()
     {
-        foreach (var dir in new[] { ContentDir, DraftsDir, BackupsDir, LogsDir, PacksDir })
+        foreach (var dir in new[] { ContentDir, DraftsDir, BackupsDir, LogsDir, PacksDir, ExportsDir })
         {
             Directory.CreateDirectory(dir);
         }
@@ -166,6 +169,27 @@ public sealed class ContentRepository
         Log($"restored {folder}/{id} from {Path.GetRelativePath(Root, fromPath)}");
     }
 
+    /// <summary>Removes a saved object file (rollback of an import that created it); false if there was none.</summary>
+    public bool DeleteSaved(string folder, string id)
+    {
+        var path = PathOf(folder, id);
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        File.Delete(path);
+        return true;
+    }
+
+    /// <summary>Writes an exported file (object or package) into <see cref="ExportsDir"/>; returns its full path.</summary>
+    public string WriteExport(string fileName, byte[] bytes) => WriteBytes(ExportsDir, fileName, bytes);
+
+    /// <summary>Keeps a copy of an installed package or its install record in <see cref="PacksDir"/>.</summary>
+    public string WritePack(string fileName, byte[] bytes) => WriteBytes(PacksDir, fileName, bytes);
+
+    public string NowStamp() => Stamp();
+
     public void Log(string message)
     {
         try
@@ -176,6 +200,35 @@ public sealed class ContentRepository
         catch (IOException)
         {
             // The log is best effort; it must never break saving.
+        }
+    }
+
+    private static string WriteBytes(string dir, string fileName, byte[] bytes)
+    {
+        if (fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || fileName.Contains("..", StringComparison.Ordinal))
+        {
+            throw new ContentSaveException($"недопустимое имя файла «{fileName}»");
+        }
+
+        Directory.CreateDirectory(dir);
+        var target = Path.Combine(dir, fileName);
+        var temp = target + ".tmp";
+        try
+        {
+            File.WriteAllBytes(temp, bytes);
+            File.Move(temp, target, overwrite: true);
+            return target;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            throw new ContentSaveException($"не удалось записать файл: {e.Message}", e);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
         }
     }
 

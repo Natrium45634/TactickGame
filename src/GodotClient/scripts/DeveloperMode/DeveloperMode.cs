@@ -11,8 +11,10 @@ using HexTactics.Client.DeveloperMode.Editors.Unit;
 using HexTactics.Client.UI;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
+using HexTactics.Content.Transfer;
 using HexTactics.Editor.History;
 using HexTactics.Editor.Library;
+using HexTactics.Editor.Transfer;
 
 namespace HexTactics.Client.DeveloperMode;
 
@@ -307,8 +309,8 @@ public partial class DeveloperMode : Node
         _duplicate = UiKit.Button("Дублировать", Duplicate, ButtonKind.Normal, "dev.duplicate", "Сохранить копию с новым ID (встроенные объекты тоже можно)");
         _rename = UiKit.Button("Переименовать", Rename, ButtonKind.Normal, "dev.rename", "Меняется только название — ID и ссылки остаются");
         _delete = UiKit.Button("Удалить", Delete, ButtonKind.Normal, "dev.delete", "Удалить объект из библиотеки (с проверкой ссылок; отменяется Ctrl+Z)");
-        _import = UiKit.Button("Импорт…", null, ButtonKind.Normal, "dev.import", "Импорт JSON и пакетов — в версии v0.20.0");
-        _export = UiKit.Button("Экспорт…", null, ButtonKind.Normal, "dev.export", "Экспорт JSON и пакетов — в версии v0.20.0");
+        _import = UiKit.Button("Импорт…", () => OpenImport(), ButtonKind.Normal, "dev.import", "Импорт объекта (.json) или пакета (.hxp): предпросмотр, проверка, решение конфликтов");
+        _export = UiKit.Button("Экспорт…", OpenExport, ButtonKind.Normal, "dev.export", "Экспорт выбранного объекта (.json) или пакета с зависимостями (.hxp)");
         var validate = UiKit.Button("Проверить всё", ValidateAll, ButtonKind.Normal, "dev.validate", "Проверить все объекты библиотеки и ссылки между ними");
         foreach (var b in new[] { _create, _open, _duplicate, _rename, _delete, _import, _export })
         {
@@ -454,8 +456,8 @@ public partial class DeveloperMode : Node
         _duplicate.Disabled = selected is null;
         _rename.Disabled = selected is null || selected.IsBuiltIn;
         _delete.Disabled = selected is null || selected.IsBuiltIn;
-        _import.Disabled = true;
-        _export.Disabled = true;
+        _import.Disabled = _library.User is null;
+        _export.Disabled = selected is null || _library.User is null;
         _undo.Disabled = !_history.CanUndo;
         _redo.Disabled = !_history.CanRedo;
         _undo.TooltipText = _history.UndoDescription is { } u ? $"Отменить: {u} (Ctrl+Z)" : "Нечего отменять";
@@ -771,6 +773,203 @@ public partial class DeveloperMode : Node
 
         Run(LibraryCommands.Duplicate(_library, item, $"{item.Name} (копия)", copy => _selectedId = copy.Id), $"Создана копия «{item.Name}» с новым ID.");
     }
+
+    // ------------------------------------------------------------------ export / import (spec part 4 §8.3)
+
+    private void OpenExport()
+    {
+        if (Selected is not { } item || _library.User is null)
+        {
+            return;
+        }
+
+        var plan = new ExportPlan(_library, item);
+        var single = plan.Single.SelfContained
+            ? "«Объект .json» — один самодостаточный файл."
+            : $"«Объект .json» НЕ самодостаточен: ему нужны {string.Join(", ", plan.Single.NotIncluded.Select(i => $"{i.Kind.Singular} «{i.Name}»"))} — в другой установке их не будет. Для переноса со всеми зависимостями выберите пакет.";
+        var checks = new List<(ContentRef Ref, CheckBox Box)>();
+        Label? summary = null;
+        void Sync()
+        {
+            foreach (var (r, box) in checks)
+            {
+                box.SetPressedNoSignal(plan.IsIncluded(r));
+                box.Disabled = plan.IsRequired(r);
+            }
+
+            if (summary is not null)
+            {
+                summary.Text = $"В пакете: {plan.PackageItems.Count} объект(ов).";
+            }
+        }
+
+        ModalDialog.Show(this, $"Экспорт: {item.Kind.Singular} «{item.Name}»", single + "\nНиже — название пакета (.hxp).", new[]
+        {
+            new DialogButton("Отмена", "export.cancel", ButtonKind.Flat, null, IsCancel: true),
+            new DialogButton("Папка экспорта", "export.folder", ButtonKind.Flat, () => OS.ShellOpen(_library.User.ExportsDir)),
+            new DialogButton("Объект .json", "export.json", ButtonKind.Normal, () => Export(() => plan.WriteObject(), $"{item.Kind.Singular} «{item.Name}»")),
+            new DialogButton("Пакет .hxp", "export.hxp", ButtonKind.Primary, () =>
+            {
+                plan.PackageName = ModalDialog.LastInput;
+                Export(() => plan.WritePackage(HexTactics.Client.App.BuildInfo.Version, DateTimeOffset.UtcNow), $"пакет, объектов {plan.PackageItems.Count}");
+            }),
+        }, plan.PackageName, box =>
+        {
+            box.AddChild(UiKit.Label("Объекты пакета: отмеченное и всё, что ему нужно (недоступные для снятия — зависимости). Встроенные объекты есть в каждой установке и не копируются.", 12, dim: true, wrap: true));
+            foreach (var candidate in plan.Candidates)
+            {
+                var r = candidate.Ref;
+                var check = AutomationIds.Register(new CheckBox { Text = $"{candidate.Kind.Singular}: {candidate.Name}" }, "export.pick." + candidate.Name);
+                check.Toggled += on =>
+                {
+                    if (plan.Toggle(r, on) is { } refusal)
+                    {
+                        AddMessage(refusal, IssueSeverity.Warning);
+                    }
+
+                    Sync();
+                };
+                box.AddChild(check);
+                checks.Add((r, check));
+            }
+
+            summary = UiKit.Label(string.Empty, 13);
+            box.AddChild(summary);
+            Sync();
+        }, width: 640);
+    }
+
+    private void Export(Func<string> write, string what)
+    {
+        try
+        {
+            var path = write();
+            AddMessage($"Экспорт: {what} → {path}", null);
+        }
+        catch (Exception e) when (e is HexTactics.Content.Storage.ContentSaveException or InvalidOperationException or System.IO.IOException)
+        {
+            AddMessage($"Экспорт не выполнен: {e.Message}", IssueSeverity.Error);
+        }
+    }
+
+    private void OpenImport(string path = "")
+    {
+        if (_library.User is null)
+        {
+            return;
+        }
+
+        ModalDialog.Show(this, "Импорт", $"Файл объекта (.json) или пакета (.hxp): полный путь или имя файла из папки экспорта этой установки ({_library.User.ExportsDir}). Сначала покажем, что в нём, — ничего не изменится до «Установить».", new[]
+        {
+            new DialogButton("Отмена", "import.cancel", ButtonKind.Flat, null, IsCancel: true),
+            new DialogButton("Обзор…", "import.browse", ButtonKind.Normal, BrowseImport),
+            new DialogButton("Показать", "import.preview", ButtonKind.Primary, () =>
+            {
+                var session = new ImportSession(_library);
+                session.Inspect(ModalDialog.LastInput);
+                ShowImportPreview(session);
+            }),
+        }, path, width: 640);
+    }
+
+    private void BrowseImport()
+    {
+        var dialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            UseNativeDialog = false,
+            Filters = new[] { "*.hxp ; Пакет HexTactics", "*.json ; Объект HexTactics" },
+            CurrentDir = _library.User!.ExportsDir,
+            Title = "Файл для импорта",
+        };
+        AddChild(dialog);
+        dialog.FileSelected += p =>
+        {
+            dialog.QueueFree();
+            OpenImport(p);
+        };
+        dialog.Canceled += () =>
+        {
+            dialog.QueueFree();
+            OpenImport();
+        };
+        dialog.PopupCentered(new Vector2I(900, 600));
+    }
+
+    private void ShowImportPreview(ImportSession session)
+    {
+        var preview = session.Preview!;
+        var head = preview.Manifest is { } m ? $"Пакет «{m.Name}» (игра v{m.GameVersion}). " : string.Empty;
+        LastImportSummary = preview.Summary;
+        ModalDialog.Show(this, "Импорт: предпросмотр", head + preview.Summary, new[]
+        {
+            new DialogButton("Отмена", "import.cancel", ButtonKind.Flat, () => AddMessage("Импорт отменён — ничего не изменилось.", null), IsCancel: true),
+            new DialogButton("Установить", "import.install", ButtonKind.Primary, () =>
+            {
+                var result = session.Install();
+                if (result.Ok)
+                {
+                    _history.Clear();
+                    AddMessage($"Импорт: установлено {result.Installed.Count} — {string.Join(", ", result.Installed.Select(i => $"{i.Kind.Singular} «{i.Name}»"))}.", null);
+                }
+                else
+                {
+                    AddMessage("Импорт не выполнен: " + result.Message, IssueSeverity.Error);
+                }
+
+                Refresh();
+            }),
+        }, null, box =>
+        {
+            foreach (var problem in preview.Problems)
+            {
+                var label = UiKit.Label((problem.IsError ? "✗ " : "⚠ ") + problem.Message, 12, wrap: true);
+                label.AddThemeColorOverride("font_color", problem.IsError ? UiKit.Error : UiKit.Warning);
+                box.AddChild(label);
+            }
+
+            for (var i = 0; i < preview.Entries.Count; i++)
+            {
+                var entry = preview.Entries[i];
+                box.AddChild(UiKit.Label(ImportSession.Describe(entry), 13, wrap: true));
+                var choice = AutomationIds.Register(new OptionButton(), $"import.res.{i}");
+                foreach (var option in entry.Options)
+                {
+                    choice.AddItem(ContentImporter.Word(option));
+                    choice.SetItemMetadata(choice.ItemCount - 1, option.ToString().ToLowerInvariant());
+                    if (option == entry.Resolution)
+                    {
+                        choice.Select(choice.ItemCount - 1);
+                    }
+                }
+
+                var index = i;
+                var options = entry.Options;
+                choice.ItemSelected += selected =>
+                {
+                    if (session.SetResolution(index, options[(int)selected]) is { } refusal)
+                    {
+                        AddMessage(refusal, IssueSeverity.Warning);
+                    }
+                };
+                box.AddChild(choice);
+                foreach (var issue in entry.Issues.Where(x => x.IsError || x.Severity == IssueSeverity.Warning))
+                {
+                    var label = UiKit.Label((issue.IsError ? "✗ " : "⚠ ") + issue.Message, 12, dim: !issue.IsError, wrap: true);
+                    if (issue.IsError)
+                    {
+                        label.AddThemeColorOverride("font_color", UiKit.Error);
+                    }
+
+                    box.AddChild(label);
+                }
+            }
+        }, width: 680);
+    }
+
+    /// <summary>The summary of the last import preview (automation).</summary>
+    public string LastImportSummary { get; private set; } = string.Empty;
 
     private void Rename()
     {

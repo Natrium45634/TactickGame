@@ -14,6 +14,9 @@ namespace HexTactics.Content.Library;
 /// <summary>Result of reading one content file: the object (if it could be built) and every issue found.</summary>
 public sealed record ContentReadResult(ContentItem? Item, IReadOnlyList<ContentIssue> Issues)
 {
+    /// <summary>The schema version the file had, if the object was migrated to the current one while reading.</summary>
+    public int? MigratedFrom { get; init; }
+
     public bool HasErrors
     {
         get
@@ -191,6 +194,6 @@ public static class ContentSerializer
         }
 
         item.Issues = issues.Items;
-        return new ContentReadResult(item, issues.Items);
+        return new ContentReadResult(item, issues.Items) { MigratedFrom = schemaVersion < kind.SchemaVersion ? schemaVersion : null };
     }
 }

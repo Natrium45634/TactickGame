@@ -315,6 +315,43 @@ $script:PersistenceScenarioV19 = (@(
     'expect:editor:map', 'expect:tile:3,4:Жгучая поверхность', 'expect:tile:4,4:Целебная поверхность', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + ($script:PersistenceScenarioV18 -replace 'ui:dev.cat.tile;expect:rows:8', 'ui:dev.cat.tile;expect:rows:10')
 
+# v0.20.0+ (spec part 4 §8.3, §12.3 p.24–28): export and import through the real dialogs — the map «Поверхности» with the
+# unit «Тяжёлый» as a package (its tile types and skill are added automatically: 5 objects), the skill alone as JSON;
+# importing the same package shows 5 unchanged objects and installs nothing without a choice; after the skill is changed
+# locally the package conflicts on it: «копией с новым ID» for the skill and the unit (the copy of the unit refers to the
+# copy of the skill), then «заменить» with a backup; a missing file is rejected with a report.
+$script:RegressionScenarioV20 = $script:RegressionScenarioV19 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'row:name=Поверхности', 'ui:dev.export', 'expect:dialog:Экспорт: карта «Поверхности»',
+    'field:export.pick.Тяжёлый=true', 'field:dialog.input=Поверхности', 'ui:export.hxp', 'expect:message:Экспорт: пакет, объектов 5',
+    'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.export', 'ui:export.json', 'expect:message:Экспорт: навык «Тройной удар»',
+    'ui:dev.import', 'expect:dialog:Импорт', 'field:dialog.input=Поверхности.hxp', 'ui:import.preview', 'expect:dialog:Импорт: предпросмотр',
+    'expect:import:новых 0, без изменений 5, конфликтов 0', 'ui:import.install', 'expect:message:Импорт не выполнен: ничего не выбрано',
+    'row:name=Тройной удар', 'ui:dev.open', 'expect:editor:skill', 'field:skill.icon=⚔', 'ui:skill.save', 'expect:dirty:no', 'ui:skill.back',
+    'ui:dev.import', 'field:dialog.input=Поверхности.hxp', 'ui:import.preview', 'expect:import:без изменений 4, конфликтов 1',
+    'field:import.res.3=copy', 'field:import.res.4=copy', 'ui:import.install', 'expect:message:Импорт: установлено 2',
+    'expect:rows:3', 'expect:item:skill:Тройной удар (импорт):yes', 'ui:dev.cat.unit', 'expect:item:unit:Тяжёлый (импорт):yes',
+    'ui:dev.import', 'field:dialog.input=Поверхности.hxp', 'ui:import.preview', 'expect:import:конфликтов 1',
+    'field:import.res.3=replace', 'ui:import.install', 'expect:message:Импорт: установлено 1',
+    'ui:dev.import', 'field:dialog.input=нет-такого-файла.hxp', 'ui:import.preview', 'expect:import:файл отклонён', 'ui:import.cancel',
+    'expect:message:Импорт отменён', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV20 = (@(
+    'ui:menu.dev', 'ui:dev.cat.skill', 'expect:rows:3', 'expect:item:skill:Тройной удар (импорт):yes',
+    'ui:dev.cat.unit', 'expect:item:unit:Тяжёлый (импорт):yes', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV19
+
+# v0.20.0+ third run (spec part 4 §12.3 p.26): a fresh user folder imports the package exported by the first run; the
+# links resolve and the imported map plays with the imported unit (175 HP) on the imported burning surface.
+$script:CleanImportScenarioV20 = (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'expect:rows:1', 'ui:dev.import', 'field:dialog.input={PACKAGE}', 'ui:import.preview',
+    'expect:import:5 объект(ов): новых 5', 'ui:import.install', 'expect:message:Импорт: установлено 5', 'expect:rows:2',
+    'expect:item:map:Поверхности:yes', 'ui:dev.cat.tile', 'expect:item:tile:Жгучая поверхность:yes', 'ui:dev.back',
+    'field:menu.map=Поверхности (своя)', 'field:menu.squad=Тяжёлый (свой) × 5', 'ui:menu.play', 'expect:screen:play', 'pause:on',
+    'roster:1>2,4', 'click:2,4@North:0.6', 'expect:lifecycle:1:Active', 'expect:hp:1:175', 'drag:2,4>3,4', 'click:3,4@North:0.6',
+    'advance:90', 'expect:cell:1:3,4', 'expect:hp:1:161.67~0.4', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -375,7 +412,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
+            $scenario = if ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
+                        elseif ([version]$Version -ge [version]'0.19.0') { $script:RegressionScenarioV19 }
                         elseif ([version]$Version -ge [version]'0.18.0') { $script:RegressionScenarioV18 }
                         elseif ([version]$Version -ge [version]'0.17.0') { $script:RegressionScenarioV17 }
                         elseif ([version]$Version -ge [version]'0.16.0') { $script:RegressionScenarioV16 }
@@ -390,7 +428,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }
+            if ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }
+            elseif ([version]$Version -ge [version]'0.19.0') { $persistence = $script:PersistenceScenarioV19 }
             elseif ([version]$Version -ge [version]'0.18.0') { $persistence = $script:PersistenceScenarioV18 }
             elseif ([version]$Version -ge [version]'0.17.0') { $persistence = $script:PersistenceScenarioV17 }
             elseif ([version]$Version -ge [version]'0.16.0') { $persistence = $script:PersistenceScenarioV16 }
@@ -406,12 +445,21 @@ if ($Run -and $errors.Count -eq 0) {
         # (names, dialog titles) arrive garbled. Native Windows passes UTF-16 and needs nothing.
         if ($Launcher) { $env:LC_ALL = 'C.UTF-8'; $env:LANG = 'C.UTF-8' }
 
-        $runs = @(@{ Name = 'smoke'; Script = $scenario })
-        if ($persistence) { $runs += @{ Name = 'restart'; Script = $persistence } }
+        $runs = @(@{ Name = 'smoke'; Script = $scenario; Root = $userArg })
+        if ($persistence) { $runs += @{ Name = 'restart'; Script = $persistence; Root = $userArg } }
+        if ($regression -and [version]$Version -ge [version]'0.20.0') {
+            # A clean installation imports the package the first run exported (spec part 4 §12.3 p.26).
+            $cleanRoot = Join-Path $tmp 'clean-user'
+            New-Item -ItemType Directory -Force -Path $cleanRoot | Out-Null
+            $package = Join-Path (Join-Path $userRoot 'exports') 'Поверхности.hxp'
+            $packageArg = if ($Launcher) { 'Z:' + ($package -replace '/', '') } else { $package }
+            $cleanArg = if ($Launcher) { 'Z:' + ($cleanRoot -replace '/', '') } else { $cleanRoot }
+            $runs += @{ Name = 'clean-import'; Script = $script:CleanImportScenarioV20.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
+        }
         foreach ($pass in $runs) {
             $log = Join-Path $tmp "$($pass.Name).log"
             $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
-            if ([version]$Version -ge [version]'0.15.0') { $smokeArgs += "--hx-user-root=$userArg" }
+            if ([version]$Version -ge [version]'0.15.0') { $smokeArgs += "--hx-user-root=$($pass.Root)" }
             if ($pass.Script) { $smokeArgs += "--hx-script=$($pass.Script)" }
             Write-Step ("{0} ({1}): {2}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $pass.Name, $exe))
             if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }

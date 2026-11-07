@@ -18,15 +18,19 @@ public partial class ModalDialog : CanvasLayer
     private readonly string _text;
     private readonly IReadOnlyList<DialogButton> _buttons;
     private readonly string? _inputValue;
+    private readonly Action<VBoxContainer>? _content;
+    private readonly float _width;
     private LineEdit? _input;
     private Control _root = null!;
 
-    public ModalDialog(string title, string text, IReadOnlyList<DialogButton> buttons, string? inputValue = null)
+    public ModalDialog(string title, string text, IReadOnlyList<DialogButton> buttons, string? inputValue = null, Action<VBoxContainer>? content = null, float width = 440)
     {
         _title = title;
         _text = text;
         _buttons = buttons;
         _inputValue = inputValue;
+        _content = content;
+        _width = width;
     }
 
     /// <summary>The currently open dialog, if any (one at a time).</summary>
@@ -41,10 +45,14 @@ public partial class ModalDialog : CanvasLayer
     /// <summary>Input text of the dialog whose button was pressed last (read by the button action).</summary>
     public static string LastInput { get; private set; } = string.Empty;
 
-    public static ModalDialog Show(Node parent, string title, string text, IReadOnlyList<DialogButton> buttons, string? inputValue = null)
+    /// <summary>
+    /// Opens a dialog. <paramref name="content"/> fills a scrollable area under the text (lists, check boxes, choices of the
+    /// import/export dialogs); <paramref name="width"/> is the panel width in UI units.
+    /// </summary>
+    public static ModalDialog Show(Node parent, string title, string text, IReadOnlyList<DialogButton> buttons, string? inputValue = null, Action<VBoxContainer>? content = null, float width = 440)
     {
         Open?.Close();
-        var dialog = new ModalDialog(title, text, buttons, inputValue) { Name = "ModalDialog" };
+        var dialog = new ModalDialog(title, text, buttons, inputValue, content, width) { Name = "ModalDialog" };
         parent.AddChild(dialog);
         Open = dialog;
         return dialog;
@@ -60,7 +68,7 @@ public partial class ModalDialog : CanvasLayer
         _root.AddChild(new ColorRect { Color = new Color(0, 0, 0, 0.45f), Size = _root.Size, MouseFilter = Control.MouseFilterEnum.Stop });
 
         var panel = UiKit.Panel(UiKit.PanelLight, 18);
-        panel.CustomMinimumSize = new Vector2(440, 0);
+        panel.CustomMinimumSize = new Vector2(_width, 0);
         _root.AddChild(panel);
         var column = UiKit.Column(10);
         panel.AddChild(column);
@@ -68,15 +76,29 @@ public partial class ModalDialog : CanvasLayer
         if (_text.Length > 0)
         {
             var text = UiKit.Label(_text, 14, dim: true, wrap: true);
-            text.CustomMinimumSize = new Vector2(400, 0);
+            text.CustomMinimumSize = new Vector2(_width - 40, 0);
             column.AddChild(text);
         }
 
         if (_inputValue is not null)
         {
-            _input = AutomationIds.Register(new LineEdit { Text = _inputValue, CustomMinimumSize = new Vector2(400, 0) }, "dialog.input");
+            _input = AutomationIds.Register(new LineEdit { Text = _inputValue, CustomMinimumSize = new Vector2(_width - 40, 0) }, "dialog.input");
             _input.TextSubmitted += _ => PressDefault();
             column.AddChild(_input);
+        }
+
+        if (_content is not null)
+        {
+            var scroll = new ScrollContainer
+            {
+                HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+                CustomMinimumSize = new Vector2(_width - 40, Mathf.Min(460f, _root.Size.Y * 0.55f)),
+            };
+            column.AddChild(scroll);
+            var box = UiKit.Column(6);
+            box.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            scroll.AddChild(box);
+            _content(box);
         }
 
         var row = UiKit.Row(8);

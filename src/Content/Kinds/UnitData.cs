@@ -140,6 +140,17 @@ public sealed class UnitData : IContentData
         }
     }
 
+    public void RemapReferences(IReadOnlyDictionary<ContentRef, string> newIds)
+    {
+        for (var i = 0; i < Skills.Count; i++)
+        {
+            if (newIds.TryGetValue(new ContentRef("skill", Skills[i]), out var id))
+            {
+                Skills[i] = id;
+            }
+        }
+    }
+
     public void Validate(ValidationContext context)
     {
         foreach (var field in Fields)

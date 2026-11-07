@@ -21,7 +21,7 @@ public static class ContentService
         var root = string.IsNullOrEmpty(userRootOverride) ? ProjectSettings.GlobalizePath("user://") : userRootOverride;
         var repository = new ContentRepository(root);
         repository.EnsureLayout();
-        var library = new ContentLibrary(ContentTypeRegistry.CreateDefault(), repository);
+        var library = new ContentLibrary(ContentTypeRegistry.CreateDefault(), repository, LoadLimits(repository.Root));
         library.LoadBuiltIn(ReadBuiltIns());
         foreach (var problem in library.Problems)
         {
@@ -30,6 +30,29 @@ public static class ContentService
 
         GD.Print($"[content] built-in + user objects loaded, user folder: {repository.Root}");
         return library;
+    }
+
+    /// <summary>
+    /// Safety limits (spec part 4 §8.3): the defaults, lowered by an optional <c>limits.json</c> in the user folder
+    /// (never raised past the hard caps).
+    /// </summary>
+    private static HexTactics.Content.Kinds.ContentLimits LoadLimits(string root)
+    {
+        var path = System.IO.Path.Combine(root, "limits.json");
+        if (!System.IO.File.Exists(path))
+        {
+            return HexTactics.Content.Kinds.ContentLimits.Default;
+        }
+
+        var issues = new HexTactics.Content.Model.IssueList();
+        var limits = HexTactics.Content.Kinds.ContentLimits.FromJson(System.IO.File.ReadAllText(path), issues);
+        foreach (var issue in issues.Items)
+        {
+            GD.PushWarning($"[content] {issue.Message}");
+        }
+
+        GD.Print($"[content] limits from {path}");
+        return limits;
     }
 
     private static IEnumerable<(string Path, string Text)> ReadBuiltIns()
