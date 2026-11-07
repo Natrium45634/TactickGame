@@ -28,9 +28,13 @@ public sealed class GameSimulation
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
         AddSystem(new MovementSystem(State, _events, Settings, Layout));
-        AddSystem(new SkillSystem(State, _events, Settings));
+        Effects = new EffectResolver(State, _events);
+        AddSystem(new SkillSystem(State, _events, Settings, Effects));
         AddSystem(new AttackSystem(State, _events, Settings));
     }
+
+    /// <summary>The single executor of configured effects (spec part 4 §6.3).</summary>
+    public EffectResolver Effects { get; }
 
     /// <summary>Map-plane geometry of the simulation (hex size 1): unit positions and motion curves use it.</summary>
     public HexLayout Layout { get; } = new(1.0);
@@ -637,9 +641,14 @@ public sealed class GameSimulation
         }
 
         var tile = State.Grid[cell];
-        if (tile.Type is TileType.PlayerBase or TileType.SpawnZone)
+        if (tile.Type is TileType.PlayerBase or TileType.SpawnZone or TileType.EnemyBase or TileType.DeployZone)
         {
             return CommandResult.Fail("zone");
+        }
+
+        if (!tile.Exists)
+        {
+            return CommandResult.Fail("void");
         }
 
         if (blocked && (State.IsOccupied(cell) || State.IsReserved(cell)))

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "core.tile.enemy_base",
+  "kind": "tile",
+  "name": "База врага",
+  "description": "Метка местности: без ИИ и волн.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный"
+  ],
+  "references": [],
+  "data": {
+    "category": "enemyBase",
+    "passable": true,
+    "level": 0,
+    "color": "#D6A8A2",
+    "effects": []
+  }
+}

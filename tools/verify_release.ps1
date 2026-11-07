@@ -141,6 +141,31 @@ $script:RegressionScenarioV141 = ($script:RegressionScenarioV14 -replace ';key:E
     'key:Escape'
 ) -join ';')
 
+# v0.15.0+ (spec part 4 §2, §8): the build starts on the menu — the whole v0.14.1 scenario runs behind the real
+# «Играть» button (map, unit and skill now come from the content library); then back to the menu (Esc keeps the match),
+# the developer catalog: tile category, duplicate a built-in type, rename it, Ctrl+Z / Ctrl+Y, delete with confirmation
+# and undo, all categories listed. The user data folder is a fresh temporary one (--hx-user-root).
+$script:RegressionScenarioV15 = 'ui:menu.play;expect:screen:play;' + ($script:RegressionScenarioV141 -replace ';key:Escape$', '') + ';' + (@(
+    'ui:game.menu', 'expect:dialog:Выйти', 'key:Escape', 'expect:dialog:none', 'expect:screen:play',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu',
+    'ui:menu.dev', 'expect:screen:dev', 'ui:dev.cat.tile', 'expect:category:tile', 'expect:rows:7',
+    'row:core.tile.ground', 'expect:selected:core.tile.ground', 'ui:dev.duplicate', 'expect:rows:8',
+    'ui:dev.rename', 'expect:dialog:Переименовать', 'field:dialog.input=Кислотный гекс', 'ui:dialog.ok', 'expect:dialog:none',
+    'expect:item:tile:Кислотный гекс:yes', 'key:ctrl+z', 'expect:item:tile:Кислотный гекс:no', 'key:ctrl+y', 'expect:item:tile:Кислотный гекс:yes',
+    'ui:dev.delete', 'expect:dialog:Удалить', 'ui:dialog.ok', 'expect:item:tile:Кислотный гекс:no', 'expect:rows:7',
+    'key:ctrl+z', 'expect:item:tile:Кислотный гекс:yes', 'expect:rows:8',
+    'field:dev.search=кисл', 'expect:rows:1', 'field:dev.search=', 'expect:rows:8',
+    'ui:dev.cat.unit', 'expect:rows:1', 'ui:dev.cat.skill', 'expect:rows:1', 'ui:dev.cat.map', 'expect:rows:1',
+    'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+# Second launch with the same user data folder: what was saved before the restart is still in the library, and the
+# game still starts (spec part 4 §8.1, §12.3 p.24).
+$script:PersistenceScenarioV15 = (@(
+    'expect:screen:menu', 'ui:menu.dev', 'ui:dev.cat.tile', 'expect:rows:8', 'expect:item:tile:Кислотный гекс:yes',
+    'ui:dev.back', 'ui:menu.play', 'expect:screen:play', 'spawn:base', 'expect:units:1'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -198,9 +223,11 @@ if ($Run -and $errors.Count -eq 0) {
         # (spawn, drag orders, pause freezes time, chain built during pause, movement, rotate gesture,
         # unreachable target). Older builds get a plain smoke run.
         $regression = [version]$Version -ge [version]'0.5.0'
-        $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
+        $scenario = $null
+        $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
+            $scenario = if ([version]$Version -ge [version]'0.15.0') { $script:RegressionScenarioV15 }
+                        elseif ([version]$Version -ge [version]'0.14.1') { $script:RegressionScenarioV141 }
                         elseif ([version]$Version -ge [version]'0.14.0') { $script:RegressionScenarioV14 }
                         elseif ([version]$Version -ge [version]'0.13.0') { $script:RegressionScenarioV13 }
                         elseif ([version]$Version -ge [version]'0.12.0') { $script:RegressionScenarioV12 }
@@ -210,21 +237,35 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            $smokeArgs += "--hx-script=$scenario"
+            if ([version]$Version -ge [version]'0.15.0') { $persistence = $script:PersistenceScenarioV15 }
         }
-        Write-Step ("{0}: {1}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $exe))
-        if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }
-        else { & $exe @smokeArgs *> $log }
-        $exitCode = $LASTEXITCODE
-        $text = Get-Content -Raw $log
-        if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Run did not report HexTactics v$Version. Log: $log") }
-        elseif ($text -notmatch '\[automation\] done') { $errors.Add("Run did not finish. Log: $log") }
-        elseif ($regression -and ($exitCode -ne 0 -or $text -notmatch '\[automation\] checks passed: \d+' -or $text -match 'CHECK FAILED')) {
-            $errors.Add("Regression scenario failed (exit $exitCode). Log: $log")
-        }
-        else {
-            if ($regression) { ($text -split "`n" | Where-Object { $_ -match '\[automation\] checks passed' }) | ForEach-Object { Write-Host $_.Trim() } }
-            Write-Host 'Run OK'
+
+        # From v0.15.0 user content goes to a fresh temporary folder, so the run never touches real user data.
+        $userRoot = Join-Path $tmp 'user'
+        New-Item -ItemType Directory -Force -Path $userRoot | Out-Null
+        $userArg = if ($Launcher) { 'Z:' + ($userRoot -replace '/', '\') } else { $userRoot }
+
+        $runs = @(@{ Name = 'smoke'; Script = $scenario })
+        if ($persistence) { $runs += @{ Name = 'restart'; Script = $persistence } }
+        foreach ($run in $runs) {
+            $log = Join-Path $tmp "$($run.Name).log"
+            $smokeArgs = @('--windowed', '--resolution', '1600x900', '--', '--hx-frames=10', '--hx-quit')
+            if ([version]$Version -ge [version]'0.15.0') { $smokeArgs += "--hx-user-root=$userArg" }
+            if ($run.Script) { $smokeArgs += "--hx-script=$($run.Script)" }
+            Write-Step ("{0} ({1}): {2}" -f ($(if ($regression) { 'Regression scenario' } else { 'Smoke run' }), $run.Name, $exe))
+            if ($Launcher) { & $Launcher $exe @smokeArgs *> $log }
+            else { & $exe @smokeArgs *> $log }
+            $exitCode = $LASTEXITCODE
+            $text = Get-Content -Raw $log
+            if ($text -notmatch [regex]::Escape("HexTactics v$Version")) { $errors.Add("Run '$($run.Name)' did not report HexTactics v$Version. Log: $log") }
+            elseif ($text -notmatch '\[automation\] done') { $errors.Add("Run '$($run.Name)' did not finish. Log: $log") }
+            elseif ($regression -and ($exitCode -ne 0 -or $text -notmatch '\[automation\] checks passed: \d+' -or $text -match 'CHECK FAILED')) {
+                $errors.Add("Regression scenario '$($run.Name)' failed (exit $exitCode). Log: $log")
+            }
+            else {
+                if ($regression) { ($text -split "`n" | Where-Object { $_ -match '\[automation\] checks passed' }) | ForEach-Object { Write-Host "$($run.Name): $($_.Trim())" } }
+                Write-Host "Run '$($run.Name)' OK"
+            }
         }
     }
     finally {

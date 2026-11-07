@@ -52,7 +52,7 @@ public partial class HexFillLayer : Node3D
         {
             var coord = grid.Coords[i];
             _index[coord] = i;
-            var y = VisualConfig.TileTopHeight(grid[coord].Type) + VisualConfig.OverlayLift + ExtraLift;
+            var y = TilePalette.Current.HeightOf(grid[coord]) + VisualConfig.OverlayLift + ExtraLift;
             _multiMesh.SetInstanceTransform(i, new Transform3D(Basis.Identity, layout.HexToPlane(coord).ToWorld(y)));
             _multiMesh.SetInstanceColor(i, Colors.Transparent);
         }
@@ -77,7 +77,7 @@ public partial class HexFillLayer : Node3D
         _heightsVersion = _grid.Version;
         foreach (var (coord, i) in _index)
         {
-            var y = VisualConfig.TileTopHeight(_grid[coord].Type) + VisualConfig.OverlayLift + ExtraLift;
+            var y = TilePalette.Current.HeightOf(_grid[coord]) + VisualConfig.OverlayLift + ExtraLift;
             _multiMesh.SetInstanceTransform(i, new Transform3D(Basis.Identity, _layout.HexToPlane(coord).ToWorld(y)));
         }
     }

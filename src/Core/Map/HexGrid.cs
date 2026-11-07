@@ -82,6 +82,9 @@ public sealed class HexGrid
 
     public bool IsWalkable(HexCoord coord) => Contains(coord) && this[coord].IsWalkable;
 
+    /// <summary>True if a real tile stands at the coordinate (inside the workspace and not an empty place).</summary>
+    public bool Exists(HexCoord coord) => Contains(coord) && this[coord].Exists;
+
     public void SetTile(HexCoord coord, TileType type, int zoneId = 0, int moveCost = 1)
     {
         if (!Contains(coord))
@@ -99,6 +102,19 @@ public sealed class HexGrid
         Version++;
     }
 
+    /// <summary>Places a tile that is an instance of a library tile type (spec part 4 §4.2, §7.1).</summary>
+    public void SetTile(HexCoord coord, TileType type, string? tileId, int level, int zoneId = 0)
+    {
+        if (!Contains(coord))
+        {
+            throw new ArgumentOutOfRangeException(nameof(coord), $"{coord} is outside of the map.");
+        }
+
+        var o = coord.ToOffset();
+        _tiles[Index(o.Col, o.Row)] = new TileState(coord, type, type == TileType.SpawnZone ? zoneId : 0, 1, tileId, level);
+        Version++;
+    }
+
     /// <summary>In-bounds neighbours in the fixed order of <see cref="HexDirections.All"/>.</summary>
     public IEnumerable<HexCoord> NeighborsInBounds(HexCoord coord)
     {
@@ -111,17 +127,17 @@ public sealed class HexGrid
         }
     }
 
-    /// <summary>True if the cell lies on the outer border of the map.</summary>
+    /// <summary>True if the cell lies on the outer border of the map: a neighbour is outside or an empty place.</summary>
     public bool IsEdge(HexCoord coord)
     {
-        if (!Contains(coord))
+        if (!Exists(coord))
         {
             return false;
         }
 
         foreach (var n in coord.Neighbors())
         {
-            if (!Contains(n))
+            if (!Exists(n))
             {
                 return true;
             }

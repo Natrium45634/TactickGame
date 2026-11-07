@@ -10,7 +10,15 @@ namespace HexTactics.Core.Map;
 /// <param name="Type">Tile category.</param>
 /// <param name="ZoneId">Spawn zone id for <see cref="TileType.SpawnZone"/> tiles, otherwise 0.</param>
 /// <param name="MoveCost">Cost of entering this tile. Stage 1 uses 1 for every walkable tile.</param>
-public readonly record struct TileState(HexCoord Coord, TileType Type, int ZoneId = 0, int MoveCost = 1)
+/// <param name="TileId">
+/// Library tile type (<c>TileDefinition</c> id, spec part 4 §7) this cell is an instance of; null for maps that do not use
+/// the content library (tests, legacy <c>.hexmap</c>).
+/// </param>
+/// <param name="Level">Relief level of the cell (spec part 4 §4.2) — appearance only, no combat rules.</param>
+public readonly record struct TileState(HexCoord Coord, TileType Type, int ZoneId = 0, int MoveCost = 1, string? TileId = null, int Level = 0)
 {
-    public bool IsWalkable => Type != TileType.Blocked;
+    public bool IsWalkable => Type is not (TileType.Blocked or TileType.Void);
+
+    /// <summary>False for an empty place of the workspace (spec part 4 §4.1).</summary>
+    public bool Exists => Type != TileType.Void;
 }

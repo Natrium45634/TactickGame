@@ -1,7 +1,9 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.14.1** (ТЗ ч.1 + ч.2 + ч.3: flat-top, непрерывные
-черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД).
+Документ описывает фактическое устройство кода. Актуален для версии **v0.15.0** (ТЗ ч.1–3: flat-top, непрерывные
+черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
+стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo). Формат контента —
+`docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
 ## 1. Технологии
@@ -21,8 +23,9 @@ TactickGame/                     корень репозитория (логич
   HexTactics.sln                 решение: Debug / ExportDebug / ExportRelease
   Directory.Build.props          единая версия продукта для всех .NET-проектов
   CLAUDE.md README.md CHANGELOG.md
-  docs/                          GAME_SPEC (ТЗ 0.1, историческое), GAME_SPEC_PART2 (ТЗ 0.2, приоритетнее),
-                                 ARCHITECTURE, CONTROLS, DECISIONS, releases/vX.Y.Z/
+  docs/                          GAME_SPEC (ТЗ 0.1), GAME_SPEC_PART2 (0.2), GAME_SPEC_PART3 (0.3), GAME_SPEC_PART4 (0.4,
+                                 актуальная), ARCHITECTURE, CONTROLS, CONTENT_FORMAT, EDITOR_GUIDE, MIGRATIONS, DECISIONS,
+                                 RELEASE_CHECKLIST, releases/vX.Y.Z/
   src/
     Core/                        HexTactics.Core — чистая модель (без Godot)
       Hex/                       HexCoord, OffsetCoord, HexDirection, HexLayout, PlaneVector, HexLine
@@ -35,30 +38,44 @@ TactickGame/                     корень репозитория (логич
       Spawning/                  SpawnMethod, SpawnRequest, SpawnRules, SpawnError, PlacementRules (ростер)
       Motion/                    CubicSegment, MotionCurve, StepGeometry, StepPlan, MotionCorridor (с v0.11.0)
       Combat/                    UnitStats, LifeState, AttackStatus, CombatState (с v0.12.0)
-      Skills/                    SkillDefinition, SkillCatalog, SkillAction, WaypointSkillSpec (с v0.13.0/v0.14.0)
+      Skills/                    SkillDefinition (+SkillCell), SkillCatalog, SkillAction, WaypointSkillSpec (с v0.13.0/v0.14.0)
+      Effects/                   EffectSpec, EffectTargets, EffectTypes (с v0.15.0)
       Roster/                    RosterState, RosterEntry, RosterEntryState (с v0.8.0)
     Simulation/                  HexTactics.Simulation — GameSimulation, SimulationClock, ISimulationSystem,
-                                 MovementSystem, события (без Godot)
+                                 MovementSystem, SkillSystem, AttackSystem, EffectResolver, события (без Godot)
+    Content/                     HexTactics.Content (с v0.15.0) — Model (ContentRef, ContentIssue, ContentIds), Schema
+                                 (FieldSchema), Kinds (MapData, UnitData, SkillData, TileData, EffectData), Registry
+                                 (ContentTypeRegistry, EffectTypeRegistry), Storage (ContentRepository), Library
+                                 (ContentLibrary, ContentItem, ContentSerializer, MapChecks), Runtime (RuntimeFactory)
+    Editor/                      HexTactics.Editor (с v0.15.0) — History (CommandHistory, команды), Library (LibraryBrowser,
+                                 LibraryCommands)
     Interaction/                 HexTactics.Interaction — InputStateMachine (+ .Group.cs — режим «Команда»), DraftView,
                                  PlacementView, GroupDraftView (без Godot)
     GodotClient/                 Godot-проект (project.godot), сборка HexTactics.dll
-      scenes/Main.tscn           корневая сцена (узлы строятся кодом в Main.cs)
-      scripts/App/               Main (композиционный корень), BuildInfo
+      scenes/App.tscn            корневая сцена (с v0.15.0; узлы строятся кодом)
+      scripts/App/               AppRoot (стартовое меню, режимы, автоматизация), ContentService (загрузка библиотеки),
+                                 BuildInfo
+      scripts/MainMenu/          StartMenu («Играть» / «Разработчик» / «Выход»)
+      scripts/GameMode/          GameMode (режим «Играть»: матч из библиотеки, бывший Main)
+      scripts/DeveloperMode/     DeveloperMode (каталог категорий, список, свойства, сообщения)
       scripts/Presentation/      BoardView, HexFillLayer, HexMeshBuilder, CameraRig, UnitView, UnitsView,
-                                 OrdersView (стрелки и ТД), VisualConfig
+                                 OrdersView (стрелки и ТД), VisualConfig, TilePalette (вид типов гексов из библиотеки)
       scripts/InputLayer/        BoardPicker (экран → плоскость → гекс), PointerInput (события Godot → автомат),
                                  InputBindings (действия InputMap: пробел — пауза, Esc — отмена)
       scripts/UI/                DebugHud, RosterBar (нижняя панель ростера), WaypointMenuPanel (меню ТД, v0.14.0),
-                                 UiText (русские тексты сообщений)
-      scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки)
+                                 UiText (русские тексты сообщений), UiKit (тема, кнопки, AutomationIds), ModalDialog
+      scripts/Debug/             AutomationRunner (скриншоты/сценарии из командной строки), AutomationInput
       shaders/                   tile.gdshader (границы клеток), overlay.gdshader (подсветки)
-      maps/prototype.hexmap      данные карты 12×10
+      data/content/              встроенный контент (JSON): tiles/, units/, skills/, maps/, index.json
+      maps/prototype.hexmap      прежний текстовый формат карты — только эталон для тестов (игра его не читает)
       export_presets.cfg         пресеты "Windows Desktop" и "Linux"
   tests/
     Shared/                      общие хелперы тестов (TestMaps, TestPaths), подключаются ссылкой
     Core.Tests/                  координаты, раскладка, карта, гекс-линия, поиск пути
     Simulation.Tests/            появление, направления, занятость, приказы, движение, ростер (RosterTests)
     Interaction.Tests/           автомат ввода, черновики, перетаскивание карточек, приёмочные тесты (A01–A12, P01–P20)
+    Content.Tests/               встроенный контент, формат, проверки, хранилище, реестры (+ Support: TempDirectory, ContentTestKit)
+    Editor.Tests/                Undo/Redo, каталог и библиотечные команды
   tools/                         build_release.ps1, verify_release.ps1, restore_version.ps1,
                                  create_release_tags.ps1, common.ps1
   release_archives/vX.Y.Z/       ZIP Windows-сборки + .sha256 + BUILD_INFO.txt (вне папки игры)
@@ -72,9 +89,14 @@ TactickGame/                     корень репозитория (логич
 
 ```text
 GodotClient (HexTactics.dll) ──► Interaction ──► Simulation ──► Core
-           └──────────────────────────────────► Simulation, Core
+           ├──────────────────► Editor ──► Content ──────────► Core
+           └──────────────────────────────────► Simulation, Content, Core
 tests/*  ──► соответствующие сборки
 ```
+
+- **Content** — определения игрового контента и всё, что с ними делают без движка: формат, реестры, проверки, хранилище,
+  `RuntimeFactory` (определение → модель Core). Simulation от Content не зависит.
+- **Editor** — логика режима «Разработчик» (история команд, модели каталога и редакторов) без Godot.
 
 - **Core** хранит правду о состоянии: карта, юниты, занятость, очереди приказов, правила появления. Ничего не знает о камере, цветах и мыши.
 - **Simulation** — единственная точка изменения состояния (`GameSimulation`): команды, фиксированный тик, пауза,
@@ -271,7 +293,7 @@ tests/*  ──► соответствующие сборки
 
 ## 7.5. Бой (с v0.12.0, ТЗ ч.3 §3–4, §7, D-068–D-072)
 
-- `UnitStats` (Core/Combat) из `SimulationSettings.DefaultStats` ← `data/balance.json`; `UnitState.CurrentHealth`,
+- `UnitStats` (Core/Combat) из `SimulationSettings.DefaultStats` ← юнит библиотеки (с v0.15.0; раньше `data/balance.json`); `UnitState.CurrentHealth`,
   `LifeState`, `Combat` (`AttackStatus`, таймер, клетка подхода, счётчик ударов).
 - Приказ атаки: `IndividualOrder.AttackTarget` → `OrderQueue.AttackTarget` (последняя стадия после ТД), взгляд к цели
   при подтверждении (`HexDirections.Toward`).
@@ -299,6 +321,25 @@ tests/*  ──► соответствующие сборки
   `BeginWaypointSkillAim`; клиент: `WaypointMenuPanel` (CanvasLayer над стрелками), красный шестиугольник «✦1» у маркера
   (`OrdersView.SkillBadge`), ярко/приглушённо серые области (`Main.UpdateSkillAreas`); пока открыто меню ТД или идёт
   прицеливание, зелёно-красная подсветка движения скрыта (`Main.MovementFillsAllowed`, D-079).
+
+## 7.7. Контент, режимы и редакторы (с v0.15.0, ТЗ ч.4, D-080–D-091)
+
+- **Старт.** `AppRoot` (`scenes/App.tscn`) загружает библиотеку (`ContentService`: встроенное из `res://data/content` +
+  пользовательское из `user://`), показывает `StartMenu` и создаёт один режим: `GameMode` («Играть») или `DeveloperMode`
+  («Разработчик»). Возврат в меню удаляет режим; симуляция в редакторе не работает.
+- **Матч из данных.** `RuntimeFactory.BuildGame(library)` → `GameContent` (карта с `TileType.Void` для пустых мест, навыки,
+  юнит по умолчанию, вид типов гексов). `GameMode` строит из него `GameSimulation` (характеристики и навыки юнитов —
+  из определения) и `TilePalette` (цвет/высота гексов). Тестовый запуск из редакторов (с v0.16.0) — та же фабрика.
+- **Эффекты.** Клетка навыка хранит `EffectSpec`; `SkillSystem` для каждой клетки по порядку применяет эффекты к юниту в
+  ней через `EffectResolver` — единственный исполнитель (обработчики по типу, проверка целей). Реестр полей эффектов —
+  `EffectTypeRegistry` в Content; тест требует обработчик для каждого зарегистрированного типа.
+- **Каталог разработчика.** `DeveloperMode` показывает модели `LibraryBrowser` (категории из реестра, строки, поиск,
+  сортировка); операции библиотеки — команды `LibraryCommands` в `CommandHistory` (Ctrl+Z / Ctrl+Y); редакторы категорий
+  регистрируются в `DeveloperMode.Editors` (появляются с v0.16.0). Диалоги — `ModalDialog` (перехватывает ввод).
+- **Постоянное правило (ТЗ ч.4 §9.3).** Любая новая редактируемая механика в том же релизе получает: правила в ТЗ,
+  версионированную схему, проверку и миграцию, единый обработчик в симуляции, поля и предпросмотр в режиме разработчика,
+  сохранение/импорт/экспорт и тесты (игра, редактирование, загрузка, совместимость, откат). Новые категории — через реестр,
+  с сохранением существующих объектов и их ID. Полный текст — `CLAUDE.md` и `docs/CONTENT_FORMAT.md`.
 
 ## 8. Визуальные слои
 
@@ -374,11 +415,21 @@ tests/*  ──► соответствующие сборки
 Шаги/проверки v0.14: `menu-skill`, `menu-clear` (нажать настоящие кнопки открытого меню ТД), `expect:menu:none|open[:N]`,
 `expect:wpskills:ID:N` (запланированные навыки на ТД юнита), `expect:draft-skills:N` (навыки в открытом черновике).
 Проверка v0.14.1: `expect:movefill:on|off` (показана ли зелёно-красная подсветка движения).
+С v0.15.0 запуск начинается со стартового меню; шаги приложения (`AppRoot`) обрабатываются раньше шагов боя:
+`ui:<id>` — нажать зарегистрированный элемент интерфейса настоящими событиями мыши (`menu.play`, `menu.dev`, `menu.quit`,
+`game.menu`, `dev.cat.<вид>`, `dev.create|open|duplicate|rename|delete|validate|undo|redo|back`, `dialog.ok|cancel`…),
+`field:<id>=<значение>` (поле ввода, список, флажок, цвет; `dev.search`, `dialog.input`), `key:ctrl+z` (клавиши с
+модификаторами), `row:<id>` или `row:name=<название>` (клик по строке библиотеки); проверки `expect:screen:menu|play|dev`,
+`expect:dialog:none|<начало заголовка>`, `expect:category:<вид>`, `expect:rows:N`, `expect:selected:<id|название>|none`,
+`expect:item:<вид>:<название>:yes|no`, `expect:undo:N`, `expect:message:<текст>`. Аргументы: `--hx-start=play|dev` (минуя
+меню), `--hx-user-root=<папка>` (отдельная папка пользовательского контента).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
 для v0.12, `$RegressionScenarioV13` = V12 + «Линейный удар» для v0.13, `$RegressionScenarioV14` = V13 + навык в ТД через
-меню для v0.14.0, `$RegressionScenarioV141` = V14 + подсветка при меню/прицеливании для v0.14.1+). Точка `P` — `c,r` (центр гекса) или
+меню для v0.14.0, `$RegressionScenarioV141` = V14 + подсветка при меню/прицеливании для v0.14.1, `$RegressionScenarioV15` =
+«Играть» + V141 + выход в меню + каталог разработчика для v0.15.0+; `$PersistenceScenarioV15` — второй запуск с той же
+папкой пользователя: сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
 ## 12. Версия и сборка

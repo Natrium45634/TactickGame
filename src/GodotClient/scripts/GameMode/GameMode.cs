@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using Godot;
+using HexTactics.Client.App;
 using HexTactics.Client.Debug;
 using HexTactics.Client.InputLayer;
 using HexTactics.Client.Presentation;
@@ -10,20 +11,20 @@ using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Roster;
 using HexTactics.Core.Spawning;
+using HexTactics.Content.Runtime;
 using HexTactics.Interaction;
 using HexTactics.Simulation;
 
-namespace HexTactics.Client.App;
+namespace HexTactics.Client.Game;
 
 /// <summary>
-/// Composition root of the client: loads map data into the pure model, creates the simulation,
-/// the input state machine, the visual layers (board → fills → units → UI), the camera and the
-/// input glue, and keeps the views in sync. Contains no game rules.
+/// The «Играть» mode (spec part 4 §2.1): builds a match from content definitions (map, unit, skills, tile looks — the
+/// same runtime factory serves test runs from the editors), creates the simulation, the input state machine, the visual
+/// layers (board → fills → units → UI), the camera and the input glue, and keeps the views in sync. Contains no game rules.
 /// </summary>
-public partial class Main : Node3D
+public partial class GameMode : Node3D
 {
-    private const string MapPath = "res://maps/prototype.hexmap";
-
+    private GameContent _content = null!;
     private MapDefinition _map = null!;
     private HexLayout _layout = null!;
     private GameSimulation _sim = null!;
@@ -48,6 +49,7 @@ public partial class Main : Node3D
     private RosterBar _rosterBar = null!;
     private WaypointMenuPanel _waypointMenu = null!;
     private AutomationRunner _automation = null!;
+    private string _title = string.Empty;
 
     private Label _cellLabel = null!;
     private Label _statusLabel = null!;
@@ -64,27 +66,40 @@ public partial class Main : Node3D
     private HexCoord? _hovered;
     private string _fillStamp = string.Empty;
 
+    /// <summary>The user confirmed leaving the match for the start menu.</summary>
+    public event Action? ExitRequested;
+
+    /// <summary>Script runner of the application (set by the root before the mode enters the tree).</summary>
+    public AutomationRunner Automation
+    {
+        get => _automation;
+        set => _automation = value;
+    }
+
+    /// <summary>The match to play: built from content by <see cref="RuntimeFactory"/>; call before adding the node.</summary>
+    public void Configure(GameContent content, string title)
+    {
+        _content = content;
+        _title = title;
+    }
+
+    /// <summary>The skill of the HUD button, the R key and the ТД menu: the first skill of the default unit.</summary>
+    private string PrimarySkill => _content.DefaultUnit.Skills.Count > 0 ? _content.DefaultUnit.Skills[0] : HexTactics.Core.Skills.SkillCatalog.LinearStrikeId;
+
+    private string PrimarySkillName => _content.Skills.TryGetValue(PrimarySkill, out var skill) ? skill.Name : PrimarySkill;
+
     public override void _Ready()
     {
-        GD.Print(BuildInfo.Full);
-        if (!BuildInfo.VersionsMatch)
-        {
-            GD.PushWarning($"project.godot version {BuildInfo.ProjectVersion} differs from assembly version {BuildInfo.Version}");
-        }
-
-        InputBindings.Register();
-        _map = MapParser.Parse(FileAccess.GetFileAsString(MapPath));
+        _map = _content.Map;
+        TilePalette.Current = new TilePalette(_content.TileVisuals);
         _layout = new HexLayout(VisualConfig.HexSize);
-        var (stats, linearStrikeDamage) = LoadBalance();
         _sim = new GameSimulation(
             _map,
             new SimulationSettings
             {
-                DefaultStats = stats,
-                Skills = new System.Collections.Generic.Dictionary<string, HexTactics.Core.Skills.SkillDefinition>
-                {
-                    [HexTactics.Core.Skills.SkillCatalog.LinearStrikeId] = HexTactics.Core.Skills.SkillCatalog.LinearStrike(linearStrikeDamage),
-                },
+                DefaultStats = _content.DefaultUnit.Stats,
+                Skills = _content.Skills,
+                DefaultSkillSet = _content.DefaultUnit.Skills,
             },
             RosterState.Prototype());
         _fsm = new InputStateMachine(_sim, _layout);
@@ -142,7 +157,7 @@ public partial class Main : Node3D
         _rosterBar.CardPressed += OnRosterCardPressed;
         _rosterBar.CommandPressed += () => _fsm.ToggleGroupMode();
         _waypointMenu = new WaypointMenuPanel { Name = "WaypointMenu" };
-        _waypointMenu.SkillPressed += () => _fsm.BeginWaypointSkillAim(HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
+        _waypointMenu.SkillPressed += () => _fsm.BeginWaypointSkillAim(PrimarySkill);
         _waypointMenu.ClearPressed += () => _fsm.ClearWaypointSkillFromMenu();
         AddChild(_waypointMenu);
         AddChild(_rosterBar);
@@ -152,10 +167,6 @@ public partial class Main : Node3D
         _input.Initialize(_fsm, () => _cameraRig.Camera, _picker, _units, _orders, IsOverUi);
         _input.DebugKey += OnDebugKey;
         _input.PauseToggled += () => _sim.TogglePause();
-
-        _automation = new AutomationRunner { Name = "Automation" };
-        _automation.StepRequested = RunAutomationStep;
-        AddChild(_automation);
 
         GetViewport().SizeChanged += FitCamera;
         CallDeferred(MethodName.FitCamera);
@@ -206,6 +217,10 @@ public partial class Main : Node3D
         if (_input.MouseInside && !IsOverUi(_input.MousePosition))
         {
             hex = _picker.Pick(_cameraRig.Camera, _input.MousePosition).Hex;
+            if (hex is { } h0 && !_map.Grid.Exists(h0))
+            {
+                hex = null;
+            }
         }
 
         if (hex != _hovered)
@@ -282,6 +297,11 @@ public partial class Main : Node3D
             // the last КТД (captain's facing sectors) is neutral.
             foreach (var cell in _map.Grid.Coords)
             {
+                if (!_map.Grid.Exists(cell))
+                {
+                    continue; // empty places of the workspace are not hexes (spec part 4 §4.1)
+                }
+
                 if (cell == group.Source)
                 {
                     _fillLayer.SetFill(cell, VisualConfig.FillNeutral);
@@ -297,6 +317,11 @@ public partial class Main : Node3D
             // or isolated, neutral = the source hex (rotate-in-place area).
             foreach (var cell in _map.Grid.Coords)
             {
+                if (!_map.Grid.Exists(cell))
+                {
+                    continue; // empty places of the workspace are not hexes (spec part 4 §4.1)
+                }
+
                 if (cell == drag.Source)
                 {
                     _fillLayer.SetFill(cell, VisualConfig.FillNeutral);
@@ -312,6 +337,11 @@ public partial class Main : Node3D
             // Spec part 2 §5.2: allowed hexes (player base + deploy cells of this map) green, all others softly red.
             foreach (var cell in _map.Grid.Coords)
             {
+                if (!_map.Grid.Exists(cell))
+                {
+                    continue; // empty places of the workspace are not hexes (spec part 4 §4.1)
+                }
+
                 var ok = PlacementRules.ValidateCell(_sim.State, cell) == PlacementError.None;
                 _fillLayer.SetFill(cell, ok ? VisualConfig.FillPlacementAllowed : VisualConfig.FillPlacementDenied);
             }
@@ -320,6 +350,11 @@ public partial class Main : Node3D
         {
             foreach (var cell in _map.Grid.Coords)
             {
+                if (!_map.Grid.Exists(cell))
+                {
+                    continue; // empty places of the workspace are not hexes (spec part 4 §4.1)
+                }
+
                 var ok = SpawnRules.ValidateCell(_sim.State, cell) == SpawnError.None;
                 _fillLayer.SetFill(cell, ok ? VisualConfig.FillValid : VisualConfig.FillInvalid);
             }
@@ -429,12 +464,19 @@ public partial class Main : Node3D
         var o = h.ToOffset();
         var type = tile.Type switch
         {
+            TileType.Void => "пусто: гекса нет",
             TileType.Blocked => "непроходимая",
             TileType.PlayerBase => _map.PlayerBase?.Name ?? "база",
             TileType.SpawnZone => _map.FindZone(tile.ZoneId)?.Name ?? $"зона {tile.ZoneId}",
             TileType.DeployZone => "зона выставления",
+            TileType.EnemyBase => "база врага (метка)",
             _ => "проходимая",
         };
+        if (TilePalette.Current.NameOf(tile) is { } name)
+        {
+            type = $"{name} · {type}";
+        }
+
         var occupant = _sim.State.UnitAt(h) is { } u ? $" · юнит {u.Id}" : string.Empty;
         return $"Клетка: col {o.Col}, row {o.Row} (axial {h.Q}, {h.R})\n{type}{occupant}";
     }
@@ -478,7 +520,7 @@ public partial class Main : Node3D
         }
         else
         {
-            _fsm.BeginSkillAim(HexTactics.Core.Skills.SkillCatalog.LinearStrikeId);
+            _fsm.BeginSkillAim(PrimarySkill);
         }
     }
 
@@ -496,40 +538,6 @@ public partial class Main : Node3D
         }
 
         ShowMessage("Стенд: четыре неподвижные вражеские мишени (без ИИ). Протяните стрелку юнита на врага — атака.", false);
-    }
-
-    /// <summary>Unit characteristics from <c>data/balance.json</c> (spec part 3 §8: balance in data, not in code).</summary>
-    private static (HexTactics.Core.Combat.UnitStats Stats, int LinearStrikeDamage) LoadBalance()
-    {
-        const string path = "res://data/balance.json";
-        var stats = HexTactics.Core.Combat.UnitStats.Default;
-        var strike = HexTactics.Core.Skills.SkillCatalog.LinearStrike().Damage;
-        if (!FileAccess.FileExists(path))
-        {
-            GD.PushWarning($"{path} not found — default characteristics are used.");
-            return (stats, strike);
-        }
-
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(FileAccess.GetFileAsString(path));
-            var root = doc.RootElement;
-            int I(string name, int fallback) => root.TryGetProperty(name, out var v) ? v.GetInt32() : fallback;
-            double D(string name, double fallback) => root.TryGetProperty(name, out var v) ? v.GetDouble() : fallback;
-            return (stats with
-            {
-                MaxHealth = I("maxHealth", stats.MaxHealth),
-                MoveSpeedHexPerSecond = D("moveSpeedHexPerSecond", stats.MoveSpeedHexPerSecond),
-                AttackRatePerSecond = D("attackRatePerSecond", stats.AttackRatePerSecond),
-                NormalAttackDamage = I("normalAttackDamage", stats.NormalAttackDamage),
-                NormalAttackRangeHex = I("normalAttackRangeHex", stats.NormalAttackRangeHex),
-            }, I("linearStrikeDamage", strike));
-        }
-        catch (System.Text.Json.JsonException ex)
-        {
-            GD.PushWarning($"{path}: {ex.Message} — default characteristics are used.");
-            return (stats, strike);
-        }
     }
 
     private void RotateSelected(int steps)
@@ -707,9 +715,7 @@ public partial class Main : Node3D
             {
                 case SkillActivated s:
                     _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
-                    ShowMessage(s.Hit.Count == 0
-                        ? $"Юнит {s.Unit}: линейный удар — попаданий нет."
-                        : $"Юнит {s.Unit}: линейный удар — попаданий {s.Hit.Count} (по {_sim.Settings.Skills[s.SkillId].Damage} урона).", false);
+                    ShowMessage(SkillMessage(s), false);
                     break;
                 case DamageApplied or UnitDied:
                     _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
@@ -762,6 +768,36 @@ public partial class Main : Node3D
     {
         _finishedTick[f.Unit] = f.Tick;
         return true;
+    }
+
+    /// <summary>«Юнит 1: линейный удар — попаданий 2 (по 20 урона).» — the damage is read from the skill's effects.</summary>
+    private string SkillMessage(SkillActivated s)
+    {
+        if (!_sim.Settings.Skills.TryGetValue(s.SkillId, out var skill))
+        {
+            return $"Юнит {s.Unit}: навык — попаданий {s.Hit.Count}.";
+        }
+
+        var name = skill.Name.ToLowerInvariant();
+        if (s.Hit.Count == 0)
+        {
+            return $"Юнит {s.Unit}: {name} — попаданий нет.";
+        }
+
+        var amounts = new System.Collections.Generic.SortedSet<double>();
+        foreach (var cell in skill.Cells)
+        {
+            foreach (var effect in cell.Effects)
+            {
+                if (effect.Type == HexTactics.Core.Effects.EffectTypes.Damage)
+                {
+                    amounts.Add(effect.Number("amount"));
+                }
+            }
+        }
+
+        var each = amounts.Count == 1 ? $" (по {amounts.Min.ToString("0.##", CultureInfo.InvariantCulture)} урона)" : string.Empty;
+        return $"Юнит {s.Unit}: {name} — попаданий {s.Hit.Count}{each}.";
     }
 
     private void ShowMessage(string text, bool isError)
@@ -820,6 +856,8 @@ public partial class Main : Node3D
         AddChild(_hud);
         _hud.AddTitle(BuildInfo.Title);
         _hud.AddLabel($"{BuildInfo.Commit} · Godot {BuildInfo.EngineVersion}\n{BuildInfo.DotNetVersion}", dim: true, fontSize: 12);
+        _hud.AddLabel($"Карта: {_title}", fontSize: 12);
+        AutomationIds.Register(_hud.AddButton("← Главное меню", RequestExit), "game.menu");
         _hud.AddSeparator();
 
         _hud.AddHeader("Время");
@@ -830,9 +868,9 @@ public partial class Main : Node3D
 
         _hud.AddHeader("Выбранный юнит");
         _selectionLabel = _hud.AddLabel(string.Empty, fontSize: 13);
-        _skillButton = _hud.AddButton("✦ Линейный удар (R)", () => ToggleSkillAim());
+        _skillButton = _hud.AddButton($"✦ {PrimarySkillName} (R)", () => ToggleSkillAim());
         _skillButton.ToggleMode = true;
-        _skillButton.TooltipText = "Навык: 20 урона врагам в двух клетках перед юнитом. Направление — курсором, ЛКМ — применить, ПКМ — отмена.";
+        _skillButton.TooltipText = $"Навык «{PrimarySkillName}» (из библиотеки контента). Направление — курсором, ЛКМ — применить, ПКМ — отмена.";
         _hud.AddSeparator();
 
         _hud.AddHeader("Приказы");
@@ -891,6 +929,24 @@ public partial class Main : Node3D
         return parts.Length > 0 ? parts[0] : name;
     }
 
+    public override void _ExitTree()
+    {
+        GetViewport().SizeChanged -= FitCamera;
+        TilePalette.Current = new TilePalette();
+    }
+
+    /// <summary>«← Главное меню»: the match is closed after a confirmation; content data is never touched.</summary>
+    private void RequestExit()
+    {
+        var wasPaused = _sim.IsPaused;
+        _sim.SetPaused(true);
+        ModalDialog.Show(this, "Выйти в главное меню?", "Текущий бой будет закрыт. Карты, юниты и другие объекты библиотеки не меняются.", new[]
+        {
+            new DialogButton("Остаться", "dialog.cancel", ButtonKind.Flat, () => _sim.SetPaused(wasPaused), IsCancel: true),
+            new DialogButton("В меню", "dialog.ok", ButtonKind.Primary, () => ExitRequested?.Invoke()),
+        });
+    }
+
     private void FitCamera()
     {
         if (_cameraRig?.Camera is null || _hud is null)
@@ -911,7 +967,7 @@ public partial class Main : Node3D
     // ------------------------------------------------------------------ automation
 
     /// <summary>Executes one command-line automation step; returns frames to wait.</summary>
-    private int RunAutomationStep(string step)
+    public int RunAutomationStep(string step)
     {
         var parts = step.Split(':', 2);
         var arg = parts.Length > 1 ? parts[1] : string.Empty;
@@ -1004,13 +1060,6 @@ public partial class Main : Node3D
                 {
                     var cell = ParseHex(arg);
                     _sim.SetObstacle(cell, _map.Grid[cell].IsWalkable);
-                    return 2;
-                }
-            case "key":
-                {
-                    var key = Enum.Parse<Key>(arg);
-                    Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = true });
-                    Godot.Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
                     return 2;
                 }
             case "draft":
@@ -1346,7 +1395,7 @@ public partial class Main : Node3D
 
     private Vector2 HexScreen(HexCoord hex)
     {
-        var height = _map.Grid.Contains(hex) ? VisualConfig.TileTopHeight(_map.Grid[hex].Type) : 0f;
+        var height = TilePalette.Current.HeightOf(_map.Grid, hex);
         return _cameraRig.Camera.UnprojectPosition(_layout.HexToPlane(hex).ToWorld(height));
     }
 

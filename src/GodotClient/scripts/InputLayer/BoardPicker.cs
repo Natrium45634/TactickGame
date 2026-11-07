@@ -32,13 +32,17 @@ public sealed class BoardPicker
         var origin = camera.ProjectRayOrigin(screenPosition);
         var dir = camera.ProjectRayNormal(screenPosition);
 
-        // Raised blocked columns occlude what is behind them.
-        if (IntersectHorizontal(origin, dir, VisualConfig.BlockedHeight, out var top))
+        // Raised tiles (obstacle columns, high ground) occlude what is behind them: test their top faces from the highest.
+        foreach (var level in new[] { 3, 2, 1 })
         {
-            var h = _layout.PlaneToHex(top.ToPlane());
-            if (_grid.Contains(h) && _grid[h].Type == TileType.Blocked)
+            var height = TilePalette.LevelHeight(level);
+            if (IntersectHorizontal(origin, dir, height, out var top))
             {
-                return new BoardPick(h, top.ToPlane(), true);
+                var h = _layout.PlaneToHex(top.ToPlane());
+                if (_grid.Contains(h) && TilePalette.Current.HeightOf(_grid[h]) >= height - 1e-3f)
+                {
+                    return new BoardPick(h, top.ToPlane(), true);
+                }
             }
         }
 

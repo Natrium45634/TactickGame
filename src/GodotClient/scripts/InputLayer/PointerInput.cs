@@ -84,6 +84,11 @@ public partial class PointerInput : Node
 
     public override void _Input(InputEvent @event)
     {
+        if (HexTactics.Client.UI.ModalDialog.Open is not null)
+        {
+            return; // a modal dialog owns the mouse and the keyboard (spec part 4 §3.2: no clicks through it)
+        }
+
         switch (@event)
         {
             case InputEventMouseMotion motion:

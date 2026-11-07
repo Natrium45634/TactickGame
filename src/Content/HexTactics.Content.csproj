@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Game content library (spec part 4 §8–9): versioned definitions (maps, units, skills, tile types), registries of
+    content kinds / fields / effect types, validation, the user repository and the conversion of definitions into the
+    runtime model of Core. Pure C#: must never reference Godot.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>HexTactics.Content</RootNamespace>
+    <AssemblyName>HexTactics.Content</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="HexTactics.Content.Tests" />
+  </ItemGroup>
+</Project>

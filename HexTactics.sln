@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -20,6 +20,14 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Simulation.Tests", "tests\Simulation.Tests\HexTactics.Simulation.Tests.csproj", "{51322533-90F2-51F4-9003-13B4D9035DB9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Interaction.Tests", "tests\Interaction.Tests\HexTactics.Interaction.Tests.csproj", "{C289E446-DF3E-5F68-B639-F5E46EE019E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Content", "src\Content\HexTactics.Content.csproj", "{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Editor", "src\Editor\HexTactics.Editor.csproj", "{A46FA6E7-6C03-4C7F-9143-478369F322DF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Content.Tests", "tests\Content.Tests\HexTactics.Content.Tests.csproj", "{3F1E2A75-4EFC-4755-AE58-48B4B494330B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexTactics.Editor.Tests", "tests\Editor.Tests\HexTactics.Editor.Tests.csproj", "{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -70,6 +78,30 @@ Global
 		{C289E446-DF3E-5F68-B639-F5E46EE019E2}.ExportDebug|Any CPU.Build.0 = ExportDebug|Any CPU
 		{C289E446-DF3E-5F68-B639-F5E46EE019E2}.ExportRelease|Any CPU.ActiveCfg = ExportRelease|Any CPU
 		{C289E446-DF3E-5F68-B639-F5E46EE019E2}.ExportRelease|Any CPU.Build.0 = ExportRelease|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.ExportRelease|Any CPU.ActiveCfg = Debug|Any CPU
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4}.ExportRelease|Any CPU.Build.0 = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.ExportRelease|Any CPU.ActiveCfg = Debug|Any CPU
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF}.ExportRelease|Any CPU.Build.0 = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.ExportRelease|Any CPU.ActiveCfg = Debug|Any CPU
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B}.ExportRelease|Any CPU.Build.0 = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.ExportDebug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.ExportDebug|Any CPU.Build.0 = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.ExportRelease|Any CPU.ActiveCfg = Debug|Any CPU
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0}.ExportRelease|Any CPU.Build.0 = Debug|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -82,5 +114,9 @@ Global
 		{41BB4CEC-F652-55FF-82F7-A4C9CBF908AD} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
 		{51322533-90F2-51F4-9003-13B4D9035DB9} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
 		{C289E446-DF3E-5F68-B639-F5E46EE019E2} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
+		{8478892A-5D31-4FAF-ADBD-6AA15826EAB4} = {611CF2E3-2504-5C6C-BFAD-BE1ACDEFF2D2}
+		{A46FA6E7-6C03-4C7F-9143-478369F322DF} = {611CF2E3-2504-5C6C-BFAD-BE1ACDEFF2D2}
+		{3F1E2A75-4EFC-4755-AE58-48B4B494330B} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
+		{EF49BEC0-EDA9-4F00-A6CB-C91B6F7987E0} = {78DF2018-ED09-5DCB-A77E-89F5F8107005}
 	EndGlobalSection
 EndGlobal

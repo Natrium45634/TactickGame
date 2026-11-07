@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "core.tile.deploy",
+  "kind": "tile",
+  "name": "Зона выставления",
+  "description": "Дополнительное место выставления из ростера.",
+  "revision": 1,
+  "modified": "2026-11-07T00:00:00Z",
+  "tags": [
+    "встроенный"
+  ],
+  "references": [],
+  "data": {
+    "category": "deploy",
+    "passable": true,
+    "level": 0,
+    "color": "#C2DBBD",
+    "effects": []
+  }
+}

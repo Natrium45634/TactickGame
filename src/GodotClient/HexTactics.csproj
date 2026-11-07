@@ -13,5 +13,7 @@
     <ProjectReference Include="../Core/HexTactics.Core.csproj" />
     <ProjectReference Include="../Simulation/HexTactics.Simulation.csproj" />
     <ProjectReference Include="../Interaction/HexTactics.Interaction.csproj" />
+    <ProjectReference Include="../Content/HexTactics.Content.csproj" />
+    <ProjectReference Include="../Editor/HexTactics.Editor.csproj" />
   </ItemGroup>
 </Project>

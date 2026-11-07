@@ -8,6 +8,7 @@ namespace HexTactics.Client.Presentation;
 /// <summary>Visual layer 3: one <see cref="UnitView"/> per unit, synchronised from the model every frame.</summary>
 public partial class UnitsView : Node3D
 {
+    private HexTactics.Core.Map.HexGrid? _grid;
     private readonly Dictionary<UnitId, UnitView> _views = new();
     private HexLayout _layout = null!;
     private MeshInstance3D? _ghost;
@@ -22,6 +23,7 @@ public partial class UnitsView : Node3D
     /// <param name="groupMembers">Members of the team being formed in the command mode (captain first), or null.</param>
     public void Sync(GameState state, UnitId? selected, float delta, double interpolationSeconds, UnitId? previewUnit = null, HexDirection? previewFacing = null, IReadOnlyList<UnitId>? groupMembers = null)
     {
+        _grid = state.Grid;
         var alive = new HashSet<UnitId>();
         var captains = new HashSet<UnitId>();
         foreach (var group in state.Groups)
@@ -108,7 +110,9 @@ public partial class UnitsView : Node3D
             ? m.PositionAtProgress(System.Math.Min(1.0, m.Progress + (unit.SpeedHexesPerSecond * interpolationSeconds)))
             : m.Position;
         var p = plane ?? _layout.HexToPlane(unit.Cell) * (1.0 / _layout.Size);
-        return (p * _layout.Size).ToWorld(0f); // the simulation works with hex size 1
+        // The simulation works with hex size 1; on high ground the body stands on the top face of the hex it is over.
+        var ground = _grid is null ? 0f : TilePalette.Current.HeightOf(_grid, _layout.PlaneToHex(p * _layout.Size));
+        return (p * _layout.Size).ToWorld(ground);
     }
 
     /// <summary>Current visual positions of all units on the plane (for path lines).</summary>

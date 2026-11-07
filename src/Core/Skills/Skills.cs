@@ -1,35 +1,32 @@
 using System;
 using System.Collections.Generic;
+using HexTactics.Core.Effects;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 
 namespace HexTactics.Core.Skills;
 
 /// <summary>
-/// Data of a skill (spec part 3 §5, §8 <c>SkillDefinition</c>): the hexes it hits relative to the caster for a direction,
-/// its damage and hit rules. Cost, cooldown and cast time are not defined by the author yet — fields exist so they can be
-/// configured later without code changes; null means "none" (§5.1).
+/// One hex of a skill's area (spec part 4 §6.1, §6.4): its offset from the caster for a caster looking
+/// <see cref="HexDirection.North"/> (axial; rotated mathematically for the other five facings) and the effects applied to
+/// the units standing there.
+/// </summary>
+public sealed record SkillCell(HexCoord Offset, IReadOnlyList<EffectSpec> Effects);
+
+/// <summary>
+/// Runtime data of a skill (spec part 3 §5, part 4 §6): the hexes it affects relative to the caster and the effects of
+/// each hex. Built from a content <c>SkillDefinition</c>; the part-3 «Линейный удар» is an ordinary instance (part 4
+/// §6.6). Cost, cooldown and cast time are not defined by the author yet — null means "none".
 /// </summary>
 public sealed record SkillDefinition
 {
     public required string Id { get; init; }
 
-    /// <summary>Display name (prototype name, may change).</summary>
+    /// <summary>Display name.</summary>
     public required string Name { get; init; }
 
-    /// <summary>
-    /// Hit hexes for the direction <see cref="HexDirection.North"/> as steps along directions relative to the facing
-    /// (0 = forward). Linear Strike: forward ×1 and forward ×2.
-    /// </summary>
-    public required IReadOnlyList<IReadOnlyList<int>> RelativeSteps { get; init; }
-
-    public int Damage { get; init; }
-
-    /// <summary>Spec part 3 §5.1 temporary rule: allies are not hurt.</summary>
-    public bool FriendlyFire { get; init; }
-
-    /// <summary>Spec part 3 §5.1 temporary rule: obstacles do not stop the skill.</summary>
-    public bool BlockedByObstacles { get; init; }
+    /// <summary>Hexes of the area for a caster looking North, in the stored order (also the processing order).</summary>
+    public required IReadOnlyList<SkillCell> Cells { get; init; }
 
     public int? Cost { get; init; }
 
@@ -38,24 +35,33 @@ public sealed record SkillDefinition
     public double? CastSeconds { get; init; }
 
     /// <summary>
-    /// Hexes hit when the skill is used from <paramref name="origin"/> towards <paramref name="direction"/>; hexes outside
-    /// the map are dropped (no error, spec part 3 §5.1). Pure hex arithmetic — no screen pixels or camera angles.
+    /// Area cells used from <paramref name="origin"/> towards <paramref name="direction"/>, with their configuration, in
+    /// the stored order. Cells outside the map or on empty places are dropped (spec part 3 §5.1, part 4 §4.1). Pure hex
+    /// arithmetic — no screen pixels or camera angles.
     /// </summary>
+    public IReadOnlyList<(HexCoord Cell, SkillCell Config)> Resolve(HexCoord origin, HexDirection direction, HexGrid? grid = null)
+    {
+        var cells = new List<(HexCoord, SkillCell)>(Cells.Count);
+        foreach (var config in Cells)
+        {
+            var cell = origin + config.Offset.RotateFor(direction);
+            if (grid is null || grid.Exists(cell))
+            {
+                cells.Add((cell, config));
+            }
+        }
+
+        return cells;
+    }
+
+    /// <summary>Hexes of the area (see <see cref="Resolve"/>).</summary>
     public IReadOnlyList<HexCoord> Area(HexCoord origin, HexDirection direction, HexGrid? grid = null)
     {
-        var cells = new List<HexCoord>(RelativeSteps.Count);
-        foreach (var path in RelativeSteps)
+        var resolved = Resolve(origin, direction, grid);
+        var cells = new List<HexCoord>(resolved.Count);
+        foreach (var (cell, _) in resolved)
         {
-            var cell = origin;
-            foreach (var step in path)
-            {
-                cell = cell.Neighbor(direction.RotateClockwise(step));
-            }
-
-            if (grid is null || grid.Contains(cell))
-            {
-                cells.Add(cell);
-            }
+            cells.Add(cell);
         }
 
         return cells;
@@ -65,20 +71,23 @@ public sealed record SkillDefinition
 /// <summary>Skills of the prototype.</summary>
 public static class SkillCatalog
 {
-    public const string LinearStrikeId = "linear-strike";
+    /// <summary>Content id of the built-in «Линейный удар» (<c>data/content/skills</c> in the client).</summary>
+    public const string LinearStrikeId = "core.skill.linear_strike";
 
     /// <summary>
     /// «Линейный удар» (prototype name, spec part 3 §5): exactly the two hexes in front of the caster — at distance 1 and 2
-    /// along the chosen direction; 20 damage once to every living enemy standing there at activation.
+    /// along the chosen direction; fixed damage once to every living enemy standing there at activation. The game loads
+    /// the same data from its content library; this factory serves tests.
     /// </summary>
     public static SkillDefinition LinearStrike(int damage = 20) => new()
     {
         Id = LinearStrikeId,
         Name = "Линейный удар",
-        RelativeSteps = new IReadOnlyList<int>[] { new[] { 0 }, new[] { 0, 0 } },
-        Damage = damage,
-        FriendlyFire = false,
-        BlockedByObstacles = false,
+        Cells = new[]
+        {
+            new SkillCell(new HexCoord(0, -1), new[] { EffectSpec.FixedDamage(damage) }),
+            new SkillCell(new HexCoord(0, -2), new[] { EffectSpec.FixedDamage(damage) }),
+        },
     };
 }
 

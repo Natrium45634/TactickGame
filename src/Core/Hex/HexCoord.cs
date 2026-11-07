@@ -31,6 +31,28 @@ public readonly record struct HexCoord(int Q, int R) : IComparable<HexCoord>
 
     public HexCoord Neighbor(HexDirection direction) => this + DirectionOffsets[(int)direction];
 
+    /// <summary>
+    /// Rotates this vector (an offset from the origin) clockwise by <paramref name="steps"/> × 60° on the map plane
+    /// (flat-top: North → NorthEast → SouthEast …). Pure cube math: (q, r, s) → (−r, −s, −q); never a mirror.
+    /// </summary>
+    public HexCoord RotateClockwise(int steps)
+    {
+        var n = ((steps % 6) + 6) % 6;
+        var c = this;
+        for (var i = 0; i < n; i++)
+        {
+            c = new HexCoord(-c.R, -c.S);
+        }
+
+        return c;
+    }
+
+    /// <summary>
+    /// Turns an offset defined for a unit looking <see cref="HexDirection.North"/> to a unit looking
+    /// <paramref name="facing"/> (spec part 4 §6.1: one shared geometric function for all six facings).
+    /// </summary>
+    public HexCoord RotateFor(HexDirection facing) => RotateClockwise((int)facing);
+
     /// <summary>All six neighbours in the fixed order of <see cref="HexDirections.All"/>.</summary>
     public IEnumerable<HexCoord> Neighbors()
     {

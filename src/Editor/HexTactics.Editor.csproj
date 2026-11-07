@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Logic of the developer mode (spec part 4 §3, §9.2 EditorRegistry): undo/redo history, catalog and library models,
+    editor models of maps, units, skills and tile types. Pure C#: the Godot client only displays these models.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>HexTactics.Editor</RootNamespace>
+    <AssemblyName>HexTactics.Editor</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Core/HexTactics.Core.csproj" />
+    <ProjectReference Include="../Content/HexTactics.Content.csproj" />
+  </ItemGroup>
+</Project>

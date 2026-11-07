@@ -8,20 +8,23 @@ namespace HexTactics.Simulation;
 /// <summary>
 /// Executes planned skill uses (spec part 3 §5, §7 step 3) — after movement, before normal attacks, units in id order.
 /// An immediate use fires as soon as the caster stands on a hex centre (a running step is completed first); the caster
-/// turns to the skill's direction, the area is computed from its hex with pure hex arithmetic, and every living enemy
-/// standing in it at this tick takes the damage once. Who stood there when the skill was planned does not matter.
+/// turns to the skill's direction, the area is computed from its hex with pure hex arithmetic, and the effects of each
+/// cell are applied once — through the shared <see cref="EffectResolver"/> — to the unit standing there at this tick.
+/// Who stood there when the skill was planned does not matter.
 /// </summary>
 internal sealed class SkillSystem : ISimulationSystem
 {
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
     private readonly SimulationSettings _settings;
+    private readonly EffectResolver _resolver;
 
-    public SkillSystem(GameState state, List<SimulationEvent> events, SimulationSettings settings)
+    public SkillSystem(GameState state, List<SimulationEvent> events, SimulationSettings settings, EffectResolver resolver)
     {
         _state = state;
         _events = events;
         _settings = settings;
+        _resolver = resolver;
     }
 
     public string Name => "Skills";
@@ -64,23 +67,28 @@ internal sealed class SkillSystem : ISimulationSystem
             _events.Add(new FacingChanged(tick, caster.Id, action.Direction));
         }
 
-        var cells = skill.Area(origin, action.Direction, _state.Grid);
+        // Fixed order (spec part 4 §6.5): cell in stored order → effect index → the unit standing there (one per hex).
+        var resolved = skill.Resolve(origin, action.Direction, _state.Grid);
+        var cells = new List<HexCoord>(resolved.Count);
         var hit = new List<UnitId>();
-        foreach (var cell in cells)
+        foreach (var (cell, config) in resolved)
         {
-            if (_state.UnitAt(cell) is not { IsAlive: true } victim || victim.Id == caster.Id)
+            cells.Add(cell);
+            if (_state.UnitAt(cell) is not { IsAlive: true } target)
             {
                 continue;
             }
 
-            if (!skill.FriendlyFire && victim.Side == caster.Side)
+            var any = false;
+            foreach (var effect in config.Effects)
             {
-                continue;
+                any |= _resolver.Apply(new EffectInvocation(effect, caster, target, tick, EffectSource.Skill));
             }
 
-            var dealt = _state.ApplyDamage(victim.Id, skill.Damage);
-            hit.Add(victim.Id);
-            _events.Add(new DamageApplied(tick, victim.Id, caster.Id, dealt, victim.CurrentHealth, DamageKind.Skill));
+            if (any && !hit.Contains(target.Id))
+            {
+                hit.Add(target.Id);
+            }
         }
 
         _state.MarkExecuted(action, tick);

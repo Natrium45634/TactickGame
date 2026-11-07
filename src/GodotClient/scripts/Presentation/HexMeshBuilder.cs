@@ -15,8 +15,9 @@ public static class HexMeshBuilder
     /// Builds a single mesh with one hexagonal prism per cell (one draw call for the whole board).
     /// Adjacent prisms share edges exactly, so there are no gaps between tiles.
     /// </summary>
-    public static ArrayMesh BuildBoard(HexGrid grid, HexLayout layout)
+    public static ArrayMesh BuildBoard(HexGrid grid, HexLayout layout, TilePalette? palette = null)
     {
+        palette ??= TilePalette.Current;
         var verts = new List<Vector3>();
         var normals = new List<Vector3>();
         var colors = new List<Color>();
@@ -27,10 +28,15 @@ public static class HexMeshBuilder
         foreach (var coord in grid.Coords)
         {
             var tile = grid[coord];
-            var top = VisualConfig.TileTopHeight(tile.Type);
+            if (!tile.Exists)
+            {
+                continue; // an empty place of the workspace is not terrain (spec part 4 §4.1)
+            }
+
+            var top = palette.HeightOf(tile);
             var bottom = -VisualConfig.TileThickness;
-            var color = VisualConfig.ToRenderColor(VisualConfig.TileColor(tile.Type));
-            var sideColor = VisualConfig.ToRenderColor(VisualConfig.TileColor(tile.Type).Darkened(0.14f));
+            var color = VisualConfig.ToRenderColor(palette.ColorOf(tile));
+            var sideColor = VisualConfig.ToRenderColor(palette.ColorOf(tile).Darkened(0.14f));
             var center = layout.HexToPlane(coord);
 
             // Top face: triangle fan, centre UV.x = apothem, rim UV.x = 0 → linear distance to border.

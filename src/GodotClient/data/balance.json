@@ -1,9 +1,0 @@
-{
-  "comment": "Unit characteristics, spec part 3 §3. normalAttackDamage and normalAttackRangeHex are PROTOTYPE_DEFAULT values (not set by the author yet, spec part 3 §11).",
-  "maxHealth": 100,
-  "moveSpeedHexPerSecond": 1.0,
-  "attackRatePerSecond": 3.0,
-  "normalAttackDamage": 10,
-  "normalAttackRangeHex": 1,
-  "linearStrikeDamage": 20
-}

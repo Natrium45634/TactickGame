@@ -1,0 +1,15 @@
+{
+  "comment": "Built-in content of the game (read-only). The client loads exactly these files; Content.Tests checks the list against the folders.",
+  "files": [
+    "maps/core.map.prototype.json",
+    "skills/core.skill.linear_strike.json",
+    "tiles/core.tile.deploy.json",
+    "tiles/core.tile.enemy_base.json",
+    "tiles/core.tile.ground.json",
+    "tiles/core.tile.high.json",
+    "tiles/core.tile.obstacle.json",
+    "tiles/core.tile.player_base.json",
+    "tiles/core.tile.spawn.json",
+    "units/core.unit.operative.json"
+  ]
+}
