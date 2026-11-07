@@ -36,8 +36,17 @@ public partial class AppRoot : Node
 
     public Screen Current { get; private set; }
 
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMCloseRequest)
+        {
+            AppExit.Quit(GetTree()); // the window's close button: same clean exit as «Выход»
+        }
+    }
+
     public override void _Ready()
     {
+        GetTree().AutoAcceptQuit = false;
         GD.Print(BuildInfo.Full);
         if (!BuildInfo.VersionsMatch)
         {
@@ -79,7 +88,7 @@ public partial class AppRoot : Node
         };
         _menu.PlayPressed += () => CallDeferred(MethodName.StartGame);
         _menu.DeveloperPressed += () => CallDeferred(MethodName.OpenDeveloper);
-        _menu.QuitPressed += () => GetTree().Quit();
+        _menu.QuitPressed += () => AppExit.Quit(GetTree());
         AddChild(_menu);
         Current = Screen.Menu;
     }

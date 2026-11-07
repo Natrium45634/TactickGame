@@ -136,7 +136,7 @@ public partial class AutomationRunner : Node
         if ((shot is not null && Get("stay") is null) || Get("quit") is not null)
         {
             GD.Print("[automation] done");
-            GetTree().Quit(_failures.Count == 0 ? 0 : 1);
+            HexTactics.Client.App.AppExit.Quit(GetTree(), _failures.Count == 0 ? 0 : 1);
         }
 
         _args.Clear();
