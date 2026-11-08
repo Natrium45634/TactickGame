@@ -172,7 +172,7 @@ public class Part5EndToEndTests
         Assert.Empty(data.Armor); // spec part 6 §3.5: A = 0 after the migration, no hidden armor
         Assert.Equal((0.0, 0.0), (data.AttackArmorPenetration, data.AttackArmorPenetrationPercent));
         Assert.Equal(3, item.Revision);
-        Assert.Contains("\"schemaVersion\": 5", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v17.json")), StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {HexTactics.Content.Registry.ContentTypeRegistry.CreateDefault().Find("unit")!.SchemaVersion}", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v17.json")), StringComparison.Ordinal);
         Assert.Equal(v17, File.ReadAllText(Directory.GetFiles(Path.Combine(dir.Path, "backups"), "unit_v17.json", SearchOption.AllDirectories).Single()));
         var hit = HitSandbox.Run(library, new SandboxSetup { TargetUnitId = item.Id, DamageTypeId = DamageTypes.Slashing, Amount = 20 });
         Assert.Equal(20, hit.With.Result.HpLoss, 9); // an unprotected old unit takes the old numbers

@@ -247,7 +247,23 @@ public sealed class DamageResolver
 
         _hitSerial++;
 
-        // 1a. Registered stages before D0 (spec part 5 §13.4; none in this edition).
+        // 1a. The attacker's outgoing passives (spec part 6 §4.2, §8 stage 2): only a primary normal attack or skill hit of a
+        //     living source; reactions, surfaces and statuses keep their strength.
+        var type = TypeOf(e.DamageTypeId);
+        var baseAmount = double.IsFinite(e.Amount) ? Math.Max(0, e.Amount) : 0;
+        var modifiers = new List<(DamageModifierKind, ModifierSource)>();
+        var outgoing = 1.0;
+        if (!e.Reactive && e.Origin is DamageOrigin.NormalAttack or DamageOrigin.Skill && e.Source is { } src && _state.FindUnit(src) is { IsAlive: true } attackerUnit &&
+            attackerUnit.Stats.DamageModifiers.Count > 0)
+        {
+            var applied = new List<ModifierSource>();
+            var attackerHealth = attackerUnit.MaxHealth > 0 ? attackerUnit.CurrentHealth / attackerUnit.MaxHealth * 100 : 0;
+            outgoing = ModifierMath.DamageMultiplier(attackerUnit.Stats.DamageModifiers, DamageModifierKind.Outgoing, type, attackerHealth, applied);
+            modifiers.AddRange(applied.Select(a => (DamageModifierKind.Outgoing, a)));
+            e = e with { Amount = baseAmount * outgoing };
+        }
+
+        // 1b. Registered stages before D0 (spec part 5 §13.4; none in this edition).
         foreach (var stage in _settings.PreDamageStages)
         {
             e = stage.Apply(e, _state);
@@ -255,7 +271,6 @@ public sealed class DamageResolver
 
         // 2. D0: the attacker's side is already in the event; frozen, never negative or NaN.
         var d0 = double.IsFinite(e.Amount) ? Math.Max(0, e.Amount) : 0;
-        var type = TypeOf(e.DamageTypeId);
         var r = EffectiveResistance(target, e.DamageTypeId, e.Penetration);
         var healthPercent = target.MaxHealth > 0 ? target.CurrentHealth / target.MaxHealth * 100 : 0;
         var rules = Eligible(target, DefenseTrigger.OnHit, type, r, healthPercent, tick, e.EventId);
@@ -331,7 +346,7 @@ public sealed class DamageResolver
         var after = afterResistance * (armor is { } av ? ArmorMath.Multiplier(av.Effective, k) : 1);
         var afterArmor = after;
 
-        // 5b. Flat reduction (not for true-like), cap.
+        // 5b. Flat reduction (not for true-like).
         if (!immune)
         {
             foreach (var rule in rules)
@@ -351,7 +366,22 @@ public sealed class DamageResolver
                     Use(target.Id, rule, tick);
                 }
             }
+        }
 
+        // 5c. The target's incoming passives (spec part 6 §4.2, §8 stage 8): after R, A and the flat reduction, never below 0.
+        var afterFlat = after;
+        var incoming = 1.0;
+        if (!immune && target.Stats.DamageModifiers.Count > 0)
+        {
+            var applied = new List<ModifierSource>();
+            incoming = ModifierMath.DamageMultiplier(target.Stats.DamageModifiers, DamageModifierKind.Incoming, type, healthPercent, applied);
+            modifiers.AddRange(applied.Select(a => (DamageModifierKind.Incoming, a)));
+            after *= incoming;
+        }
+
+        // 5d. Damage cap.
+        if (!immune)
+        {
             foreach (var rule in rules)
             {
                 foreach (var cap in rule.Actions.Where(a => a.Kind == DefenseActionKind.DamageCap))
@@ -447,6 +477,8 @@ public sealed class DamageResolver
         return Record(new DamageResult
         {
             Event = e,
+            BaseAmount = baseAmount,
+            OutgoingMultiplier = outgoing,
             D0 = d0,
             Immune = immune,
             Converted = converted,
@@ -457,6 +489,9 @@ public sealed class DamageResolver
             Armor = armor?.Effective,
             DefenseK = k,
             AfterArmor = afterArmor,
+            AfterFlat = afterFlat,
+            IncomingMultiplier = incoming,
+            Modifiers = modifiers,
             ShieldLoss = shieldLoss,
             HpLoss = hpLoss,
             Killed = !target.IsAlive,

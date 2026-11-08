@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.27.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.28.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя). Формат контента —
+зависимости, защита A и правила боя, пассивы). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -432,6 +432,13 @@ tests/*  ──► соответствующие сборки
   `RuntimeFactory.BuildCombatRules` → `GameContent.CombatRules` → `SimulationSettings.CombatRules`. Редактор: строки
   `ResistanceRow` с A, `Inspector.PairText` («R, % | A»), `CombatRulesetEditorModel`/`CombatRulesetEditor`, выбор правил в
   `MapEditor`, песочница — `SandboxSetup.ArmorPenetration*/RulesetId`, `HitSandbox.Run(…, rulesetDraft)`.
+- **Пассивы и движок модификаторов (с v0.28.0, ТЗ ч.6 §4, D-154–D-156).** Данные — `PassiveData` в `UnitData.Passives`,
+  операции — реестр `PassiveOperations`. Исполнение — только `Content/Runtime/PassiveEffects`: характеристики (`Stat`), R и A
+  слоёв, подключённые правила, `DamageModifiers` → `UnitStats`; редактор берёт оттуда же «откуда взялось»
+  (`UnitEditorModel.Breakdown`) и итог «В бою». В бою `DamageResolver`: стадия 1a — исходящие модификаторы атакующего до
+  D0 (`ModifierMath.DamageMultiplier`: проценты группы складываются, группы перемножаются, не ниже 0), стадия 5c — входящие
+  модификаторы цели после плоского снижения и до предела. Песочница — `SandboxSetup.AttackerUnitId`,
+  `HitSandbox.Run(…, attackerDraft)`.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -546,7 +553,10 @@ tests/*  ──► соответствующие сборки
 правила боя — `rules.k`, `rules.k.pick`, `rules.k.add`, `rules.k.<семейство>`, `rules.k.<семейство>.remove`; карта —
 `map.ruleset`; песочница — `<префикс>sandbox.armorpen|armorpenpct|ruleset`; проверки `expect:armor:<тип|global>:<A>`,
 `expect:profile-armor:<тип>:<A>`, `expect:ruleset-k:[<семейство>:]<K>`, `expect:ruleset-preview:<текст>`,
-`expect:map-ruleset:<id|название>`. В бою: `advance:N` — ровно N
+`expect:map-ruleset:<id|название>`. С v0.28.0: секция `unit.sec.features`; пассивы — `unit.passive.template`, `unit.passive.add`,
+`unit.passive.<id>.card|name|stat|type|key|value|rule|below|group|remove`; песочница — `<префикс>sandbox.attacker`
+(`__self__` — «этот юнит бьёт пустую цель»); проверки `expect:passives:<N>`, `expect:passive:<название>:<текст>`,
+`expect:stat:<характеристика>:<итог>`, `expect:breakdown:<текст>`. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -592,10 +602,11 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV241` = V24 + кнопки панелей в пределах окна для v0.24.1,
 `$RegressionScenarioV25` = V241 + UX-испытание пяти юнитов, их бой, экспорт «Защиты» для v0.25.0,
 `$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0,
-`$RegressionScenarioV27` = V26 + правила боя, защита A юнита, песочница, бой в тестах юнита и карты для v0.27.0+ (`$CleanImportScenarioV25` —
+`$RegressionScenarioV27` = V26 + правила боя, защита A юнита, песочница, бой в тестах юнита и карты для v0.27.0,
+`$RegressionScenarioV28` = V27 + пассивы «Гидроманта», откуда взялось, песочница с атакующим, бой для v0.28.0+ (`$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

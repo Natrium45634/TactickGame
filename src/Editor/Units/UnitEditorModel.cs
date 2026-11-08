@@ -6,6 +6,7 @@ using HexTactics.Content.Kinds;
 using HexTactics.Content.Model;
 using HexTactics.Content.Library;
 using HexTactics.Content.Registry;
+using HexTactics.Content.Runtime;
 using HexTactics.Editor.Definitions;
 
 namespace HexTactics.Editor.Units;
@@ -40,7 +41,10 @@ public sealed record ResistanceView(IReadOnlyList<ResistanceViewRow> Rows, int H
 public sealed record DefenseCard(string Id, string Title, string Short, string Summary, bool Problem);
 
 /// <summary>One line of the section headers of the unit inspector (spec part 5 §7.1).</summary>
-public sealed record UnitSections(string Main, string Attack, string Resistances, string More);
+public sealed record UnitSections(string Main, string Attack, string Resistances, string More, string Features = "");
+
+/// <summary>A passive of the unit as a short card (spec part 6 §4.1, §9.2 «Особенности»).</summary>
+public sealed record PassiveCard(string Id, string Name, string Summary, bool Problem);
 
 /// <summary>A saved resistance set that can be applied to the unit.</summary>
 public sealed record ProfileChoice(string Id, string Name, string Summary, bool IsBuiltIn);
@@ -315,7 +319,188 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             $"{N(u.MaxHealth)} HP · {N(u.MoveSpeed)} гекс/с · {N(u.AttackRate)} удар/с",
             $"атака {N(u.AttackPower)}, {type}{(u.AttackAreaRadius > 0 ? $", область {u.AttackAreaRadius}" : string.Empty)} · навыков: {u.Skills.Count}",
             (res.Length == 0 ? "всё 0 %" : res) + (reactions > 0 ? $" · реакций: {reactions}" : string.Empty),
-            $"ред. {Item.Revision} · схема {Item.Kind.SchemaVersion}" + (u.ResistanceProfiles.Count > 0 ? $" · наборов: {u.ResistanceProfiles.Count}" : string.Empty));
+            $"ред. {Item.Revision} · схема {Item.Kind.SchemaVersion}" + (u.ResistanceProfiles.Count > 0 ? $" · наборов: {u.ResistanceProfiles.Count}" : string.Empty),
+            u.Passives.Count == 0 ? "пассивов нет" : $"пассивов: {u.Passives.Count}");
+    }
+
+    // ------------------------------------------------------------------ passives (spec part 6 §4)
+
+    /// <summary>Passive templates in the order of the «Добавить» menu.</summary>
+    public static IReadOnlyList<PassiveOperation> PassiveTemplates => PassiveOperations.All;
+
+    /// <summary>Adds a passive of an operation with its default value (one undo step); returns its id or a refusal.</summary>
+    public (string? Id, string? Refusal) AddPassive(string operation)
+    {
+        if (PassiveOperations.Find(operation) is not { } op)
+        {
+            return (null, $"нет шаблона «{operation}»");
+        }
+
+        if (Unit.Passives.Count >= PassiveData.MaxPerUnit)
+        {
+            return (null, $"не больше {PassiveData.MaxPerUnit} пассивов");
+        }
+
+        var n = 1;
+        while (Unit.Passives.Any(p => p.Id == $"p{n}"))
+        {
+            n++;
+        }
+
+        var passive = new PassiveData
+        {
+            Id = $"p{n}",
+            Name = char.ToUpper(op.Template[0], CultureInfo.CurrentCulture) + op.Template[1..],
+            Operation = operation,
+            Value = op.DefaultValue,
+            Rule = op.UsesRule ? Library.Items(ContentTypeRegistry.DefenseRule).FirstOrDefault(r => !r.HasErrors)?.Id ?? string.Empty : string.Empty,
+        };
+        Apply($"Пассив «{passive.Name}»", (d, _) => ((UnitData)d).Passives.Add(passive.Clone()));
+        return (passive.Id, null);
+    }
+
+    public void RemovePassive(string id)
+    {
+        var name = Unit.Passives.FirstOrDefault(p => p.Id == id)?.Name ?? id;
+        Apply($"Убрать пассив «{name}»", (d, _) => ((UnitData)d).Passives.RemoveAll(p => p.Id == id));
+    }
+
+    /// <summary>Changes one field of a passive from input; a refusal leaves the passive as it was.</summary>
+    public ContentIssue? SetPassive(string id, string key, object? input)
+    {
+        var index = Unit.Passives.FindIndex(p => p.Id == id);
+        if (index < 0)
+        {
+            return ContentIssue.Error($"passives.{id}", "нет такого пассива");
+        }
+
+        var probe = Unit.Passives[index].Clone();
+        var path = $"passives[{index}].{key}";
+        double? Number()
+        {
+            if (input is double d)
+            {
+                return d;
+            }
+
+            return input is string t && double.TryParse(t.Trim().Replace(',', '.').TrimEnd('%').Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
+        }
+
+        switch (key)
+        {
+            case "name":
+                probe.Name = ((input as string) ?? string.Empty).Trim();
+                break;
+            case "stat":
+                probe.Stat = input as string ?? probe.Stat;
+                break;
+            case "damageTypeId":
+                probe.DamageType = input as string ?? string.Empty;
+                if (probe.DamageType.Length > 0 && Library.Find(ContentTypeRegistry.DamageType, probe.DamageType) is null)
+                {
+                    return ContentIssue.Error(path, $"нет типа урона «{probe.DamageType}» — значение не изменено");
+                }
+
+                break;
+            case "key":
+                probe.Key = input as string ?? UnitData.GlobalResistance;
+                if (probe.Key != UnitData.GlobalResistance && Library.Find(ContentTypeRegistry.DamageType, probe.Key) is null)
+                {
+                    return ContentIssue.Error(path, $"нет типа урона «{probe.Key}» — значение не изменено");
+                }
+
+                break;
+            case "ruleId":
+                probe.Rule = input as string ?? string.Empty;
+                if (Library.Find(ContentTypeRegistry.DefenseRule, probe.Rule) is null)
+                {
+                    return ContentIssue.Error(path, $"нет правила защиты «{probe.Rule}» — значение не изменено");
+                }
+
+                break;
+            case "value":
+                if (Number() is not { } value)
+                {
+                    return ContentIssue.Error(path, $"«{input}» — не число, значение не изменено");
+                }
+
+                probe.Value = Math.Round(value, 2, MidpointRounding.AwayFromZero);
+                break;
+            case "healthBelowPercent":
+                if (Number() is not { } below)
+                {
+                    return ContentIssue.Error(path, $"«{input}» — не число, значение не изменено");
+                }
+
+                probe.HealthBelowPercent = below;
+                break;
+            case "stackGroup":
+                probe.StackGroup = ((input as string) ?? string.Empty).Trim();
+                break;
+            default:
+                return ContentIssue.Error(path, "нет такого поля пассива");
+        }
+
+        var issues = new IssueList();
+        probe.Validate(issues, $"passives[{index}]");
+        if (issues.Items.FirstOrDefault(i => i.IsError) is { } issue)
+        {
+            return issue with { Message = issue.Message + " — значение не изменено" };
+        }
+
+        Apply($"Пассив «{probe.Name}»", (d, _) => ((UnitData)d).Passives[index] = probe.Clone());
+        return null;
+    }
+
+    public IReadOnlyList<PassiveCard> PassiveCards() => Unit.Passives
+        .Select(p =>
+        {
+            var issues = new IssueList();
+            p.Validate(issues, "p");
+            var broken = issues.Items.Any(i => i.IsError) || p.References().Any(r => Library.Find(r.Kind, r.Id) is null);
+            return new PassiveCard(p.Id, p.Name, (broken ? "✗ " : string.Empty) + PassiveEffects.Describe(p, Library), broken);
+        })
+        .ToList();
+
+    /// <summary>
+    /// «Откуда взялось» (spec part 6 §4.3, §9.2): every value the passives change — base, final and each source — and the
+    /// constant damage modifiers with the combined multiplier of their group.
+    /// </summary>
+    public IReadOnlyList<string> Breakdown()
+    {
+        string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        var lines = new List<string>();
+        foreach (var stat in PassiveOperations.Stats.Select(s => s.Value))
+        {
+            var b = PassiveEffects.Stat(Unit, Library, stat);
+            if (b.Sources.Count > 0)
+            {
+                lines.Add($"{b.Label}: {N(b.Base)} → {N(b.Final)} ({string.Join("; ", b.Sources.Select(x => $"{x.Change} · {x.Source}"))})");
+            }
+        }
+
+        var layers = new List<ValueBreakdown>();
+        PassiveEffects.Resistances(Unit, Library, layers);
+        PassiveEffects.Armor(Unit, Library, layers);
+        foreach (var b in layers)
+        {
+            lines.Add($"{b.Label}: {N(b.Base)} → {N(b.Final)} ({string.Join("; ", b.Sources.Select(x => $"{x.Change} · {x.Source}"))})");
+        }
+
+        foreach (var group in PassiveEffects.DamageModifiers(Unit, Library).GroupBy(m => (m.Kind, m.Group)))
+        {
+            var what = group.Key.Kind == HexTactics.Core.Combat.DamageModifierKind.Outgoing ? "Исходящий урон" : "Получаемый урон";
+            var sum = group.Sum(m => m.Percent);
+            lines.Add($"{what} (группа «{group.Key.Group}», проценты складываются): {sum.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} % при совпадении типа = ×{N(Math.Max(0, 1 + (sum / 100)))} — " +
+                      string.Join("; ", group.Select(m => $"{m.Percent.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} % {(m.DamageTypeId is { } t ? Library.Find(ContentTypeRegistry.DamageType, t)?.Name.ToLowerInvariant() ?? t : "все типы")}{(m.HealthBelowPercent is { } h ? $" (здоровье ниже {N(h)} %)" : string.Empty)} · {m.Source}")));
+        }
+
+        foreach (var rule in PassiveEffects.GrantedRules(Unit, Library))
+        {
+            lines.Add($"Правило защиты «{Library.Find(ContentTypeRegistry.DefenseRule, rule)?.Name ?? rule}» — от пассива.");
+        }
+
+        return lines;
     }
 
     /// <summary>«физический +70 %, дробящий −120 %» — the values the unit has (sets and own), in table order (section header).</summary>
@@ -732,11 +917,16 @@ public static class CombatPreviewText
 {
     public static IReadOnlyList<string> Describe(UnitData unit, ContentLibrary library)
     {
+        // The values in battle: the base characteristics with the unit's passives (spec part 6 §4, one engine for both).
+        var power = PassiveEffects.Stat(unit, library, "attackPower").Final;
+        var rate = PassiveEffects.Stat(unit, library, "attackRate").Final;
+        var health = PassiveEffects.Stat(unit, library, "maxHealth").Final;
+        var speed = PassiveEffects.Stat(unit, library, "moveSpeed").Final;
         var lines = new List<string>
         {
-            string.Create(CultureInfo.InvariantCulture, $"Обычная атака: {N(unit.AttackPower)} урона за удар ({library.Find(ContentTypeRegistry.DamageType, unit.AttackDamageType)?.Name.ToLowerInvariant() ?? unit.AttackDamageType}) × {N(unit.AttackRate)} удар/с ≈ {N(unit.AttackPower * unit.AttackRate)} урона/с, дальность {unit.AttackRange} гекс")
+            string.Create(CultureInfo.InvariantCulture, $"Обычная атака: {N(power)} урона за удар ({library.Find(ContentTypeRegistry.DamageType, unit.AttackDamageType)?.Name.ToLowerInvariant() ?? unit.AttackDamageType}) × {N(rate)} удар/с ≈ {N(power * rate)} урона/с, дальность {unit.AttackRange} гекс")
                 + (unit.AttackAreaRadius > 0 ? $"; область {unit.AttackAreaRadius} гекс. вокруг цели, {(unit.AttackAreaSplit ? "сила делится между целями" : "полная сила каждой цели")}." : "."),
-            string.Create(CultureInfo.InvariantCulture, $"Здоровье {N(unit.MaxHealth)} HP · движение {N(unit.MoveSpeed)} гекс/с (переход одного гекса за {N(1 / Math.Max(0.01, unit.MoveSpeed))} с)."),
+            string.Create(CultureInfo.InvariantCulture, $"Здоровье {N(health)} HP · движение {N(speed)} гекс/с (переход одного гекса за {N(1 / Math.Max(0.01, speed))} с)."),
         };
         foreach (var id in unit.Skills)
         {
@@ -751,7 +941,7 @@ public static class CombatPreviewText
             {
                 foreach (var e in skill.EffectsOf(cell))
                 {
-                    effects.Add(HexTactics.Editor.Skills.EffectPreview.Describe(e, unit.AttackPower, unit.MaxHealth, library));
+                    effects.Add(HexTactics.Editor.Skills.EffectPreview.Describe(e, power, health, library));
                 }
             }
 

@@ -1,7 +1,7 @@
 # Формат игрового контента HexTactics
 
 Документ описывает объекты библиотеки контента (ТЗ ч.4 §8): как они хранятся, какие поля имеют и как проверяются.
-Актуален для **v0.27.0** (схемы: `map` 1, `unit` 5, `skill` 2, `tile` 2, `damage_type` 1, `defense_rule` 1,
+Актуален для **v0.28.0** (схемы: `map` 1, `unit` 6, `skill` 2, `tile` 2, `damage_type` 1, `defense_rule` 1,
 `resistance_profile` 2, `combat_ruleset` 1). История схем —
 `docs/MIGRATIONS.md`.
 
@@ -137,6 +137,15 @@ user://packs/                                      установленные п
   учитывают (значение для них — предупреждение). `attackArmorPenetration` (очки, 0…1 000 000) и
   `attackArmorPenetrationPercent` (0…100 %) — пробитие A обычной атакой: сначала очки, затем доля оставшейся A; на R не
   влияют. Миграция 4 → 5: `armor: {}`, пробитие 0 — прежние числа урона.
+- С v0.28.0 (схема 6): `passives` — до 16 индивидуальных пассивов юнита (ТЗ ч.6 §4), например
+  `{ "id": "p1", "name": "Водная мощь", "operation": "outgoing_damage_percent", "damageTypeId": "core.damage.magical",
+  "value": 50, "healthBelowPercent": 0, "stackGroup": "" }`. `id` — 1–32 символа `a–z0–9_-`, уникален в юните. Операции:
+  `outgoing_damage_percent` и `incoming_damage_percent` (`damageTypeId` — тип или семейство, пусто — все; `value` −100…1000 %;
+  `healthBelowPercent` 0…100, 0 — всегда; `stackGroup` — группа суммирования, пусто — общая), `stat_add_percent`
+  (−100…1000 %) и `stat_add_flat` (−10 000…10 000; `stat`: `attackPower` · `maxHealth` · `moveSpeed` · `attackRate`),
+  `resistance_delta_pp` (−500…500 п.п.), `defense_delta_flat` (очки) и `defense_delta_percent` (−100…1000 %) — `key`: `global`
+  или тип, `grant_defense_rule` (`ruleId` — правило защиты). Записываются только поля своей операции. Неизвестная операция —
+  ошибка, пассив не действует. Миграция 5 → 6: `passives: []`.
 
 ### 3.4. Навык — `skill` (`skills/`)
 

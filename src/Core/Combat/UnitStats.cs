@@ -49,6 +49,12 @@ public sealed record UnitStats
 
     public double AttackArmorPenetrationPercent { get; init; }
 
+    /// <summary>
+    /// Constant percentage damage modifiers of the unit's passives (spec part 6 §4.2): outgoing ones change the damage it
+    /// deals before D0, incoming ones the damage it takes after R, A and the flat reduction.
+    /// </summary>
+    public IReadOnlyList<DamageModifier> DamageModifiers { get; init; } = System.Array.Empty<DamageModifier>();
+
     /// <summary>Defense rules of the unit definition in the order of the definition (spec part 5 §4, §6.4).</summary>
     public IReadOnlyList<DefenseRule> DefenseRules { get; init; } = System.Array.Empty<DefenseRule>();
 

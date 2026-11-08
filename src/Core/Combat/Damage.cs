@@ -188,6 +188,12 @@ public sealed record DamageResult
 
     public bool Missed { get; init; }
 
+    /// <summary>The strength of the event before the attacker's outgoing passives (spec part 6 §8 stage 1).</summary>
+    public double BaseAmount { get; init; }
+
+    /// <summary>Stage 2: the multiplier of the attacker's outgoing passives (1 — none).</summary>
+    public double OutgoingMultiplier { get; init; } = 1;
+
     public double D0 { get; init; }
 
     /// <summary>Stage 3: an explicit immunity stopped the health loss.</summary>
@@ -218,6 +224,15 @@ public sealed record DamageResult
 
     /// <summary>Stage 7 (spec part 6 §8): the damage after K / (K + A_eff), before the flat reduction.</summary>
     public double AfterArmor { get; init; }
+
+    /// <summary>Stage 8: after the flat reduction, before the target's incoming passives.</summary>
+    public double AfterFlat { get; init; }
+
+    /// <summary>Stage 8: the multiplier of the target's incoming passives (1 — none), never below 0.</summary>
+    public double IncomingMultiplier { get; init; } = 1;
+
+    /// <summary>The passives that changed this hit, outgoing (attacker) and incoming (target), for «откуда взялось».</summary>
+    public IReadOnlyList<(DamageModifierKind Kind, ModifierSource Source)> Modifiers { get; init; } = Array.Empty<(DamageModifierKind, ModifierSource)>();
 
     public double HpLoss { get; init; }
 

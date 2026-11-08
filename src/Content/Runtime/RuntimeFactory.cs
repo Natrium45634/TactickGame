@@ -266,7 +266,7 @@ public static class RuntimeFactory
         }
 
         var rules = new List<DefenseRule>();
-        foreach (var id in unit.DefenseRules.Distinct(StringComparer.Ordinal))
+        foreach (var id in unit.DefenseRules.Distinct(StringComparer.Ordinal).Concat(PassiveEffects.GrantedRules(unit, library)))
         {
             if (library?.Find(ContentTypeRegistry.DefenseRule, id) is not { Data: DefenseRuleData rule } ruleItem)
             {
@@ -287,18 +287,20 @@ public static class RuntimeFactory
             .Select(s => new ShieldDefinition(s.Name, s.Capacity, s.DamageType == ShieldData.AnyType ? null : s.DamageType, s.Order))
             .ToArray();
 
+        // Spec part 6 §4: the passives change the characteristics, R and A here, once — the battle sees only the results.
         var stats = new UnitStats
         {
-            MaxHealth = (int)Math.Round(unit.MaxHealth),
-            MoveSpeedHexPerSecond = unit.MoveSpeed,
-            AttackRatePerSecond = unit.AttackRate,
-            AttackPower = unit.AttackPower,
+            MaxHealth = (int)Math.Round(PassiveEffects.Stat(unit, library, "maxHealth").Final),
+            MoveSpeedHexPerSecond = PassiveEffects.Stat(unit, library, "moveSpeed").Final,
+            AttackRatePerSecond = PassiveEffects.Stat(unit, library, "attackRate").Final,
+            AttackPower = PassiveEffects.Stat(unit, library, "attackPower").Final,
             NormalAttackRangeHex = unit.AttackRange,
             AttackDamageTypeId = unit.AttackDamageType,
             AttackAreaRadius = unit.AttackAreaRadius,
             AttackAreaSplit = unit.AttackAreaSplit,
-            Resistances = new ResistanceSet(ResistanceLayers.Values(unit, library)),
-            Armor = new ArmorSet(ResistanceLayers.Values(unit, library, armor: true)),
+            Resistances = new ResistanceSet(PassiveEffects.Resistances(unit, library)),
+            Armor = new ArmorSet(PassiveEffects.Armor(unit, library)),
+            DamageModifiers = PassiveEffects.DamageModifiers(unit, library),
             AttackArmorPenetration = unit.AttackArmorPenetration,
             AttackArmorPenetrationPercent = unit.AttackArmorPenetrationPercent,
             DefenseRules = rules,

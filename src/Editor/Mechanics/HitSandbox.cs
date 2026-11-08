@@ -38,6 +38,9 @@ public sealed record SandboxSetup
     /// <summary>Armor penetration in percent of the remaining A (0…100).</summary>
     public double ArmorPenetrationPercent { get; init; }
 
+    /// <summary>The attacker: a unit of the library (its outgoing passives act, spec part 6 §4.2, §11); null — a plain attacker.</summary>
+    public string? AttackerUnitId { get; init; }
+
     /// <summary>The combat ruleset whose K is used (spec part 6 §3.2); the standard one by default.</summary>
     public string RulesetId { get; init; } = CombatRulesetData.Standard;
 
@@ -80,8 +83,9 @@ public static class HitSandbox
     /// <param name="unitDraft">A unit being edited: used as the target instead of its saved version.</param>
     /// <param name="typeDraft">A damage type being edited: replaces its saved definition (also a new, unsaved type).</param>
     /// <param name="rulesetDraft">Combat rules being edited: their K is used instead of the saved ones.</param>
+    /// <param name="attackerDraft">A unit being edited as the attacker (its unsaved outgoing passives act).</param>
     public static SandboxReport Run(ContentLibrary library, SandboxSetup setup, ContentItem? ruleDraft = null, ContentItem? unitDraft = null, ContentItem? typeDraft = null,
-        ContentItem? rulesetDraft = null)
+        ContentItem? rulesetDraft = null, ContentItem? attackerDraft = null)
     {
         var problems = new List<string>();
         var rulesetId = rulesetDraft?.Id ?? setup.RulesetId;
@@ -110,6 +114,13 @@ public static class HitSandbox
 
         var issues = new HexTactics.Content.Model.IssueList();
         var stats = targetItem is not null ? RuntimeFactory.BuildUnit(targetItem, library, issues).Stats : new UnitStats();
+        var attackerItem = attackerDraft ?? (setup.AttackerUnitId is { } aid ? library.Find(ContentTypeRegistry.Unit, aid) : null);
+        if (setup.AttackerUnitId is not null && attackerItem is null)
+        {
+            problems.Add($"юнит «{setup.AttackerUnitId}» не найден — атакующий без пассивов");
+        }
+
+        var attackerStats = attackerItem is not null ? RuntimeFactory.BuildUnit(attackerItem, library).Stats with { DefenseRules = Array.Empty<DefenseRule>() } : new UnitStats();
         problems.AddRange(issues.Items.Select(i => i.Message));
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var r in library.Items(ContentTypeRegistry.DefenseRule))
@@ -125,12 +136,12 @@ public static class HitSandbox
         }
 
         var others = stats.DefenseRules.Where(r => edited is null || r.Id != edited.Id).ToList();
-        var with = Hit(library, setup, stats with { DefenseRules = edited is null ? others : others.Append(edited).ToList() }, types, names, rules);
+        var with = Hit(library, setup, stats with { DefenseRules = edited is null ? others : others.Append(edited).ToList() }, types, names, rules, attackerStats);
         SandboxRun? without = null;
         var comparison = string.Empty;
         if (edited is not null)
         {
-            without = Hit(library, setup, stats with { DefenseRules = others }, types, names, rules);
+            without = Hit(library, setup, stats with { DefenseRules = others }, types, names, rules, attackerStats);
             comparison = $"С правилом: {Short(with)}. Без правила: {Short(without)}.";
         }
 
@@ -156,7 +167,7 @@ public static class HitSandbox
     }
 
     private static SandboxRun Hit(ContentLibrary library, SandboxSetup setup, UnitStats targetStats, IReadOnlyDictionary<string, DamageTypeDefinition> types, IReadOnlyDictionary<string, string> ruleNames,
-        CombatRules rules)
+        CombatRules rules, UnitStats attackerStats)
     {
         var grid = new HexGrid(7, 7);
         foreach (var c in grid.Coords)
@@ -178,12 +189,12 @@ public static class HitSandbox
         UnitId attacker;
         if (setup.AttackerAdjacent && enemies > 0)
         {
-            attacker = Spawn(ring[slot++], Side.Enemy, new UnitStats(), "атакующий");
+            attacker = Spawn(ring[slot++], Side.Enemy, attackerStats, "атакующий");
             enemies--;
         }
         else
         {
-            attacker = Spawn(HexCoord.FromOffset(3, 0), Side.Enemy, new UnitStats(), "атакующий");
+            attacker = Spawn(HexCoord.FromOffset(3, 0), Side.Enemy, attackerStats, "атакующий");
         }
 
         labels[attacker] = "атакующий";
@@ -219,6 +230,14 @@ public static class HitSandbox
         var type = types[typeId];
         var stages = new List<string>();
         void Stage(string text) => stages.Add($"{stages.Count + 1}. {text}");
+        string Sources(DamageModifierKind kind) => string.Join("; ", result.Modifiers.Where(m => m.Kind == kind)
+            .Select(m => $"{m.Source.Percent.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} % {m.Source.Source}"));
+        if (result.Modifiers.Any(m => m.Kind == DamageModifierKind.Outgoing))
+        {
+            // Spec part 6 §4.2, §8 stage 2: the attacker's passives change the strength before any defense.
+            Stage($"Пассивы атакующего: сила {N(result.BaseAmount)} → {N(result.BaseAmount * result.OutgoingMultiplier)} (×{N3(result.OutgoingMultiplier)}: {Sources(DamageModifierKind.Outgoing)}).");
+        }
+
         Stage($"До защиты: сила удара D0 = {N(result.D0)} ({type.Name.ToLowerInvariant()}).");
         Stage(result.Immune ? "Иммунитет: урон HP не наносится." : "Иммунитета нет.");
         var sent = reactions.Where(r => r.Event.Source == target).ToList();
@@ -245,7 +264,23 @@ public static class HitSandbox
         }
 
         var taken = result.ShieldLoss + result.HpLoss;
-        if (!result.Immune && taken < result.AfterArmor - 1e-9 && t.IsAlive)
+        var incoming = result.Modifiers.Any(m => m.Kind == DamageModifierKind.Incoming);
+        if (incoming)
+        {
+            if (result.AfterFlat < result.AfterArmor - 1e-9)
+            {
+                Stage($"Плоское снижение: {N(result.AfterArmor)} → {N(result.AfterFlat)}.");
+            }
+
+            // Spec part 6 §4.2, §8 stage 8: a multiplier of what is left, not a change of R.
+            var afterIncoming = result.AfterFlat * result.IncomingMultiplier;
+            Stage($"Пассивы цели: {N(result.AfterFlat)} → {N(afterIncoming)} (×{N3(result.IncomingMultiplier)}: {Sources(DamageModifierKind.Incoming)}).");
+            if (!result.Immune && taken < afterIncoming - 1e-9 && t.IsAlive)
+            {
+                Stage($"Предел: {N(afterIncoming)} → {N(taken)}.");
+            }
+        }
+        else if (!result.Immune && taken < result.AfterArmor - 1e-9 && t.IsAlive)
         {
             Stage($"Плоское снижение и предел: {N(result.AfterArmor)} → {N(taken)}.");
         }

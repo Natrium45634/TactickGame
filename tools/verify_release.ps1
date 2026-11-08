@@ -599,6 +599,30 @@ $script:PersistenceScenarioV27 = (@(
     'expect:editor:map', 'expect:map-ruleset:Правила арены', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV26
 
+# v0.28.0+ (spec part 6 §4, §8 stages 2 and 8; acceptance §12.3): «Особенности» — personal passives from templates: the unit
+# «Гидромант» (magical attack 20) gets «Водная мощь» +50 % outgoing magical damage (+5000 % refused) and «Матёрый» +10 % attack
+# power; «откуда взялось» shows 20 → 22; the sandbox with this unit as the attacker shows 20 → 30 before D0; in its test run it
+# hits «Броненосец» (A 100) for 22 × 1.5 × 0.5 = 16.5.
+$script:RegressionScenarioV28 = $script:RegressionScenarioV27 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Гидромант', 'field:unit.attackDamageType=core.damage.magical',
+    'field:unit.attackPower=20', 'field:unit.attackRate=0.5', 'ui:unit.sec.features', 'expect:section:features', 'expect:passives:0',
+    'field:unit.passive.template=outgoing_damage_percent', 'ui:unit.passive.add', 'expect:passives:1', 'field:unit.passive.p1.name=Водная мощь',
+    'field:unit.passive.p1.type=core.damage.magical', 'field:unit.passive.p1.value=50', 'field:unit.passive.p1.value=5000', 'expect:editor-message:до 1000',
+    'expect:passive:Водная мощь:+50 % исходящего урона: магический', 'field:unit.passive.template=stat_add_percent', 'ui:unit.passive.add',
+    'field:unit.passive.p2.name=Матёрый', 'field:unit.passive.p2.value=10', 'expect:passives:2', 'expect:stat:attackPower:22',
+    'expect:breakdown:Сила атаки: 20 → 22 (+10 % · пассив «Матёрый»)', 'ui:unit.sandbox', 'field:unit.sandbox.attacker=__self__',
+    'field:unit.sandbox.type=core.damage.magical', 'field:unit.sandbox.amount=20', 'ui:unit.sandbox.run', 'expect:sandbox:Пассивы атакующего: сила 20 → 30',
+    'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Гидромант', 'spawn:enemy:3,4@Броненосец', 'select:1', 'drag:3,5>3,4',
+    'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:83.5', 'select:1', 'expect:info:1:Водная:no', 'expect:info:1:%:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV28 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Гидромант', 'ui:dev.open', 'expect:editor:unit', 'expect:passives:2',
+    'expect:passive:Водная мощь:+50 % исходящего урона: магический', 'expect:stat:attackPower:22', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV27
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -659,7 +683,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
+            $scenario = if ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
+                        elseif ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
                         elseif ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
                         elseif ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
                         elseif ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
@@ -683,7 +708,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
+            if ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
+            elseif ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
             elseif ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }
             elseif ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }
             elseif ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }

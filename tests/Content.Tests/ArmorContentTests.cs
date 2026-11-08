@@ -17,7 +17,7 @@ namespace HexTactics.Content.Tests;
 public class ArmorContentTests
 {
     [Fact]
-    public void A_schema_4_unit_reaches_schema_5_with_zero_A_a_backup_and_the_same_numbers()
+    public void A_schema_4_unit_reaches_the_current_schema_with_zero_A_a_backup_and_the_same_numbers()
     {
         using var dir = new TempDirectory();
         Directory.CreateDirectory(Path.Combine(dir.Path, "content", "units"));
@@ -33,7 +33,7 @@ public class ArmorContentTests
         Assert.Empty(stats.Armor.Values);
         Assert.Equal(50, stats.Resistances[DamageTypes.Physical]);
         var text = File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v26.json"));
-        Assert.Contains("\"schemaVersion\": 5", text, StringComparison.Ordinal);
+        Assert.Contains($"\"schemaVersion\": {HexTactics.Content.Registry.ContentTypeRegistry.CreateDefault().Find("unit")!.SchemaVersion}", text, StringComparison.Ordinal);
         Assert.Contains("\"armor\": {}", text, StringComparison.Ordinal);
         Assert.Equal(v26, File.ReadAllText(Directory.GetFiles(Path.Combine(dir.Path, "backups"), "unit_v26.json", SearchOption.AllDirectories).Single()));
 

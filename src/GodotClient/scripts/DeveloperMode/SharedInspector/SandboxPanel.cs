@@ -36,6 +36,9 @@ public sealed class SandboxPanel
     /// <summary>The rules are the edited combat ruleset (its own editor) — no ruleset picker.</summary>
     public bool FixedRuleset { get; }
 
+    /// <summary>Attacker value «the edited unit hits an empty target» of a fixed-target panel (the unit editor).</summary>
+    public const string SelfAttacker = "__self__";
+
     public SandboxReport? Report => _report;
 
     public string Text => _report is null ? string.Empty : HitSandbox.Describe(_report);
@@ -83,6 +86,16 @@ public sealed class SandboxPanel
             panel.Choice(_prefix + "sandbox.target", "Цель", targets, _setup.TargetUnitId ?? string.Empty, v => _setup = _setup with { TargetUnitId = v.Length == 0 ? null : v });
         }
 
+        // The attacker (spec part 6 §11 p.1): its outgoing passives change the strength before D0.
+        var attackers = new List<ChoiceOption> { new(string.Empty, "обычный атакующий (без пассивов)") };
+        if (FixedTarget)
+        {
+            attackers.Add(new ChoiceOption(SelfAttacker, "этот юнит бьёт пустую цель"));
+        }
+
+        attackers.AddRange(library.Items(ContentTypeRegistry.Unit).Where(u => !u.HasErrors).Select(u => new ChoiceOption(u.Id, u.Name)));
+        panel.Choice(_prefix + "sandbox.attacker", "Атакующий", attackers, _setup.AttackerUnitId ?? string.Empty, v => _setup = _setup with { AttackerUnitId = v.Length == 0 ? null : v });
+
         var types = HexTactics.Editor.Library.ReferenceCatalog.Options(library, ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.Any, _setup.DamageTypeId)
             .Select(o => new ChoiceOption(o.Value, o.Label.Replace(" (свой)", string.Empty, StringComparison.Ordinal), null, o.Group)).ToList();
         if (types.All(t => t.Value != _setup.DamageTypeId))
@@ -91,7 +104,8 @@ public sealed class SandboxPanel
         }
 
         panel.Choice(_prefix + "sandbox.type", "Тип урона", types, _setup.DamageTypeId, v => _setup = _setup with { DamageTypeId = v });
-        panel.LineText(_prefix + "sandbox.amount", "Сила удара D0", Inspector.Num(_setup.Amount), v => _setup = _setup with { Amount = Parse(v, _setup.Amount, 0, 100000) });
+        panel.LineText(_prefix + "sandbox.amount", "Сила удара", Inspector.Num(_setup.Amount), v => _setup = _setup with { Amount = Parse(v, _setup.Amount, 0, 100000) },
+            "D0 = эта сила × пассивы атакующего (исходящий урон); без пассивов D0 равно ей.");
         panel.LineText(_prefix + "sandbox.penetration", "Пробитие R, п.п.", Inspector.Num(_setup.Penetration), v => _setup = _setup with { Penetration = Parse(v, _setup.Penetration, 0, 1000) });
         panel.PairText(_prefix + "sandbox.armorpen", "очки", Inspector.Num(_setup.ArmorPenetration), v => _setup = _setup with { ArmorPenetration = Parse(v, _setup.ArmorPenetration, 0, 1_000_000) },
             _prefix + "sandbox.armorpenpct", "%", Inspector.Num(_setup.ArmorPenetrationPercent), v => _setup = _setup with { ArmorPenetrationPercent = Parse(v, _setup.ArmorPenetrationPercent, 0, 100) },

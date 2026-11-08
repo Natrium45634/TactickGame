@@ -65,6 +65,9 @@ public sealed class UnitData : IContentData
 
     public const int MaxResistanceProfiles = 8;
 
+    /// <summary>Personal permanent passives of the unit (spec part 6 §4), in order; not shared with other units.</summary>
+    public List<PassiveData> Passives { get; } = new();
+
     /// <summary>References to defense rules of the library (spec part 5 §6.4, §8.3 <c>defenseRuleRefs</c>), no copies.</summary>
     public List<string> DefenseRules { get; } = new();
 
@@ -201,6 +204,7 @@ public sealed class UnitData : IContentData
             ["resistanceProfiles"] = Strings(ResistanceProfiles),
             ["defenseRules"] = Strings(DefenseRules),
             ["shields"] = ShieldsJson(),
+            ["passives"] = new JsonArray(Passives.Select(p => (JsonNode)p.ToJson()).ToArray()),
             ["side"] = Side,
             ["color"] = Color,
             ["scale"] = Scale,
@@ -259,6 +263,21 @@ public sealed class UnitData : IContentData
                 else
                 {
                     issues.Error($"shields[{i}]", "щит должен быть объектом");
+                }
+            }
+        }
+
+        if (JsonFields.Array(obj, "passives", issues, string.Empty) is { } passives)
+        {
+            for (var i = 0; i < passives.Count; i++)
+            {
+                if (passives[i] is JsonObject po)
+                {
+                    data.Passives.Add(PassiveData.Read(po, issues, $"passives[{i}]"));
+                }
+                else
+                {
+                    issues.Error($"passives[{i}]", "пассив должен быть объектом");
                 }
             }
         }
@@ -387,6 +406,15 @@ public sealed class UnitData : IContentData
                 yield return new ContentRef("damage_type", shield.DamageType);
             }
         }
+
+        var rules = new HashSet<string>(DefenseRules, System.StringComparer.Ordinal);
+        foreach (var r in Passives.SelectMany(p => p.References()))
+        {
+            if ((r.Kind == "damage_type" && types.Add(r.Id)) || (r.Kind == "defense_rule" && rules.Add(r.Id)))
+            {
+                yield return r;
+            }
+        }
     }
 
     public void RemapReferences(IReadOnlyDictionary<ContentRef, string> newIds)
@@ -429,6 +457,11 @@ public sealed class UnitData : IContentData
             {
                 shield.DamageType = type;
             }
+        }
+
+        foreach (var p in Passives)
+        {
+            p.RemapReferences(newIds);
         }
     }
 
@@ -512,6 +545,21 @@ public sealed class UnitData : IContentData
             }
         }
 
+        if (Passives.Count > PassiveData.MaxPerUnit)
+        {
+            context.Issues.Error("passives", $"не больше {PassiveData.MaxPerUnit} пассивов");
+        }
+
+        var passiveIds = new HashSet<string>(System.StringComparer.Ordinal);
+        for (var i = 0; i < Passives.Count; i++)
+        {
+            Passives[i].Validate(context.Issues, $"passives[{i}]");
+            if (!passiveIds.Add(Passives[i].Id))
+            {
+                context.Issues.Error($"passives[{i}].id", $"два пассива с ID «{Passives[i].Id}»");
+            }
+        }
+
         if (Shields.Count > MaxShields)
         {
             context.Issues.Error("shields", $"не больше {MaxShields} щитов");
@@ -558,6 +606,7 @@ public sealed class UnitData : IContentData
             copy.Shields.Add(shield.Clone());
         }
 
+        copy.Passives.AddRange(Passives.Select(p => p.Clone()));
         return copy;
     }
 }

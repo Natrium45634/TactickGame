@@ -134,6 +134,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private const string SecAttack = "attack";
     private const string SecRes = "res";
     private const string SecMore = "more";
+    private const string SecFeatures = "features";
 
     private static readonly string[] MainKeys = { "maxHealth", "moveSpeed", "attackRate", "side" };
     private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "attackArmorPenetration", "attackArmorPenetrationPercent" };
@@ -145,6 +146,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private bool _addRuleOpen;
     private string? _openCard;
     private string? _copyFrom;
+    private string _passiveTemplate = HexTactics.Content.Kinds.PassiveOperations.OutgoingDamagePercent;
 
     protected override void BuildProperties(Inspector inspector)
     {
@@ -164,10 +166,130 @@ public partial class UnitEditor : DefinitionEditorShell
             BuildResistances(inspector);
         }
 
+        if (SectionHeader(inspector, SecFeatures, "Особенности", sections.Features))
+        {
+            BuildFeatures(inspector);
+        }
+
         if (SectionHeader(inspector, SecMore, "Дополнительно", sections.More))
         {
             BuildMore(inspector);
         }
+    }
+
+    /// <summary>
+    /// «Особенности» (spec part 6 §4.1, §9.2): the unit's personal passives as cards; «＋ Добавить пассив» from a template; an
+    /// open card shows only the fields of its operation. Shared tags join this section in v0.29.0.
+    /// </summary>
+    private void BuildFeatures(Inspector inspector)
+    {
+        inspector.Hint("Пассив — постоянная особенность этого юнита: действует всё время, пока юнит жив (или при заданном условии), без кнопки и без слота навыка. Другие юниты не меняются.");
+        foreach (var card in _model.PassiveCards())
+        {
+            var cardId = $"{IdPrefix}passive.{card.Id}";
+            var open = _openCard == cardId;
+            var button = inspector.Button(cardId + ".card", (open ? "▾ " : "▸ ") + card.Name + "  ·  " + card.Summary, () => { _openCard = open ? null : cardId; Stamp++; }, ButtonKind.Flat, card.Summary);
+            button.Alignment = HorizontalAlignment.Left;
+            button.ClipText = true;
+            if (card.Problem)
+            {
+                button.AddThemeColorOverride("font_color", UiKit.Error);
+            }
+
+            if (open)
+            {
+                BuildPassive(inspector, card.Id);
+            }
+        }
+
+        if (_model.Unit.Passives.Count == 0)
+        {
+            inspector.Hint("Пассивов нет.");
+        }
+
+        var templates = UnitEditorModel.PassiveTemplates.Select(t => new ChoiceOption(t.Id, t.Template)).ToList();
+        inspector.Choice(IdPrefix + "passive.template", "Шаблон пассива", templates, _passiveTemplate, v => { _passiveTemplate = v; Stamp++; },
+            UnitEditorModel.PassiveTemplates.FirstOrDefault(t => t.Id == _passiveTemplate)?.Hint);
+        inspector.Button(IdPrefix + "passive.add", "＋ Добавить пассив", () =>
+        {
+            var (id, refusal) = _model.AddPassive(_passiveTemplate);
+            if (refusal is not null)
+            {
+                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            }
+            else
+            {
+                _openCard = $"{IdPrefix}passive.{id}";
+            }
+        });
+    }
+
+    private void BuildPassive(Inspector inspector, string id)
+    {
+        if (_model.Unit.Passives.FirstOrDefault(p => p.Id == id) is not { Definition: { } op } passive)
+        {
+            return;
+        }
+
+        var prefix = $"{IdPrefix}passive.{id}.";
+        void Set(string key, object? value)
+        {
+            if (_model.SetPassive(id, key, value) is { } issue)
+            {
+                Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+                Stamp++;
+            }
+        }
+
+        inspector.Hint(op.Hint);
+        inspector.LineText(prefix + "name", "Название", passive.Name, v => Set("name", v));
+        if (op.UsesStat)
+        {
+            inspector.Choice(prefix + "stat", "Характеристика", HexTactics.Content.Kinds.PassiveOperations.Stats.Select(s => new ChoiceOption(s.Value, s.Label)).ToList(), passive.Stat, v => Set("stat", v));
+        }
+
+        if (op.UsesDamageType)
+        {
+            var types = new List<ChoiceOption> { new(string.Empty, op.Id == HexTactics.Content.Kinds.PassiveOperations.IncomingDamagePercent ? "все сопротивляемые типы" : "все типы") };
+            types.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.Any, passive.DamageType.Length == 0 ? null : passive.DamageType, allowCreate: true));
+            inspector.Choice(prefix + "type", "Тип урона (тип или семейство с подтипами)", types, passive.DamageType, v =>
+            {
+                if (v == HexTactics.Editor.Library.ReferenceCatalog.CreateValue)
+                {
+                    CreateReference(ContentTypeRegistry.DamageType, created => Set("damageTypeId", created));
+                    return;
+                }
+
+                Set("damageTypeId", v);
+            });
+        }
+
+        if (op.UsesKey)
+        {
+            var keys = new List<ChoiceOption> { new(UnitData.GlobalResistance, "все сопротивляемые типы") };
+            keys.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.ResistanceAffected, passive.Key == UnitData.GlobalResistance ? null : passive.Key, allowCreate: false));
+            inspector.Choice(prefix + "key", "Слой", keys, passive.Key, v => Set("key", v));
+        }
+
+        if (op.UsesRule)
+        {
+            var rules = Library.Items(ContentTypeRegistry.DefenseRule).Where(r => !r.Archived || r.Id == passive.Rule).Select(r => new ChoiceOption(r.Id, r.Name)).ToList();
+            inspector.Choice(prefix + "rule", "Правило защиты", rules, passive.Rule, v => Set("ruleId", v));
+        }
+        else
+        {
+            inspector.LineText(prefix + "value", $"Значение{(op.Unit.Length > 0 ? ", " + op.Unit : string.Empty)}", Inspector.Num(passive.Value), v => Set("value", v),
+                $"от {Inspector.Num(op.Min)} до {Inspector.Num(op.Max)}");
+        }
+
+        if (op.UsesCondition)
+        {
+            inspector.LineText(prefix + "below", "Только пока здоровье ниже, % (0 — всегда)", Inspector.Num(passive.HealthBelowPercent), v => Set("healthBelowPercent", v));
+            inspector.LineText(prefix + "group", "Группа суммирования (необязательно)", passive.StackGroup, v => Set("stackGroup", v),
+                "Проценты одной группы складываются (+50 % и +20 % → +70 %), разные группы перемножаются. Пусто — общая группа.");
+        }
+
+        inspector.Button(prefix + "remove", "✕ Убрать пассив", () => { _openCard = null; _model.RemovePassive(id); }, ButtonKind.Flat);
     }
 
     /// <summary>A section header: the open one shows its content, the others one line with their summary.</summary>
@@ -648,6 +770,15 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             _section = SecMore;
         }
+        else if (key == "passive")
+        {
+            _section = SecFeatures;
+            var parts = id.Split('.');
+            if (parts.Length > 2 && parts[1] is not ("template" or "add"))
+            {
+                _openCard = $"{IdPrefix}passive.{parts[1]}";
+            }
+        }
         else if (key is "res" or "armor" or "profile" or "rule" or "shield")
         {
             _section = SecRes;
@@ -736,10 +867,23 @@ public partial class UnitEditor : DefinitionEditorShell
         }
 
         preview.Hint("Зона на поле — навык, выбранный в списке (для взгляда на север).");
+        var breakdown = _model.Breakdown();
+        if (breakdown.Count > 0)
+        {
+            // Spec part 6 §4.3, §9.2: «Откуда взялось?» — base, final and every source of what the passives change.
+            preview.Section("Откуда взялось");
+            foreach (var line in breakdown)
+            {
+                preview.Text(line, size: 12);
+            }
+        }
 
-        // «Проверить на ударе» against this unit as edited (unsaved values, sets, rules and shields).
+        // «Проверить на ударе» against this unit as edited (unsaved values, sets, rules and shields); or this unit attacks
+        // an empty target (its unsaved outgoing passives).
         _sandbox ??= new SandboxPanel(IdPrefix, new HexTactics.Editor.Mechanics.SandboxSetup(), fixedTarget: true);
-        _sandbox.Build(preview, Library, setup => HexTactics.Editor.Mechanics.HitSandbox.Run(Library, setup, unitDraft: _model.Item), () => Stamp++);
+        _sandbox.Build(preview, Library, setup => setup.AttackerUnitId == SandboxPanel.SelfAttacker
+            ? HexTactics.Editor.Mechanics.HitSandbox.Run(Library, setup with { AttackerUnitId = null, TargetUnitId = null }, attackerDraft: _model.Item)
+            : HexTactics.Editor.Mechanics.HitSandbox.Run(Library, setup, unitDraft: _model.Item), () => Stamp++);
     }
 
     protected override SandboxPanel? Sandbox => _sandbox;
@@ -774,6 +918,29 @@ public partial class UnitEditor : DefinitionEditorShell
                     return true;
                 }
 
+            case "passives":
+                // expect:passives:<N>
+                actual = unit.Passives.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "passive":
+                {
+                    // expect:passive:<name>:<text in its summary>
+                    var card = _model.PassiveCards().FirstOrDefault(c => c.Name == a[1]);
+                    actual = card is null ? "none" : card.Summary;
+                    ok = card is not null && actual.Contains(string.Join(":", a.Skip(2)), System.StringComparison.Ordinal);
+                    return true;
+                }
+
+            case "stat":
+                // expect:stat:<attackPower|maxHealth|moveSpeed|attackRate>:<final value with passives>
+                actual = HexTactics.Content.Runtime.PassiveEffects.Stat(unit, Library, a[1]).Final.ToString("0.##", CultureInfo.InvariantCulture);
+                ok = actual == a[2];
+                return true;
+            case "breakdown":
+                actual = string.Join(" | ", _model.Breakdown());
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
             case "armor":
                 {
                     // expect:armor:<type id, type name or global>:<A_raw> — global + family + subtype of this unit (spec part 6 §3.2)

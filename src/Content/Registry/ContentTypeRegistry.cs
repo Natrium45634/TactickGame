@@ -138,7 +138,7 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 5, Migrate = Migrations.Unit,
+            SchemaVersion = 6, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
