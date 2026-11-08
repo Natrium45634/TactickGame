@@ -5,8 +5,10 @@
 [`docs/GAME_SPEC_PART2.md`](docs/GAME_SPEC_PART2.md) (часть 2, редакция 0.2), [`docs/GAME_SPEC_PART3.md`](docs/GAME_SPEC_PART3.md)
 (часть 3, редакция 0.3 — правила боя), [`docs/GAME_SPEC_PART4.md`](docs/GAME_SPEC_PART4.md) (часть 4, редакция 0.4 —
 режим «Разработчик» и пользовательский контент), [`docs/GAME_SPEC_PART5.md`](docs/GAME_SPEC_PART5.md) (часть 5, редакция 0.5 —
-урон и защита) и [`docs/GAME_SPEC_PART6.md`](docs/GAME_SPEC_PART6.md) (часть 6, редакция 0.6 — конструктор боевой системы,
-актуальная).
+урон и защита), [`docs/GAME_SPEC_PART6.md`](docs/GAME_SPEC_PART6.md) (часть 6, редакция 0.6 — конструктор боевой системы)
+и [`docs/GAME_SPEC_PART7.md`](docs/GAME_SPEC_PART7.md) (часть 7, редакция 0.7 — сценарии: обычный бой, Tower Defense,
+оборона, исследование; блок и автоатака; актуальная). План версий: часть 6 — v0.26.0–v0.31.0, часть 7 — v0.32.0–v0.39.0
+(`docs/DECISIONS.md`, D-143, D-150).
 
 **Текущая версия: v0.26.0** — первая версия ТЗ ч.6 ([`docs/GAME_SPEC_PART6.md`](docs/GAME_SPEC_PART6.md)): единый реестр
 определений — свой тип урона создаётся прямо из списка в навыке и сразу доступен в обычной атаке, гексах, правилах защиты,
