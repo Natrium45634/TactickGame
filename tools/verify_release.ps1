@@ -685,6 +685,54 @@ $script:PersistenceScenarioV30 = (@(
     'ui:dev.cat.map', 'row:name=Арена засады', 'ui:dev.open', 'expect:map-ruleset:core.ruleset.standard', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV29.Replace('ui:dev.cat.combat_ruleset;expect:rows:3;', 'ui:dev.cat.combat_ruleset;expect:rows:4;') # «Засада» is the fourth ruleset
 
+# v0.31.0+ (spec part 6 §6.3–6.4, §9.2, §9.5, §11, §12.5; P6-47…P6-55): the user element «Вода» (magical), the tag «Гидромант»
+# (+50 % outgoing «Вода»), the unit «Водный маг» with species, three tags, a passive, R and A — set without JSON; in its test run it
+# hits for 20 × 1.5 = 30; the tag is assigned to «Убийца» from its own editor; «Засада»: the rear right side picked on the hexagon
+# (60 %, mirrored), tested from that side, 100 events and 1000 crit rolls; on «Арена засады» «Убийца» shows «Сверхкрит!» but no
+# chance; «Водный маг» goes to «Вода.hxp» for the clean installation.
+$script:RegressionScenarioV31 = $script:RegressionScenarioV30 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.damage_type', 'ui:dev.create', 'expect:dialog:Создать тип урона', 'ui:dialog.base.magical', 'expect:editor:damage_type',
+    'field:dtype.name=Вода', 'ui:dtype.save', 'expect:errors:0', 'ui:dtype.back',
+    'ui:dev.cat.trait', 'ui:dev.create', 'expect:editor:trait', 'field:trait.name=Гидромант', 'field:trait.effect.template=outgoing_damage_percent',
+    'ui:trait.effect.add', 'field:trait.effect.p1.type=Вода (свой)', 'field:trait.effect.p1.value=50', 'expect:trait-preview:+50 % исходящего урона: вода',
+    'ui:trait.save', 'expect:errors:0', 'expect:trait-units:0', 'ui:trait.back',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Водный маг', 'field:unit.attackDamageType=Вода (свой)',
+    'field:unit.attackPower=20', 'field:unit.attackRate=0.5', 'ui:unit.sec.res', 'field:unit.res.core.damage.magical=20', 'field:unit.armor.global=10',
+    'ui:unit.sec.features', 'field:unit.species=Волк → Зверь', 'field:unit.trait.pick=Гидромант', 'ui:unit.trait.add', 'field:unit.trait.pick=Матёрый',
+    'ui:unit.trait.add', 'field:unit.trait.pick=Вожак', 'ui:unit.trait.add', 'field:unit.passive.template=incoming_damage_percent', 'ui:unit.passive.add',
+    'expect:passives:1', 'expect:features-summary:вид «Волк» · тегов: 3 · активных эффектов: 4', 'expect:stat:core.stat.agility:105',
+    'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Водный маг', 'spawn:enemy:3,4@Каменный страж', 'select:1', 'drag:3,5>3,4',
+    'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:70', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.trait', 'row:name=Гидромант', 'ui:dev.open', 'expect:trait-units:1', 'field:trait.assign.pick=Убийца', 'ui:trait.assign.add',
+    'ui:trait.assign', 'expect:trait-units:2', 'expect:editor-message:Тег назначен: Убийца', 'ui:trait.back',
+    'ui:dev.cat.combat_ruleset', 'row:name=Засада', 'ui:dev.open', 'ui:rules.hex.2', 'expect:ruleset-side:2', 'field:rules.side.value=60',
+    'expect:ruleset-preview:задний правый фланг 60 %', 'expect:ruleset-preview:задний левый фланг 60 %', 'ui:rules.side.test',
+    'expect:sandbox:задний правый фланг → 60 %', 'ui:rules.sandbox.batch', 'expect:sandbox:100 событий (seed 20261106): внезапных 60',
+    'field:rules.crit.test=125', 'ui:rules.crit.rolls', 'expect:ruleset-rolls:(по формуле 0 / 750 / 250)', 'ui:rules.save', 'expect:errors:0', 'ui:rules.back',
+    'ui:dev.cat.map', 'row:name=Арена засады', 'ui:dev.open', 'ui:map.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Убийца',
+    'spawn:enemy:3,4@Каменный страж', 'select:1', 'drag:3,5>3,4', 'advance:64', 'expect:hp:2:77.5', 'expect:hitword:Сверхкрит:yes',
+    'expect:hitword:Внезапн:no', 'expect:info:1:%:no', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back',
+    'ui:dev.cat.unit', 'row:name=Водный маг', 'ui:dev.export', 'field:dialog.input=Вода', 'ui:export.hxp', 'expect:message:Экспорт: пакет, объектов',
+    'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV31 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Водный маг', 'ui:dev.open', 'expect:features-summary:вид «Волк» · тегов: 3 · активных эффектов: 4',
+    'expect:resistance:core.damage.magical:20', 'expect:armor:global:10', 'ui:unit.back', 'ui:dev.cat.trait', 'row:name=Гидромант', 'ui:dev.open',
+    'expect:trait-units:2', 'ui:trait.back', 'ui:dev.cat.combat_ruleset', 'row:name=Засада', 'ui:dev.open', 'expect:ruleset-preview:задний правый фланг 60 %',
+    'ui:rules.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV30.Replace('ui:dev.cat.trait;expect:rows:2;', 'ui:dev.cat.trait;expect:rows:3;') # «Гидромант» is the third tag
+
+# v0.31.0+ clean installation: «Вода.hxp» brings the element, the tags, the species and the unit with the same ids; «Водный маг» hits
+# for the same 30 in a test run (P6-55).
+$script:CleanImportScenarioV31 = $script:CleanImportScenarioV25 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.import', 'field:dialog.input={PACKAGE3}', 'ui:import.preview', 'expect:import:новых',
+    'ui:import.install', 'expect:message:Импорт: установлено', 'row:name=Водный маг', 'ui:dev.open', 'expect:features-summary:вид «Волк» · тегов: 3',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Водный маг', 'spawn:enemy:3,4', 'select:1', 'drag:3,5>3,4', 'advance:64',
+    'expect:hp:2:70', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -762,7 +810,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.30.0') { $script:RegressionScenarioV30 }
+            $scenario = if ([version]$Version -ge [version]'0.31.0') { $script:RegressionScenarioV31 }
+                        elseif ([version]$Version -ge [version]'0.30.0') { $script:RegressionScenarioV30 }
                         elseif ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
                         elseif ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
                         elseif ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
@@ -789,7 +838,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.30.0') { $persistence = $script:PersistenceScenarioV30 }
+            if ([version]$Version -ge [version]'0.31.0') { $persistence = $script:PersistenceScenarioV31 }
+            elseif ([version]$Version -ge [version]'0.30.0') { $persistence = $script:PersistenceScenarioV30 }
             elseif ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
             elseif ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
             elseif ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
@@ -836,6 +886,10 @@ if ($Run -and $errors.Count -eq 0) {
             if ([version]$Version -ge [version]'0.25.0') {
                 $package2 = Join-Path (Join-Path $userRoot 'exports') 'Защита.hxp'
                 $clean = $script:CleanImportScenarioV25.Replace('{PACKAGE2}', $(if ($Launcher) { 'Z:' + $package2 } else { $package2 }))
+                if ([version]$Version -ge [version]'0.31.0') {
+                    $package3 = Join-Path (Join-Path $userRoot 'exports') 'Вода.hxp'
+                    $clean = $script:CleanImportScenarioV31.Replace('{PACKAGE2}', $(if ($Launcher) { 'Z:' + $package2 } else { $package2 })).Replace('{PACKAGE3}', $(if ($Launcher) { 'Z:' + $package3 } else { $package3 }))
+                }
             }
             $runs += @{ Name = 'clean-import'; Script = $clean.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
         }

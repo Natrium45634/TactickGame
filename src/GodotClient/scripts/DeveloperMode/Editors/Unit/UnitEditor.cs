@@ -930,6 +930,11 @@ public partial class UnitEditor : DefinitionEditorShell
                 actual = _model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Any(r => r.Row.Label == a[1]) ? "yes" : "no";
                 ok = actual == a[2];
                 return true;
+            case "features-summary":
+                // expect:features-summary:<text> — the summary of «Особенности» (species, tags, active effects)
+                actual = _model.FeaturesSummary();
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
             case "res-summary":
                 actual = _model.ResistanceSummary();
                 ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);

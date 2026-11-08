@@ -168,6 +168,41 @@ public class SurpriseCritTests
     }
 
     [Fact]
+    public void Melee_only_rules_need_a_neighbour_and_the_attackers_bonus_adds_to_the_side_up_to_100()
+    {
+        var (sim, target) = Arena(On with { SurpriseMeleeOnly = true });
+        var near = Attacker(sim, C(5, 5).Neighbor(HexDirection.South));
+        var far = Attacker(sim, C(5, 8));
+        Assert.Equal(3, Hit(sim, near, target, 10, "n").SurpriseSector);
+        Assert.Equal((null, false), (Hit(sim, far, target, 10, "f").SurpriseSector, Hit(sim, far, target, 10, "f2").Surprised));
+
+        var (open, t2) = Arena(On);
+        UnitId Scout(HexCoord cell, double bonus) => open.Spawn(SpawnRequest.AtCell(cell, Side.Player, HexDirection.North) with
+        {
+            Profile = new UnitProfile("s", "Разведчик", new UnitStats { SurpriseChanceBonus = bonus }, System.Array.Empty<string>()),
+        }).Unit!.Value;
+        Assert.Equal(90, Hit(open, Scout(C(5, 5).Neighbor(HexDirection.SouthEast), 15), t2, 10, "b1").SurpriseChance); // 75 + 15
+        Assert.Equal(15, Hit(open, Scout(C(5, 5).Neighbor(HexDirection.North), 15), t2, 10, "b2").SurpriseChance);    // 0 + 15
+        Assert.Equal(100, Hit(open, Scout(C(5, 5).Neighbor(HexDirection.South), 40), t2, 10, "b3").SurpriseChance);   // 100 + 40 → 100
+    }
+
+    [Fact]
+    public void P6_51_the_damage_event_tells_the_view_the_tier_and_the_surprise_only()
+    {
+        var (sim, target) = Arena(On);
+        var a = Attacker(sim, C(5, 5).Neighbor(HexDirection.South), critChance: 200);
+        sim.DrainEvents();
+        Hit(sim, a, target, 10, "e");
+        var applied = sim.DrainEvents().OfType<DamageApplied>().Single();
+        Assert.Equal((true, CritTier.SuperCrit), (applied.Surprised, applied.Crit));
+        var (legacy, t2) = Arena(CombatRules.Default);
+        var b = Attacker(legacy, C(5, 5).Neighbor(HexDirection.South), critChance: 200);
+        legacy.DrainEvents();
+        Hit(legacy, b, t2, 10, "e");
+        Assert.Equal((false, CritTier.Normal), legacy.DrainEvents().OfType<DamageApplied>().Select(d => (d.Surprised, d.Crit)).Single());
+    }
+
+    [Fact]
     public void P6_46_the_compatible_rules_keep_old_results_and_immunities_switch_off_their_bonus()
     {
         var (legacy, t1) = Arena(CombatRules.Default);
