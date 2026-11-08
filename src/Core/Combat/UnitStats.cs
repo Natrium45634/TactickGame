@@ -56,6 +56,14 @@ public sealed record UnitStats
     /// </summary>
     public IReadOnlyList<DamageModifier> DamageModifiers { get; init; } = System.Array.Empty<DamageModifier>();
 
+    /// <summary>Critical chance of the unit's hits in percentage points (spec part 6 §7.1); added to the ruleset's base.</summary>
+    public double CritChance { get; init; }
+
+    /// <summary>Hits against the unit are never critical / never surprises (spec part 6 §6.4, §7.2), from explicit passives.</summary>
+    public bool CritImmune { get; init; }
+
+    public bool SurpriseImmune { get; init; }
+
     /// <summary>Species lineage of the definition, from its own species up to the root (spec part 6 §5.2 <c>isA</c>); empty — none.</summary>
     public IReadOnlyList<string> Species { get; init; } = System.Array.Empty<string>();
 

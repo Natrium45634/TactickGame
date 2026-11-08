@@ -656,6 +656,35 @@ $script:PersistenceScenarioV29 = (@(
     'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV28
 
+# v0.30.0+ (spec part 6 §6, §7, §9.5; acceptance §12.4): «Правила боя» → «Засада» with surprise (flanks 40 % mirrored) and crits; the
+# unit «Убийца» with a critical chance of 200 % (supercrit always); the sandbox shows a forced rear-flank surprise supercrit 20 → 67.5;
+# in its test run on the compatible rules of the prototype it hits for a plain 10; on «Арена засады» with the standard rules it
+# hits «Каменный страж» (immune to surprise) for 10 × 2.25 = 22.5; the game card shows no chances.
+$script:RegressionScenarioV30 = $script:RegressionScenarioV29 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.combat_ruleset', 'ui:dev.create', 'expect:editor:combat_ruleset', 'field:rules.name=Засада', 'field:rules.surprise=true',
+    'field:rules.surprise.1=40', 'expect:ruleset-preview:передний правый фланг 40 %', 'expect:ruleset-preview:передний левый фланг 40 %', 'field:rules.surprise.3=150',
+    'expect:editor-message:от 0 до 100', 'field:rules.crit=true', 'field:rules.crit.super=3', 'expect:ruleset-preview:сверхкрит ×3', 'ui:rules.save', 'expect:errors:0',
+    'ui:rules.back', 'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Каменный страж', 'field:unit.side=enemy', 'ui:unit.sec.features',
+    'field:unit.passive.template=surprise_immunity', 'ui:unit.passive.add', 'expect:passives:1', 'ui:unit.save', 'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=Убийца', 'field:unit.critChance=200', 'field:unit.attackRate=0.5', 'ui:unit.sandbox', 'field:unit.sandbox.attacker=__self__',
+    'field:unit.sandbox.type=core.damage.blunt', 'field:unit.sandbox.amount=20', 'field:unit.sandbox.side=2', 'field:unit.sandbox.outcome=surprise_super',
+    'ui:unit.sandbox.run', 'expect:sandbox:Внезапность: задний правый фланг → 75 %', 'expect:sandbox:сверхкрит ×2.25', 'expect:sandbox:сила удара D0 = 67.5',
+    'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Убийца', 'spawn:enemy:3,4@Каменный страж', 'select:1', 'drag:3,5>3,4',
+    'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:90', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.map', 'row:name=Прототип 12×10', 'ui:dev.duplicate', 'row:name=Прототип 12×10 (копия)', 'ui:dev.rename', 'field:dialog.input=Арена засады',
+    'ui:dialog.ok', 'row:name=Арена засады', 'ui:dev.open', 'expect:editor:map', 'field:map.ruleset=Стандартные правила боя', 'expect:map-ruleset:core.ruleset.standard',
+    'ui:map.save', 'expect:dirty:no', 'ui:map.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Убийца', 'spawn:enemy:3,4@Каменный страж', 'select:1',
+    'drag:3,5>3,4', 'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:77.5', 'select:1', 'expect:info:1:крит:no', 'expect:info:1:%:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV30 = (@(
+    'ui:menu.dev', 'ui:dev.cat.combat_ruleset', 'row:name=Засада', 'ui:dev.open', 'expect:ruleset-preview:передний левый фланг 40 %',
+    'expect:ruleset-preview:сверхкрит ×3', 'ui:rules.back', 'ui:dev.cat.unit', 'row:name=Убийца', 'ui:dev.open', 'expect:unit-field:critChance:200', 'ui:unit.back',
+    'ui:dev.cat.map', 'row:name=Арена засады', 'ui:dev.open', 'expect:map-ruleset:core.ruleset.standard', 'ui:map.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV29
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -716,7 +745,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
+            $scenario = if ([version]$Version -ge [version]'0.30.0') { $script:RegressionScenarioV30 }
+                        elseif ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
                         elseif ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
                         elseif ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
                         elseif ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
@@ -742,7 +772,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
+            if ([version]$Version -ge [version]'0.30.0') { $persistence = $script:PersistenceScenarioV30 }
+            elseif ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
             elseif ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
             elseif ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
             elseif ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }

@@ -164,6 +164,23 @@ public sealed record DamageEvent
     /// <summary>Percentage points that lower a positive resistance of the target (spec part 5 §3.1).</summary>
     public double Penetration { get; init; }
 
+    /// <summary>The hit may be a critical one (spec part 6 §7.2: normal attacks; skill damage only when marked).</summary>
+    public bool CanCrit { get; init; }
+
+    /// <summary>The hit may be a surprise from the side of the defender (normal attacks and skills of a unit with a hex).</summary>
+    public bool CanSurprise { get; init; }
+
+    /// <summary>
+    /// Key of the reproducible rolls (spec part 6 §7.2): the same key — the same outcome (one roll for a series or an area when
+    /// the effect says so); empty — the event's own id.
+    /// </summary>
+    public string RollKey { get; init; } = string.Empty;
+
+    /// <summary>Developer sandbox only: a forced outcome instead of the roll (spec part 6 §11 p.3); never set in a match.</summary>
+    public CritTier? ForcedCrit { get; init; }
+
+    public bool? ForcedSurprise { get; init; }
+
     /// <summary>Defense points subtracted from the target's A (spec part 6 §3.2 «ArmorPenetrationFlat»); never lowers R.</summary>
     public double ArmorPenetration { get; init; }
 
@@ -193,6 +210,22 @@ public sealed record DamageResult
 
     /// <summary>Stage 2: the multiplier of the attacker's outgoing passives (1 — none).</summary>
     public double OutgoingMultiplier { get; init; } = 1;
+
+    /// <summary>Stage 3 (spec part 6 §6): the side of the hit (0 front … 3 rear, clockwise), its chance, the roll and the result.</summary>
+    public int? SurpriseSector { get; init; }
+
+    public double SurpriseChance { get; init; }
+
+    public double? SurpriseRoll { get; init; }
+
+    public bool Surprised { get; init; }
+
+    /// <summary>Stage 3 (spec part 6 §7): the attacker's critical chance C (pp), the roll and the tier.</summary>
+    public double CritChance { get; init; }
+
+    public double? CritRoll { get; init; }
+
+    public CritTier Crit { get; init; }
 
     public double D0 { get; init; }
 

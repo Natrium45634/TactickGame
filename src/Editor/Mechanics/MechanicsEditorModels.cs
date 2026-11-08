@@ -441,6 +441,81 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
         return null;
     }
 
+    // ------------------------------------------------------------------ surprise and crits (spec part 6 §6, §7, §9.5)
+
+    public void SetSurpriseEnabled(bool on) => Apply(on ? "Внезапность включена" : "Внезапность выключена", (d, _) => ((CombatRulesetData)d).SurpriseEnabled = on);
+
+    public void SetCritEnabled(bool on) => Apply(on ? "Криты включены" : "Криты выключены", (d, _) => ((CombatRulesetData)d).CritEnabled = on);
+
+    /// <summary>
+    /// Sets the surprise chance of a side (0…5 clockwise from the front); <paramref name="symmetric"/> sets the mirrored side
+    /// too (front right ↔ front left, rear right ↔ rear left), as the symmetric preset requires (spec part 6 §6.1).
+    /// </summary>
+    public ContentIssue? SetSurpriseChance(int sector, object? input, bool symmetric)
+    {
+        if (sector is < 0 or > 5 || !TryNumber(input, 0, 100, out var v))
+        {
+            return ContentIssue.Error("surpriseChances", $"шанс внезапности — число от 0 до 100 %, а не «{input}»");
+        }
+
+        Apply($"Внезапность: {HexTactics.Core.Combat.SurpriseMath.SectorNames[sector]} {v.ToString("0.##", CultureInfo.InvariantCulture)} %", (d, _) =>
+        {
+            var chances = (double[])((CombatRulesetData)d).SurpriseChances.Clone();
+            if (chances.Length != 6)
+            {
+                chances = new double[6];
+            }
+
+            chances[sector] = v;
+            if (symmetric && sector is not (0 or 3))
+            {
+                chances[6 - sector] = v;
+            }
+
+            ((CombatRulesetData)d).SurpriseChances = chances;
+        });
+        return null;
+    }
+
+    /// <summary>Sets «surpriseMultiplier», «baseCritChance», «critMultiplier» or «superCritMultiplier» from input.</summary>
+    public ContentIssue? SetValue(string key, object? input)
+    {
+        var (min, max) = key == "baseCritChance" ? (-1000.0, 1000.0) : (0.0, 100.0);
+        if (!TryNumber(input, min, max, out var v))
+        {
+            return ContentIssue.Error(key, $"значение от {min.ToString(CultureInfo.InvariantCulture)} до {max.ToString(CultureInfo.InvariantCulture)}, а не «{input}» — не изменено");
+        }
+
+        Apply($"Правила боя: {key}", (d, _) =>
+        {
+            var r = (CombatRulesetData)d;
+            switch (key)
+            {
+                case "surpriseMultiplier": r.SurpriseMultiplier = v; break;
+                case "baseCritChance": r.BaseCritChance = v; break;
+                case "critMultiplier": r.CritMultiplier = v; break;
+                case "superCritMultiplier": r.SuperCritMultiplier = v; break;
+            }
+        });
+        return null;
+    }
+
+    private static bool TryNumber(object? input, double min, double max, out double value)
+    {
+        value = 0;
+        var text = input switch { double d => d.ToString(CultureInfo.InvariantCulture), string s => s, _ => string.Empty };
+        return double.TryParse(text.Trim().Replace(',', '.').TrimEnd('%').Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out value) && double.IsFinite(value) && value >= min && value <= max;
+    }
+
+    /// <summary>The probabilities at the reference chances (spec part 6 §7.1 table, §9.5): «C 125 %: обычный 0 %, крит 75 %, сверхкрит 25 %».</summary>
+    public static IReadOnlyList<string> CritTable() => new[] { 0.0, 35, 75, 100, 125, 175, 200, 250 }.Select(c =>
+    {
+        string P(double p) => (p * 100).ToString("0.##", CultureInfo.InvariantCulture) + " %";
+        var super = HexTactics.Core.Combat.CritMath.SuperChance(c);
+        var crit = HexTactics.Core.Combat.CritMath.CritOnlyChance(c);
+        return $"C {c.ToString("0", CultureInfo.InvariantCulture)} %: обычный {P(1 - crit - super)}, крит {P(crit)}, сверхкрит {P(super)}" + (c > 200 ? " (избыток сверх 200 % сохраняется, но не усиливает)" : string.Empty);
+    }).ToList();
+
     public void RemoveFamilyK(string familyId) =>
         Apply($"Общий K для «{Library.Find(ContentTypeRegistry.DamageType, familyId)?.Name ?? familyId}»", (d, _) => ((CombatRulesetData)d).DefenseKByFamily.Remove(familyId));
 
@@ -462,6 +537,13 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
         }
 
         lines.Add("Чистый урон защиту A не учитывает. У юнитов без защиты A (старый контент) урон не меняется при любом K.");
+        var r = Ruleset;
+        lines.Add(r.SurpriseEnabled
+            ? "Внезапность: " + string.Join(", ", r.SurpriseChances.Select((c, i) => $"{HexTactics.Core.Combat.SurpriseMath.SectorNames[i]} {N(c)} %")) + $"; удача — ×{N(r.SurpriseMultiplier)}. Сторона — относительно логического взгляда цели."
+            : "Внезапность выключена.");
+        lines.Add(r.CritEnabled
+            ? $"Криты: шанс атакующего + {N(r.BaseCritChance)} п.п.; крит ×{N(r.CritMultiplier)}, сверхкрит ×{N(r.SuperCritMultiplier)}. Внезапность и крит независимы, множители перемножаются."
+            : "Криты выключены.");
         var users = Users();
         lines.Add(users.Count == 0
             ? Item.Id == CombatRulesetData.Legacy ? "Используют все карты без своих правил боя (созданные до ТЗ ч.6)." : "Пока не назначены ни одной карте."

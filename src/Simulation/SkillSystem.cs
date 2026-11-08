@@ -139,7 +139,7 @@ internal sealed class SkillSystem : ISimulationSystem
                 : 1.0;
             var targets = new List<UnitId>(1);
             if (_state.UnitAt(cell) is { IsAlive: true } target
-                && _resolver.Apply(new EffectInvocation(spec, caster, target, tick, EffectSource.Skill, execution.Action.SkillId) { Scale = scale }))
+                && _resolver.Apply(new EffectInvocation(spec, caster, target, tick, EffectSource.Skill, execution.Action.SkillId) { Scale = scale, ActionId = execution.Action.Id, HitIndex = h.HitIndex }))
             {
                 targets.Add(target.Id);
                 if (!hitNow.Contains(target.Id))

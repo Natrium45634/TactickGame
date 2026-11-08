@@ -265,6 +265,24 @@ public sealed class EffectTypeRegistry
                 PenetrationField(),
                 ArmorPenetrationField(),
                 ArmorPenetrationPercentField(),
+                Param("canSurprise", "Внезапный удар по направлению", FieldKind.Flag, true) with
+                {
+                    Advanced = true, Hint = "Если правила боя карты включают внезапность: шанс зависит от стороны цели, на которую пришёлся удар.",
+                },
+                Param("canCrit", "Может быть критическим", FieldKind.Flag, false) with
+                {
+                    Advanced = true, Hint = "Навык критует только с этой отметкой и если правила боя карты включают криты.",
+                },
+                Param("critRoll", "Бросок крита в серии", FieldKind.Choice, "per_hit") with
+                {
+                    Advanced = true, Options = new[] { new FieldOption("per_hit", "для каждого попадания"), new FieldOption("per_series", "один на всю серию") },
+                    VisibleWhen = o => ((EffectData)o).Get("canCrit") is true,
+                },
+                Param("critTargets", "Бросок крита по целям области", FieldKind.Choice, "per_target") with
+                {
+                    Advanced = true, Options = new[] { new FieldOption("per_target", "отдельный на каждую цель"), new FieldOption("shared", "общий результат атаки") },
+                    VisibleWhen = o => ((EffectData)o).Get("canCrit") is true,
+                },
             })
         {
             TileFields = new[]

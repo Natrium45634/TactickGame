@@ -30,6 +30,43 @@ public static class Migrations
         return copy;
     }
 
+    /// <summary>
+    /// Combat rules 1 → 2 (spec part 6 §10.3): surprise and crits arrive switched off — a set made before v0.30.0 keeps its
+    /// results until the author turns them on.
+    /// </summary>
+    public static JsonObject? CombatRuleset(int from, JsonObject data, IssueList issues)
+    {
+        if (from != 1)
+        {
+            return null;
+        }
+
+        var copy = (JsonObject)data.DeepClone();
+        copy["surpriseEnabled"] ??= false;
+        copy["critEnabled"] ??= false;
+        return copy;
+    }
+
+    /// <summary>
+    /// Map 1 → 2 (spec part 6 §10.3 «не подменять старые сохранения незаметно»): a map that played with the standard rules
+    /// before v0.30.0 played without surprise and crits — it gets the compatible rules (same K).
+    /// </summary>
+    public static JsonObject? Map(int from, JsonObject data, IssueList issues)
+    {
+        if (from != 1)
+        {
+            return null;
+        }
+
+        var copy = (JsonObject)data.DeepClone();
+        if (copy["combatRuleset"]?.GetValue<string>() == "core.ruleset.standard")
+        {
+            copy["combatRuleset"] = "core.ruleset.legacy";
+        }
+
+        return copy;
+    }
+
     /// <summary>Skill 1 → 2: damage and damaging periodic effects without a damage type get the legacy neutral type.</summary>
     public static JsonObject? Skill(int from, JsonObject data, IssueList issues)
     {
@@ -97,6 +134,9 @@ public static class Migrations
                 return copy;
             case 5:
                 copy["passives"] ??= new JsonArray(); // spec part 6 §10.3: no individual passives for old units
+                return copy;
+            case 7:
+                copy["critChance"] ??= 0.0; // spec part 6 §10.3: no hidden critical chance for old units
                 return copy;
             case 6:
                 copy["species"] ??= string.Empty; // spec part 6 §10.3: no species, no traits, no pack, no own stats

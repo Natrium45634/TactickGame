@@ -302,6 +302,9 @@ public static class RuntimeFactory
             Armor = new ArmorSet(PassiveEffects.Armor(unit, library)),
             DamageModifiers = PassiveEffects.DamageModifiers(unit, library),
             CountModifiers = PassiveEffects.CountModifiers(unit, library),
+            CritChance = unit.CritChance + PassiveEffects.Active(unit, library).Where(x => x.Passive.Operation == PassiveOperations.CritChanceDelta).Sum(x => x.Passive.Value),
+            CritImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.CritImmunity),
+            SurpriseImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.SurpriseImmunity),
             Species = PassiveEffects.SpeciesChain(library, unit.Species).Select(i => i.Id).ToArray(),
             PackId = unit.PackId,
             AttackArmorPenetration = unit.AttackArmorPenetration,
@@ -471,6 +474,13 @@ public static class RuntimeFactory
             DefenseK = Math.Clamp(data.DefenseK, CombatRules.MinDefenseK, CombatRules.MaxDefenseK),
             DefenseKByFamily = data.DefenseKByFamily.Where(x => double.IsFinite(x.Value) && x.Value > 0)
                 .ToDictionary(x => x.Key, x => Math.Clamp(x.Value, CombatRules.MinDefenseK, CombatRules.MaxDefenseK), StringComparer.Ordinal),
+            SurpriseEnabled = data.SurpriseEnabled,
+            SurpriseChance = data.SurpriseChances.Length == 6 ? data.SurpriseChances.Select(c => Math.Clamp(c, 0, 100)).ToArray() : new double[6],
+            SurpriseMultiplier = Math.Max(0, data.SurpriseMultiplier),
+            CritEnabled = data.CritEnabled,
+            BaseCritChance = data.BaseCritChance,
+            CritMultiplier = Math.Max(0, data.CritMultiplier),
+            SuperCritMultiplier = Math.Max(0, data.SuperCritMultiplier),
         };
     }
 

@@ -137,7 +137,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private const string SecFeatures = "features";
 
     private static readonly string[] MainKeys = { "maxHealth", "moveSpeed", "attackRate", "side" };
-    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "attackArmorPenetration", "attackArmorPenetrationPercent" };
+    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "critChance", "attackArmorPenetration", "attackArmorPenetrationPercent" };
 
     private string _section = SecMain;
     private string _resSearch = string.Empty;

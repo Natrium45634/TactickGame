@@ -163,7 +163,8 @@ internal sealed class AttackSystem : ISimulationSystem
         foreach (var t in targets)
         {
             _damage.Resolve(_damage.Create(unit.Id, t.Id, stats.AttackDamageTypeId, amount, DamageOrigin.NormalAttack,
-                armorPenetration: stats.AttackArmorPenetration, armorPenetrationPercent: stats.AttackArmorPenetrationPercent), tick);
+                armorPenetration: stats.AttackArmorPenetration, armorPenetrationPercent: stats.AttackArmorPenetrationPercent,
+                canCrit: true, canSurprise: true, rollKey: $"atk:{unit.Id.Value}:{unit.Combat.HitsDelivered}:{t.Id.Value}"), tick);
         }
     }
 

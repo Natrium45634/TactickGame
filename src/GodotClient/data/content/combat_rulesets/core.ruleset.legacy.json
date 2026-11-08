@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.ruleset.legacy",
   "kind": "combat_ruleset",
   "name": "Совместимые правила (старые карты)",
-  "description": "Правила карт, созданных до ТЗ ч.6 (legacy_combat_ruleset, §10.3): прежние результаты боя не меняются; у старых юнитов A = 0, поэтому K на них не влияет. Новые бонусы следующих версий здесь выключены.",
+  "description": "Правила карт, созданных до ТЗ ч.6 (legacy_combat_ruleset, §10.3): прежние результаты боя не меняются — K = 100 (у старых юнитов A = 0), внезапность и криты выключены, пока автор не включит их явно.",
   "revision": 1,
   "modified": "2026-11-08T00:00:00Z",
   "tags": [
@@ -12,6 +12,20 @@
   "references": [],
   "data": {
     "defenseK": 100,
-    "defenseKByFamily": {}
+    "defenseKByFamily": {},
+    "surpriseEnabled": false,
+    "surpriseChances": [
+      0,
+      25,
+      75,
+      100,
+      75,
+      25
+    ],
+    "surpriseMultiplier": 1.5,
+    "critEnabled": false,
+    "baseCritChance": 0,
+    "critMultiplier": 1.5,
+    "superCritMultiplier": 2.25
   }
 }

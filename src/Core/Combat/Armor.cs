@@ -61,6 +61,29 @@ public sealed record CombatRules
     /// <summary>K for the types of one family (family id → K); families not listed use <see cref="DefenseK"/>.</summary>
     public IReadOnlyDictionary<string, double> DefenseKByFamily { get; init; } = new Dictionary<string, double>(StringComparer.Ordinal);
 
+    /// <summary>Surprise attacks by the side of the defender (spec part 6 §6); off in the compatible rules of old maps.</summary>
+    public bool SurpriseEnabled { get; init; }
+
+    /// <summary>
+    /// Surprise chance in percent by the side of the hit relative to the defender's logical facing (0 — front, 1 — front right,
+    /// 2 — rear right, 3 — rear, 4 — rear left, 5 — front left; clockwise). PROTOTYPE_DEFAULT 0/25/75/100/75/25.
+    /// </summary>
+    public IReadOnlyList<double> SurpriseChance { get; init; } = new double[] { 0, 25, 75, 100, 75, 25 };
+
+    /// <summary>Damage multiplier of a successful surprise (PROTOTYPE_DEFAULT ×1.5).</summary>
+    public double SurpriseMultiplier { get; init; } = 1.5;
+
+    /// <summary>Critical hits (spec part 6 §7); off in the compatible rules of old maps.</summary>
+    public bool CritEnabled { get; init; }
+
+    /// <summary>Base critical chance of every attacker in percentage points (added to its own and its passives').</summary>
+    public double BaseCritChance { get; init; }
+
+    /// <summary>PROTOTYPE_DEFAULT ×1.5 (crit) and ×2.25 (supercrit).</summary>
+    public double CritMultiplier { get; init; } = 1.5;
+
+    public double SuperCritMultiplier { get; init; } = 2.25;
+
     /// <summary>The K for a damage type.</summary>
     public double KFor(DamageTypeDefinition type) =>
         Math.Clamp(DefenseKByFamily.TryGetValue(type.FamilyId, out var k) ? k : DefenseK, MinDefenseK, MaxDefenseK);

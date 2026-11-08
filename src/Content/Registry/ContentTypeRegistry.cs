@@ -137,6 +137,7 @@ public sealed class ContentTypeRegistry
             Id = Map, Title = "Карты", Singular = "карта", Folder = "maps", Order = 10,
             Description = "Поля из гексов: размер, типы местности, базы и зоны.",
             Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData { CombatRuleset = CombatRulesetData.Standard },
+            SchemaVersion = 2, Migrate = Migrations.Map,
             OptionalDataKeys = new[] { "testPoints", "combatRuleset" },
         });
         registry.Register(new ContentKind
@@ -144,7 +145,7 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 7, Migrate = Migrations.Unit,
+            SchemaVersion = 8, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -188,6 +189,7 @@ public sealed class ContentTypeRegistry
             Id = CombatRuleset, Title = "Правила боя", Singular = "правила боя", Folder = "combat_rulesets", Order = 80,
             Description = "Общие константы боя проекта: K защиты A (урон × K / (K + A)) и K по семействам; назначаются карте.",
             Read = (o, i) => CombatRulesetData.Read(o, i), CreateDefault = () => new CombatRulesetData(), Fields = CombatRulesetData.Fields,
+            SchemaVersion = 2, Migrate = Migrations.CombatRuleset,
             Group = MechanicsGroup,
         });
         registry.Register(new ContentKind

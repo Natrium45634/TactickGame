@@ -21,6 +21,11 @@ public enum EffectSource
 /// </summary>
 public sealed record EffectInvocation(EffectSpec Effect, UnitState? Source, UnitState Target, long Tick, EffectSource Origin, string SourceKey = "")
 {
+    /// <summary>The skill action and hit of the invocation: keys of the reproducible crit / surprise rolls (spec part 6 §7.2).</summary>
+    public long ActionId { get; init; }
+
+    public int HitIndex { get; init; }
+
     /// <summary>
     /// Game time of a continuous application (a «stay» effect of a tile for one tick, spec part 4 §7.2); 0 for one-off
     /// applications. A periodic effect with a slice acts at once for that time instead of putting a status.
@@ -135,8 +140,8 @@ public sealed class EffectResolver
     /// tick. <paramref name="effect"/> gives the damage type and the penetration.
     /// </summary>
     public DamageResult DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageOrigin origin, string damageTypeId, double penetration = 0, bool periodic = false,
-        double armorPenetration = 0, double armorPenetrationPercent = 0) =>
-        Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic, armorPenetration, armorPenetrationPercent), tick);
+        double armorPenetration = 0, double armorPenetrationPercent = 0, bool canCrit = false, bool canSurprise = false, string rollKey = "") =>
+        Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic, armorPenetration, armorPenetrationPercent, canCrit, canSurprise, rollKey), tick);
 
     /// <summary>Shared health rule: the single healing path of the damage resolver (never above the maximum).</summary>
     public void Heal(UnitState target, UnitState? source, double amount, long tick, DamageKind kind) =>
@@ -182,7 +187,12 @@ internal sealed class DamageEffectHandler : IEffectHandler
             e.Text("damageType", DamageTypes.Untyped),
             e.Number("penetration", 0),
             armorPenetration: e.Number("armorPenetration", 0),
-            armorPenetrationPercent: e.Number("armorPenetrationPercent", 0));
+            armorPenetrationPercent: e.Number("armorPenetrationPercent", 0),
+            // Spec part 6 §7.2: a skill crits only when marked; one roll per hit (default) or per series, per target (default) or shared.
+            canCrit: invocation.Origin == EffectSource.Skill && e.Flag("canCrit", false),
+            canSurprise: invocation.Origin == EffectSource.Skill && e.Flag("canSurprise", true),
+            rollKey: invocation.Origin != EffectSource.Skill ? string.Empty
+                : $"skill:{invocation.ActionId}:{(e.Text("critRoll", "per_hit") == "per_series" ? "s" : invocation.HitIndex.ToString(System.Globalization.CultureInfo.InvariantCulture))}:{(e.Text("critTargets", "per_target") == "shared" ? "all" : invocation.Target.Id.Value.ToString(System.Globalization.CultureInfo.InvariantCulture))}");
     }
 }
 

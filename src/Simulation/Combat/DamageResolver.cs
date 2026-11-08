@@ -116,7 +116,7 @@ public sealed class DamageResolver
 
     /// <summary>A new primary event (its own root action).</summary>
     public DamageEvent Create(UnitId? source, UnitId target, string damageTypeId, double amount, DamageOrigin origin, double penetration = 0, bool periodic = false,
-        double armorPenetration = 0, double armorPenetrationPercent = 0)
+        double armorPenetration = 0, double armorPenetrationPercent = 0, bool canCrit = false, bool canSurprise = false, string rollKey = "")
     {
         var id = ++_nextEventId;
         return new DamageEvent
@@ -130,6 +130,9 @@ public sealed class DamageResolver
             Penetration = penetration,
             ArmorPenetration = armorPenetration,
             ArmorPenetrationPercent = armorPenetrationPercent,
+            CanCrit = canCrit,
+            CanSurprise = canSurprise,
+            RollKey = rollKey,
             Origin = origin,
             Periodic = periodic,
         };
@@ -263,7 +266,40 @@ public sealed class DamageResolver
             e = e with { Amount = baseAmount * outgoing };
         }
 
-        // 1b. Registered stages before D0 (spec part 5 §13.4; none in this edition).
+        // 1b. Surprise by the side of the defender, then the critical tier (spec part 6 §6, §7, §8 stage 3): one reproducible roll
+        //     per hit (or per series / area by its key), multipliers multiply; only for a primary hit of a living unit source.
+        var combat = _settings.CombatRules;
+        int? sector = null;
+        double surpriseChance = 0, critChance = 0;
+        double? surpriseRoll = null, critRoll = null;
+        var surprised = false;
+        var crit = CritTier.Normal;
+        var key = e.RollKey.Length > 0 ? e.RollKey : $"e{e.EventId}";
+        if (!e.Reactive && e.Origin is DamageOrigin.NormalAttack or DamageOrigin.Skill && e.Source is { } striker && _state.FindUnit(striker) is { IsAlive: true } strikerUnit && strikerUnit.Id != target.Id)
+        {
+            if (combat.SurpriseEnabled && e.CanSurprise && !target.Stats.SurpriseImmune && SurpriseMath.Sector(target.Cell, target.Facing, strikerUnit.Cell) is { } s)
+            {
+                sector = s;
+                surpriseChance = Math.Clamp(combat.SurpriseChance.Count == 6 ? combat.SurpriseChance[s] : 0, 0, 100);
+                surpriseRoll = DeterministicRoll.Of(_settings.Seed, key, "surprise");
+                surprised = e.ForcedSurprise ?? surpriseRoll < surpriseChance / 100;
+            }
+
+            if (combat.CritEnabled && e.CanCrit && !target.Stats.CritImmune)
+            {
+                critChance = Math.Max(0, combat.BaseCritChance + strikerUnit.Stats.CritChance);
+                critRoll = DeterministicRoll.Of(_settings.Seed, key, "crit");
+                crit = e.ForcedCrit ?? CritMath.Tier(critChance, critRoll.Value);
+            }
+
+            var multiplier = (surprised ? combat.SurpriseMultiplier : 1) * CritMath.Multiplier(crit, combat);
+            if (multiplier != 1)
+            {
+                e = e with { Amount = (double.IsFinite(e.Amount) ? Math.Max(0, e.Amount) : 0) * Math.Max(0, multiplier) };
+            }
+        }
+
+        // 1c. Registered stages before D0 (spec part 5 §13.4; none in this edition).
         foreach (var stage in _settings.PreDamageStages)
         {
             e = stage.Apply(e, _state);
@@ -479,6 +515,13 @@ public sealed class DamageResolver
             Event = e,
             BaseAmount = baseAmount,
             OutgoingMultiplier = outgoing,
+            SurpriseSector = sector,
+            SurpriseChance = surpriseChance,
+            SurpriseRoll = surpriseRoll,
+            Surprised = surprised,
+            CritChance = critChance,
+            CritRoll = critRoll,
+            Crit = crit,
             D0 = d0,
             Immune = immune,
             Converted = converted,

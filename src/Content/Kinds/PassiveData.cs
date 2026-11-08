@@ -27,6 +27,9 @@ public static class PassiveOperations
     public const string DefenseDeltaPercent = "defense_delta_percent";
     public const string GrantDefenseRule = "grant_defense_rule";
     public const string CountMatchingUnits = "count_matching_units";
+    public const string CritChanceDelta = "crit_chance_delta_pp";
+    public const string CritImmunity = "crit_immunity";
+    public const string SurpriseImmunity = "surprise_immunity";
 
     /// <summary>Characteristics the engine executes (the others are numbers of the <c>unit_stat</c> registry, D-158).</summary>
     public static readonly string[] EngineStats = { "attackPower", "maxHealth", "moveSpeed", "attackRate" };
@@ -52,6 +55,12 @@ public static class PassiveOperations
             false, false, true, false, false, -100, 1000, "%", 20),
         new PassiveOperation(CountMatchingUnits, "за каждого подходящего союзника", "Пример вожака: +3 % силы атаки за каждого другого живого волка той же стаи. Пересчитывается при появлении и гибели юнитов; себя не считает, если не указано.",
             true, false, false, false, false, -100, 1000, "% за юнита", 3),
+        new PassiveOperation(CritChanceDelta, "шанс крита ± п.п.", "Шанс критического удара юнита в процентных пунктах: 100 — крит гарантирован, сверх 100 — шанс сверхкрита (125 → 25 % сверхкрита).",
+            false, false, false, false, false, -1000, 1000, "п.п.", 35),
+        new PassiveOperation(CritImmunity, "невосприимчив к критам", "Удары по этому юниту никогда не критические.",
+            false, false, false, false, false, 0, 0, string.Empty, 0),
+        new PassiveOperation(SurpriseImmunity, "невосприимчив к внезапным ударам", "Удар с фланга или сзади по этому юниту не получает бонуса внезапности.",
+            false, false, false, false, false, 0, 0, string.Empty, 0),
         new PassiveOperation(GrantDefenseRule, "правило защиты", "Подключает сохранённое правило защиты (иммунитет, отражение, щит…) как постоянную особенность юнита.",
             false, false, false, true, false, 0, 0, string.Empty, 0),
     };

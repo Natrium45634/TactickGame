@@ -389,6 +389,8 @@ public partial class CombatRulesetEditor : SmallBoardEditor
             inspector.Button($"{IdPrefix}k.{id}.remove", "✕ Общий K для семейства", () => _model.RemoveFamilyK(id), ButtonKind.Flat).Alignment = HorizontalAlignment.Left;
         }
 
+        BuildDirectionAndCrits(inspector);
+        inspector.Section("Свой K у семейства (дополнительно)");
         var families = _model.FamilyChoices();
         if (families.Count > 0)
         {
@@ -404,12 +406,56 @@ public partial class CombatRulesetEditor : SmallBoardEditor
         }
     }
 
+    private bool _asymmetric;
+
+    /// <summary>«Направление» and «Криты» (spec part 6 §9.5): two small sections, no permanent panels.</summary>
+    private void BuildDirectionAndCrits(Inspector inspector)
+    {
+        var r = _model.Ruleset;
+        inspector.Section("Направление и внезапность");
+        inspector.Check(IdPrefix + "surprise", "Внезапный удар по стороне цели", r.SurpriseEnabled, on => _model.SetSurpriseEnabled(on),
+            "Шанс зависит от стороны цели относительно её логического взгляда; удача — множитель урона до защиты.");
+        if (r.SurpriseEnabled)
+        {
+            inspector.Check(IdPrefix + "asymmetric", "Разные левый и правый фланги", _asymmetric, on => { _asymmetric = on; Stamp++; });
+            var sectors = _asymmetric ? new[] { 0, 1, 2, 3, 4, 5 } : new[] { 0, 1, 2, 3 };
+            foreach (var sector in sectors)
+            {
+                var index = sector;
+                var label = _asymmetric ? HexTactics.Core.Combat.SurpriseMath.SectorNames[sector] : sector switch { 1 => "передние фланги", 2 => "задние фланги", _ => HexTactics.Core.Combat.SurpriseMath.SectorNames[sector] };
+                inspector.LineText($"{IdPrefix}surprise.{sector}", $"{label}, %", Inspector.Num(r.SurpriseChances.Length == 6 ? r.SurpriseChances[sector] : 0),
+                    v => Refuse(_model.SetSurpriseChance(index, v, !_asymmetric)));
+            }
+
+            inspector.LineText(IdPrefix + "surprise.multiplier", "Множитель внезапного удара", Inspector.Num(r.SurpriseMultiplier), v => Refuse(_model.SetValue("surpriseMultiplier", v)));
+        }
+
+        inspector.Section("Критические удары");
+        inspector.Check(IdPrefix + "crit", "Криты и сверхкриты", r.CritEnabled, on => _model.SetCritEnabled(on),
+            "Шанс атакующего в п.п.: до 100 — шанс крита, 100 — крит всегда, сверх 100 — шанс сверхкрита (125 → 25 %), 200 — сверхкрит всегда.");
+        if (r.CritEnabled)
+        {
+            inspector.LineText(IdPrefix + "crit.base", "Базовый шанс всех атакующих, п.п.", Inspector.Num(r.BaseCritChance), v => Refuse(_model.SetValue("baseCritChance", v)));
+            inspector.LineText(IdPrefix + "crit.multiplier", "Множитель крита", Inspector.Num(r.CritMultiplier), v => Refuse(_model.SetValue("critMultiplier", v)));
+            inspector.LineText(IdPrefix + "crit.super", "Множитель сверхкрита", Inspector.Num(r.SuperCritMultiplier), v => Refuse(_model.SetValue("superCritMultiplier", v)));
+        }
+    }
+
     protected override void BuildPreview(Inspector preview)
     {
         preview.Section("Как работают правила");
         foreach (var line in _model.Preview())
         {
             preview.Text(line, size: 12);
+        }
+
+        if (_model.Ruleset.CritEnabled)
+        {
+            preview.Section("Вероятности крита");
+            foreach (var line in CombatRulesetEditorModel.CritTable())
+            {
+                preview.Text(line, size: 12);
+            }
         }
 
         _sandbox ??= new SandboxPanel(IdPrefix, new SandboxSetup { RulesetId = _model.Item.Id, EnemiesAround = 1 }, fixedRuleset: true);

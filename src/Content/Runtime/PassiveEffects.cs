@@ -294,6 +294,9 @@ public static class PassiveEffects
             PassiveOperations.DefenseDeltaFlat => $"защита A {KeyName(library, p.Key)} {Signed(p.Value)} очк.",
             PassiveOperations.DefenseDeltaPercent => $"защита A {KeyName(library, p.Key)} {Signed(p.Value)} %",
             PassiveOperations.GrantDefenseRule => $"правило защиты «{library?.Find("defense_rule", p.Rule)?.Name ?? p.Rule}»",
+            PassiveOperations.CritChanceDelta => $"шанс крита {Signed(p.Value)} п.п.",
+            PassiveOperations.CritImmunity => "невосприимчив к критам",
+            PassiveOperations.SurpriseImmunity => "невосприимчив к внезапным ударам",
             PassiveOperations.CountMatchingUnits => $"{stat} {Signed(p.Value)} % за каждого живого союзника" +
                 (p.CountSpecies.Length > 0 ? $" вида «{library?.Find(ContentTypeRegistry.Species, p.CountSpecies)?.Name ?? p.CountSpecies}» и потомков" : string.Empty) +
                 (p.CountSamePack ? ", той же стаи" : string.Empty) + (p.CountSelf ? ", включая себя" : string.Empty) +

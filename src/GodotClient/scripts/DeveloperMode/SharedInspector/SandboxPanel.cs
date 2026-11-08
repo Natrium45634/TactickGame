@@ -115,6 +115,22 @@ public sealed class SandboxPanel
             var rulesets = library.Items(ContentTypeRegistry.CombatRuleset).Where(r => !r.HasErrors).Select(r => new ChoiceOption(r.Id, r.Name)).ToList();
             panel.Choice(_prefix + "sandbox.ruleset", "Правила боя (K)", rulesets, _setup.RulesetId, v => _setup = _setup with { RulesetId = v });
         }
+        // Spec part 6 §6, §11 p.3: the side of the target and a forced outcome for provable checks (never in a match).
+        panel.Choice(_prefix + "sandbox.side", "Сторона цели (цель смотрит вперёд)", Enumerable.Range(0, 6)
+            .Select(i => new ChoiceOption(i.ToString(CultureInfo.InvariantCulture), HexTactics.Core.Combat.SurpriseMath.SectorNames[i])).ToList(),
+            _setup.Sector.ToString(CultureInfo.InvariantCulture), v => _setup = _setup with { Sector = int.Parse(v, CultureInfo.InvariantCulture) });
+        panel.Choice(_prefix + "sandbox.outcome", "Исход (только для проверки)", new List<ChoiceOption>
+        {
+            new("roll", "по броску"), new("normal", "обычный, не внезапный"), new("surprise", "внезапный"), new("crit", "крит"), new("super", "сверхкрит"), new("surprise_super", "внезапный сверхкрит"),
+        }, Outcome(), v => _setup = v switch
+        {
+            "normal" => _setup with { ForceSurprise = false, ForceCrit = HexTactics.Core.Combat.CritTier.Normal },
+            "surprise" => _setup with { ForceSurprise = true, ForceCrit = HexTactics.Core.Combat.CritTier.Normal },
+            "crit" => _setup with { ForceSurprise = false, ForceCrit = HexTactics.Core.Combat.CritTier.Crit },
+            "super" => _setup with { ForceSurprise = false, ForceCrit = HexTactics.Core.Combat.CritTier.SuperCrit },
+            "surprise_super" => _setup with { ForceSurprise = true, ForceCrit = HexTactics.Core.Combat.CritTier.SuperCrit },
+            _ => _setup with { ForceSurprise = null, ForceCrit = null },
+        });
         panel.LineText(_prefix + "sandbox.health", "Здоровье цели, %", Inspector.Num(_setup.HealthPercent), v => _setup = _setup with { HealthPercent = Parse(v, _setup.HealthPercent, 1, 100) });
         panel.LineText(_prefix + "sandbox.enemies", "Врагов цели вокруг (0–6)", _setup.EnemiesAround.ToString(CultureInfo.InvariantCulture), v => _setup = _setup with { EnemiesAround = (int)Parse(v, _setup.EnemiesAround, 0, 6) },
             "Атакующий стоит рядом и считается одним из них.");
@@ -125,6 +141,16 @@ public sealed class SandboxPanel
             rebuild();
         }, ButtonKind.Primary);
     }
+
+    private string Outcome() => (_setup.ForceSurprise, _setup.ForceCrit) switch
+    {
+        (null, null) => "roll",
+        (true, HexTactics.Core.Combat.CritTier.SuperCrit) => "surprise_super",
+        (true, _) => "surprise",
+        (_, HexTactics.Core.Combat.CritTier.SuperCrit) => "super",
+        (_, HexTactics.Core.Combat.CritTier.Crit) => "crit",
+        _ => "normal",
+    };
 
     private static double Parse(string text, double fallback, double min, double max) =>
         double.TryParse(text.Trim().Replace(',', '.').TrimEnd('%').Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && double.IsFinite(v)

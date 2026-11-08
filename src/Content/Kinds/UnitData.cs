@@ -51,6 +51,9 @@ public sealed class UnitData : IContentData
     public const double MinArmor = 0;
     public const double MaxArmor = 1_000_000;
 
+    /// <summary>Critical chance of the unit's hits in percentage points (spec part 6 §7.1); may exceed 100 (supercrit).</summary>
+    public double CritChance { get; set; }
+
     /// <summary>Armor penetration of the normal attack in defense points (spec part 6 §3.4 p.4).</summary>
     public double AttackArmorPenetration { get; set; }
 
@@ -151,6 +154,12 @@ public sealed class UnitData : IContentData
         },
         new()
         {
+            Key = "critChance", Label = "Шанс крита", Kind = FieldKind.Number, Default = 0.0, Min = 0, Max = 1000, Unit = "п.п.",
+            Hint = "Только если правила боя карты включают криты: 35 — 35 % крита, 100 — крит всегда, 125 — ещё 25 % сверхкрита, 200 — сверхкрит всегда.",
+            Get = o => ((UnitData)o).CritChance, Set = (o, v) => ((UnitData)o).CritChance = (double)v!,
+        },
+        new()
+        {
             Key = "attackArmorPenetration", Label = "Пробитие защиты A", Kind = FieldKind.Number, Default = 0.0, Min = 0, Max = 1_000_000, Unit = "очк.",
             Advanced = true, Hint = "Обычный удар вычитает столько очков из защиты A цели (не ниже 0); сопротивление R не меняет.",
             Get = o => ((UnitData)o).AttackArmorPenetration, Set = (o, v) => ((UnitData)o).AttackArmorPenetration = (double)v!,
@@ -213,6 +222,7 @@ public sealed class UnitData : IContentData
             ["attackAreaSplit"] = AttackAreaSplit,
             ["resistances"] = ResistancesJson(),
             ["armor"] = ValuesJson(Armor),
+            ["critChance"] = CritChance,
             ["attackArmorPenetration"] = AttackArmorPenetration,
             ["attackArmorPenetrationPercent"] = AttackArmorPenetrationPercent,
             ["resistanceProfiles"] = Strings(ResistanceProfiles),
@@ -267,6 +277,7 @@ public sealed class UnitData : IContentData
 
         ReadValues(obj, "armor", data.Armor, issues, "защита A — число очков");
         data.AttackArmorPenetration = JsonFields.Number(obj, "attackArmorPenetration", 0, issues, string.Empty);
+        data.CritChance = JsonFields.Number(obj, "critChance", 0, issues, string.Empty);
         data.AttackArmorPenetrationPercent = JsonFields.Number(obj, "attackArmorPenetrationPercent", 0, issues, string.Empty);
         data.ResistanceProfiles.AddRange(JsonFields.TextList(obj, "resistanceProfiles", issues, string.Empty));
         data.DefenseRules.AddRange(JsonFields.TextList(obj, "defenseRules", issues, string.Empty));
@@ -674,7 +685,7 @@ public sealed class UnitData : IContentData
             MaxHealth = MaxHealth, MoveSpeed = MoveSpeed, AttackRate = AttackRate, AttackPower = AttackPower,
             AttackRange = AttackRange, Side = Side, Color = Color, Scale = Scale,
             AttackDamageType = AttackDamageType, AttackAreaRadius = AttackAreaRadius, AttackAreaSplit = AttackAreaSplit,
-            AttackArmorPenetration = AttackArmorPenetration, AttackArmorPenetrationPercent = AttackArmorPenetrationPercent,
+            AttackArmorPenetration = AttackArmorPenetration, AttackArmorPenetrationPercent = AttackArmorPenetrationPercent, CritChance = CritChance,
         };
         foreach (var (key, value) in Armor)
         {

@@ -41,6 +41,14 @@ public sealed record SandboxSetup
     /// <summary>The attacker: a unit of the library (its outgoing passives act, spec part 6 §4.2, §11); null — a plain attacker.</summary>
     public string? AttackerUnitId { get; init; }
 
+    /// <summary>The side of the target the attacker stands on (spec part 6 §6.1): 0 — front … 3 — rear, clockwise.</summary>
+    public int Sector { get; init; }
+
+    /// <summary>A forced outcome (spec part 6 §11 p.3: «принудительно: обычный / крит / сверхкрит, внезапный / нет»); null — the roll.</summary>
+    public bool? ForceSurprise { get; init; }
+
+    public CritTier? ForceCrit { get; init; }
+
     /// <summary>The combat ruleset whose K is used (spec part 6 §3.2); the standard one by default.</summary>
     public string RulesetId { get; init; } = CombatRulesetData.Standard;
 
@@ -181,7 +189,9 @@ public static class HitSandbox
             sim.Spawn(SpawnRequest.AtCell(cell, side, HexDirection.North) with { Profile = new UnitProfile("sandbox." + name, name, stats, noSkills) }).Unit!.Value;
 
         var target = Spawn(Center, Side.Player, targetStats, "цель");
-        var ring = HexDirections.All.Select(d => Center.Neighbor(d)).ToList();
+        // The target faces north; the attacker stands on the chosen side (spec part 6 §6.1), the others around.
+        var side = Math.Clamp(setup.Sector, 0, 5);
+        var ring = Enumerable.Range(0, 6).Select(i => Center.Neighbor(HexDirections.All[(side + i) % 6])).ToList();
         var labels = new Dictionary<UnitId, string>();
         var enemies = Math.Clamp(setup.EnemiesAround, 0, 6);
         var allies = Math.Clamp(setup.AlliesAround, 0, 6 - enemies);
@@ -194,7 +204,13 @@ public static class HitSandbox
         }
         else
         {
-            attacker = Spawn(HexCoord.FromOffset(3, 0), Side.Enemy, attackerStats, "атакующий");
+            var far = Center;
+            for (var step = 0; step < 3; step++)
+            {
+                far = far.Neighbor(HexDirections.All[side]);
+            }
+
+            attacker = Spawn(far, Side.Enemy, attackerStats, "атакующий");
         }
 
         labels[attacker] = "атакующий";
@@ -223,7 +239,8 @@ public static class HitSandbox
         sim.Damage.Trace = trace;
         var typeId = types.ContainsKey(setup.DamageTypeId) ? setup.DamageTypeId : DamageTypes.Physical;
         var result = sim.Damage.Resolve(sim.Damage.Create(attacker, target, typeId, setup.Amount, DamageOrigin.Skill, setup.Penetration,
-            armorPenetration: setup.ArmorPenetration, armorPenetrationPercent: setup.ArmorPenetrationPercent), sim.Tick);
+            armorPenetration: setup.ArmorPenetration, armorPenetrationPercent: setup.ArmorPenetrationPercent, canCrit: true, canSurprise: true, rollKey: "sandbox")
+            with { ForcedSurprise = setup.ForceSurprise, ForcedCrit = setup.ForceCrit }, sim.Tick);
         var reactions = sim.Damage.Results.Where(r => r.Event.Reactive).ToList();
         var others = labels.Select(x => (x.Value, othersBefore[x.Key], sim.State.FindUnit(x.Key)?.CurrentHealth ?? 0)).ToList();
 
@@ -236,6 +253,21 @@ public static class HitSandbox
         {
             // Spec part 6 §4.2, §8 stage 2: the attacker's passives change the strength before any defense.
             Stage($"Пассивы атакующего: сила {N(result.BaseAmount)} → {N(result.BaseAmount * result.OutgoingMultiplier)} (×{N3(result.OutgoingMultiplier)}: {Sources(DamageModifierKind.Outgoing)}).");
+        }
+
+        if (rules.SurpriseEnabled && result.SurpriseSector is { } sector && (result.SurpriseChance > 0 || setup.ForceSurprise is not null))
+        {
+            // Spec part 6 §6.3 p.4: «Зона: задний фланг → 75% → бросок → да/нет → ×1,5».
+            var roll = setup.ForceSurprise is null ? $"бросок {N3(result.SurpriseRoll ?? 0)}" : "исход задан";
+            Stage($"Внезапность: {SurpriseMath.SectorNames[sector]} → {N(result.SurpriseChance)} % → {roll} → {(result.Surprised ? $"да, ×{N(rules.SurpriseMultiplier)}" : "нет")}.");
+        }
+
+        if (rules.CritEnabled && (result.CritChance > 0 || setup.ForceCrit is not null))
+        {
+            var c = result.CritChance;
+            var roll = setup.ForceCrit is null ? $"бросок {N3(result.CritRoll ?? 0)}" : "исход задан";
+            var tier = result.Crit switch { CritTier.SuperCrit => $"сверхкрит ×{N(rules.SuperCritMultiplier)}", CritTier.Crit => $"крит ×{N(rules.CritMultiplier)}", _ => "обычный" };
+            Stage($"Крит: шанс {N(c)} п.п. (крит {N(CritMath.CritOnlyChance(c) * 100)} %, сверхкрит {N(CritMath.SuperChance(c) * 100)} %) → {roll} → {tier}.");
         }
 
         Stage($"До защиты: сила удара D0 = {N(result.D0)} ({type.Name.ToLowerInvariant()}).");

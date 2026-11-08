@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.ruleset.standard",
   "kind": "combat_ruleset",
   "name": "Стандартные правила боя",
-  "description": "Правила новых карт (ТЗ ч.6 §3.2, §10.3): K защиты = 100 — при A = 100 урон после сопротивления уменьшается вдвое. Значение временное (PROTOTYPE_DEFAULT).",
+  "description": "Правила новых карт (ТЗ ч.6 §3.2, §6, §7, §10.3): K защиты = 100; внезапность по стороне цели 0/25/75/100 % (спереди / передние фланги / задние фланги / сзади) с ×1,5; криты ×1,5 и сверхкриты ×2,25 по шансу крита атакующего. Значения временные (PROTOTYPE_DEFAULT).",
   "revision": 1,
   "modified": "2026-11-08T00:00:00Z",
   "tags": [
@@ -12,6 +12,20 @@
   "references": [],
   "data": {
     "defenseK": 100,
-    "defenseKByFamily": {}
+    "defenseKByFamily": {},
+    "surpriseEnabled": true,
+    "surpriseChances": [
+      0,
+      25,
+      75,
+      100,
+      75,
+      25
+    ],
+    "surpriseMultiplier": 1.5,
+    "critEnabled": true,
+    "baseCritChance": 0,
+    "critMultiplier": 1.5,
+    "superCritMultiplier": 2.25
   }
 }
