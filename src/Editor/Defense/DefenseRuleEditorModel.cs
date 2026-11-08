@@ -233,6 +233,43 @@ public static class DefenseRuleSummary
         return text;
     }
 
+    /// <summary>A card line: «огонь (пример) · лечение 25 % + отражение 75 % · R ≥ 300 %».</summary>
+    public static string Short(DefenseRuleData rule, ContentLibrary library)
+    {
+        var registry = library.Registry.DefenseActions;
+        string P(EffectData a) => N((FieldSchema.TryNumber(a.Get("fraction") ?? registry.Find(a.Type)?.FindField("fraction")?.Default, out var f) ? f : 0) * 100) + " %";
+        string H(EffectData a) => N(FieldSchema.TryNumber(a.Get("amount") ?? registry.Find(a.Type)?.FindField("amount")?.Default, out var v) ? v : 0) + " HP";
+        var actions = rule.Actions.Select(a => a.Type switch
+        {
+            "immunity" => "иммунитет",
+            "negate" => $"поглощение {P(a)}",
+            "convert_to_healing" => $"лечение {P(a)}",
+            "convert_to_shield" => $"в щит {P(a)}",
+            "redirect_as_damage" => $"отражение {P(a)}",
+            "flat_reduction" => $"−{H(a)}",
+            "damage_cap" => $"не больше {H(a)}",
+            "retaliate" => $"ответ {P(a)}",
+            "vampirism" => $"вампиризм {P(a)}",
+            "status_immunity" => "без статусов",
+            _ => a.Type,
+        });
+        var type = rule.Trigger == DefenseActionRegistry.OnStatusApplied ? "статусы"
+            : rule.DamageType == DefenseRuleData.AnyType ? "любой урон"
+            : library.Find(ContentTypeRegistry.DamageType, rule.DamageType)?.Name.ToLowerInvariant() ?? rule.DamageType;
+        var text = $"{type} · {string.Join(" + ", actions)}";
+        if (rule.MinEffectiveResistance is { } r)
+        {
+            text += $" · R ≥ {N(r)} %";
+        }
+
+        if (rule.HealthBelowPercent is { } h)
+        {
+            text += $" · HP < {N(h)} %";
+        }
+
+        return text;
+    }
+
     private static string TypePart(DefenseRuleData rule, ContentLibrary library)
     {
         var text = rule.DamageType == DefenseRuleData.AnyType

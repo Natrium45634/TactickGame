@@ -158,7 +158,8 @@ public class UnitEditorTests
         Assert.Equal(50, saved.Resistances["core.damage.physical"]);
         Assert.Equal(50, editor.EffectiveResistance("core.damage.slashing"));
         Assert.Contains("Сильные стороны: ", editor.ResistanceSummary());
-        Assert.Contains("режущий +50 %", editor.ResistanceSummary());
+        Assert.Contains("физический +50 %", editor.ResistanceSummary());
+        Assert.DoesNotContain("режущий", editor.ResistanceSummary()); // subtypes like their family are not repeated (v0.24.0)
     }
 
     [Fact]

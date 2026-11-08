@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.23.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.24.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
@@ -404,6 +404,11 @@ tests/*  ──► соответствующие сборки
   библиотеки). Конструктор типа — `DamageTypeEditorModel`; набор — `ResistanceProfileEditorModel`. «Проверить на ударе» —
   `Editor/Mechanics/HitSandbox`: одноразовая `GameSimulation` с `DamageResolver.Trace`; клиент — `SandboxPanel` в колонке
   предпросмотра редакторов правила, типа и юнита.
+- **Инспектор юнита (с v0.24.0, ТЗ ч.5 §7, D-136–D-139).** Секции с резюме из `UnitEditorModel.Sections`; таблица — 
+  `UnitEditorModel.ResistanceView(поиск, показать все, раскрытые семейства)`; карточки — `DefenseCards`. Вложенный редактор:
+  `IContentEditor.NestedRequested` → `DeveloperMode.OpenNested` откладывает родительский узел (`RemoveChild`) и возвращает его в
+  `CloseEditor`, передав сохранённый объект. Автоматизация: элемент закрытой секции — `IContentEditor.Reveal(id)` и повтор
+  шага. Отладка защиты — только `GameMode` с `isTest` (`UiText.DefenseDebug`).
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -535,6 +540,11 @@ tests/*  ──► соответствующие сборки
 `unit.profile.pick|add|save`, `unit.profile.<i>.remove`, `unit.res.<ключ>.reset`, `expect:profiles:<N|названия>`,
 `expect:resistance-source:<ключ>:own|inherited|none`; песочница — `<префикс>sandbox` (раскрыть), `<префикс>sandbox.target|type|amount|penetration|
 health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), проверка `expect:sandbox:<текст>`.
+С v0.24.0: секции юнита `unit.sec.main|attack|res|more` (`expect:section:<секция>`); таблица — `unit.res.search`, `unit.res.all`,
+`unit.res.<тип>.expand`, `unit.res.<тип>.rules` (`expect:res-rows:<ключи без core.damage.>`, `expect:res-has:<строка>:yes|no`,
+`expect:res-summary:<текст>`); карточки — `unit.rule.<i>.card|copy|remove`, `unit.shield.<i>.card`; меню — `unit.rule.addmenu`;
+копирование — `unit.copy.from|run`; бой — `game.debugdefense`; `expect:control:<id>:yes|no` — элемент есть на экране.
+Шаг к элементу закрытой секции сначала раскрывает её (до 6 кадров).
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
@@ -546,9 +556,10 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV19` = V18 + редактор гексов, тест гекса, карта с жгучей и целебной поверхностями для v0.19.x,
 `$RegressionScenarioV20` = V19 + экспорт, импорт, конфликты для v0.20.0, `$RegressionScenarioV21` = V20 + сопротивления и типы
 урона для v0.21.0, `$RegressionScenarioV22` = V21 + правила защиты, щиты и «огонь 300 %» в бою для v0.22.0,
-`$RegressionScenarioV23` = V22 + «Механики» (тип, набор, песочница, наборы юнита) для v0.23.0+, `$CleanImportScenarioV20` — третий запуск с чистой
+`$RegressionScenarioV23` = V22 + «Механики» (тип, набор, песочница, наборы юнита) для v0.23.0,
+`$RegressionScenarioV24` = V23 + секции юнита, таблица, карточки, правило поверх юнита, отладка теста для v0.24.0+, `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

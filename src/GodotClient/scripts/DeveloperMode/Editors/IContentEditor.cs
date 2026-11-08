@@ -25,6 +25,15 @@ public interface IContentEditor
     /// <summary>«Тест»: a temporary copy should be played in the game mode.</summary>
     event Action<ContentItem>? TestRequested;
 
+    /// <summary>
+    /// The editor wants another object edited on top of it (spec part 5 §7.3: a copy of a rule from the unit editor); the
+    /// callback gets the saved object (or null) when that editor closes, and this editor comes back with its unsaved state.
+    /// </summary>
+    event Action<ContentItem, Action<ContentItem?>>? NestedRequested;
+
+    /// <summary>Opens the collapsed part that holds the control <paramref name="automationId"/>; false if there is none.</summary>
+    bool Reveal(string automationId);
+
     ContentOperationResult Save();
 
     /// <summary>Drops unsaved changes (and their draft).</summary>

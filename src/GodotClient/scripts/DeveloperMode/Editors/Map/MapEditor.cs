@@ -81,6 +81,13 @@ public partial class MapEditor : Node3D, IContentEditor
 
     public event Action<ContentItem>? TestRequested;
 
+#pragma warning disable CS0067 // the map editor opens no nested editors
+    public event Action<ContentItem, Action<ContentItem?>>? NestedRequested;
+#pragma warning restore CS0067
+
+    /// <summary>The map editor has no collapsed sections.</summary>
+    public bool Reveal(string automationId) => false;
+
     /// <summary>Opens <paramref name="item"/> (a library object or a new unsaved one); call before adding the node.</summary>
     public void Configure(ContentLibrary library, ContentItem item, ContentItem? draft = null)
     {

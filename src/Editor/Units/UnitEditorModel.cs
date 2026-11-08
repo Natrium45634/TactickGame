@@ -26,6 +26,18 @@ public sealed record ResistanceRow(string Key, string Label, double Value, int D
     public bool Inherited => Source is not null && !Own;
 }
 
+/// <summary>A row of the compact resistance table (spec part 5 §7.2): a family row knows whether it has subtypes and is open.</summary>
+public sealed record ResistanceViewRow(ResistanceRow Row, bool HasChildren, bool Expanded);
+
+/// <summary>The visible rows and how many rows the filter hides («Показать все» / search shows them).</summary>
+public sealed record ResistanceView(IReadOnlyList<ResistanceViewRow> Rows, int Hidden);
+
+/// <summary>A compact card of «Особые защиты и реакции» (spec part 5 §7.2): «Огненная конверсия 25/75», «Щит 50 HP».</summary>
+public sealed record DefenseCard(string Id, string Title, string Short, string Summary, bool Problem);
+
+/// <summary>One line of the section headers of the unit inspector (spec part 5 §7.1).</summary>
+public sealed record UnitSections(string Main, string Attack, string Resistances, string More);
+
 /// <summary>A saved resistance set that can be applied to the unit.</summary>
 public sealed record ProfileChoice(string Id, string Name, string Summary, bool IsBuiltIn);
 
@@ -282,6 +294,199 @@ public sealed class UnitEditorModel : DefinitionEditorModel
         return null;
     }
 
+    // ------------------------------------------------------------------ progressive disclosure (spec part 5 §7.1–§7.5)
+
+    /// <summary>Prefix of template choices in <see cref="AddRuleChoices"/>.</summary>
+    public const string TemplatePrefix = "template:";
+
+    /// <summary>The summaries of the four inspector sections; only one section is open at a time.</summary>
+    public UnitSections Sections()
+    {
+        var u = Unit;
+        var type = Library.Find(ContentTypeRegistry.DamageType, u.AttackDamageType)?.Name.ToLowerInvariant() ?? u.AttackDamageType;
+        string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        var reactions = u.DefenseRules.Count + u.Shields.Count;
+        var res = ResistanceStrengths();
+        return new UnitSections(
+            $"{N(u.MaxHealth)} HP · {N(u.MoveSpeed)} гекс/с · {N(u.AttackRate)} удар/с",
+            $"атака {N(u.AttackPower)}, {type}{(u.AttackAreaRadius > 0 ? $", область {u.AttackAreaRadius}" : string.Empty)} · навыков: {u.Skills.Count}",
+            (res.Length == 0 ? "всё 0 %" : res) + (reactions > 0 ? $" · реакций: {reactions}" : string.Empty),
+            $"ред. {Item.Revision} · схема {Item.Kind.SchemaVersion}" + (u.ResistanceProfiles.Count > 0 ? $" · наборов: {u.ResistanceProfiles.Count}" : string.Empty));
+    }
+
+    /// <summary>«физический +70 %, дробящий −120 %» — the values the unit has (sets and own), in table order (section header).</summary>
+    private string ResistanceStrengths()
+    {
+        var parts = ResistanceRows().Where(r => r.Value != 0)
+            .Select(r => $"{(r.Key == UnitData.GlobalResistance ? "все типы" : r.Label.ToLowerInvariant())} {r.Value.ToString("+0.##;−0.##", CultureInfo.InvariantCulture)} %")
+            .ToList();
+
+        return parts.Count <= 3 ? string.Join(", ", parts) : string.Join(", ", parts.Take(3)) + $" и ещё {parts.Count - 3}";
+    }
+
+    /// <summary>
+    /// The compact table (spec part 5 §7.2, §7.5): «все типы», the built-in families and every non-zero row are always shown;
+    /// subtypes appear under an open family; other (custom) types only through the search (name, id, tag, family) or «Показать
+    /// все». Nothing is lost: hidden rows are counted.
+    /// </summary>
+    public ResistanceView ResistanceView(string search, bool showAll, IReadOnlySet<string> expanded)
+    {
+        var all = ResistanceRows();
+        var familyOf = new Dictionary<string, string>(StringComparer.Ordinal);
+        var tags = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var t in Library.Items(ContentTypeRegistry.DamageType))
+        {
+            if (t.Data is DamageTypeData d)
+            {
+                familyOf[t.Id] = d.Family.Length == 0 ? t.Id : d.Family;
+                tags[t.Id] = string.Join(" ", d.Tags);
+            }
+        }
+
+        bool Matches(ResistanceRow r) => search.Length > 0 &&
+            (r.Label.Contains(search, StringComparison.CurrentCultureIgnoreCase) || r.Key.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+             (tags.TryGetValue(r.Key, out var tg) && tg.Contains(search, StringComparison.OrdinalIgnoreCase)) ||
+             (familyOf.TryGetValue(r.Key, out var f) && f != r.Key && all.FirstOrDefault(x => x.Key == f)?.Label.Contains(search, StringComparison.CurrentCultureIgnoreCase) == true));
+
+        var rows = new List<ResistanceViewRow>();
+        var hidden = 0;
+        foreach (var r in all)
+        {
+            var family = r.Depth == 0 ? r.Key : familyOf.GetValueOrDefault(r.Key, r.Key);
+            var hasChildren = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key);
+            var builtInGroup = r.Depth == 0 && (r.Key == UnitData.GlobalResistance || r.Key.StartsWith("core.", StringComparison.Ordinal));
+            var subtreeSearch = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key && Matches(x));
+            var subtreeValue = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key && x.Value != 0);
+            bool visible;
+            if (showAll)
+            {
+                visible = true;
+            }
+            else if (search.Length > 0)
+            {
+                // A search narrows the table to what matches (and the families around matching subtypes).
+                visible = r.Key == UnitData.GlobalResistance || Matches(r) || subtreeSearch;
+            }
+            else
+            {
+                visible = r.Value != 0 || r.Own || (r.Depth == 0 ? builtInGroup || subtreeValue : expanded.Contains(family));
+            }
+
+            if (visible)
+            {
+                rows.Add(new ResistanceViewRow(r, hasChildren, expanded.Contains(r.Key) || showAll || (search.Length > 0 && subtreeSearch)));
+            }
+            else
+            {
+                hidden++;
+            }
+        }
+
+        return new ResistanceView(rows, hidden);
+    }
+
+    /// <summary>
+    /// Takes over the resistance sets and own values of another unit (spec part 5 §7.5 «копирование профиля между юнитами»);
+    /// rules and shields stay. One undo step.
+    /// </summary>
+    public string? CopyResistancesFrom(string unitId)
+    {
+        if (Library.Find(ContentTypeRegistry.Unit, unitId) is not { Data: UnitData other } source)
+        {
+            return $"юнит «{unitId}» не найден";
+        }
+
+        Apply($"Сопротивления как у «{source.Name}»", (d, _) =>
+        {
+            var u = (UnitData)d;
+            u.ResistanceProfiles.Clear();
+            u.ResistanceProfiles.AddRange(other.ResistanceProfiles);
+            u.Resistances.Clear();
+            foreach (var (key, value) in other.Resistances)
+            {
+                u.Resistances[key] = value;
+            }
+        });
+        return null;
+    }
+
+    /// <summary>The attached rules and the shields as short cards, in the order the rules act.</summary>
+    public IReadOnlyList<DefenseCard> DefenseCards()
+    {
+        var cards = new List<DefenseCard>();
+        foreach (var (id, name, summary) in RuleSummaries())
+        {
+            var rule = Library.Find(ContentTypeRegistry.DefenseRule, id)?.Data as DefenseRuleData;
+            cards.Add(new DefenseCard(id, name, rule is null ? "не найдено" : Defense.DefenseRuleSummary.Short(rule, Library), summary, summary.StartsWith('✗')));
+        }
+
+        foreach (var s in Unit.Shields.OrderBy(s => s.Order).ThenBy(s => s.Name, StringComparer.Ordinal))
+        {
+            var accepts = s.DamageType == ShieldData.AnyType ? "любой урон" : Library.Find(ContentTypeRegistry.DamageType, s.DamageType)?.Name.ToLowerInvariant() ?? s.DamageType;
+            cards.Add(new DefenseCard("shield:" + s.Name, $"Щит «{s.Name}»", $"{s.Capacity.ToString("0.##", CultureInfo.InvariantCulture)} HP · {accepts}",
+                "Принимает уже рассчитанный урон до HP; в бою начинается полным.", false));
+        }
+
+        return cards;
+    }
+
+    /// <summary>«Добавить правило»: templates first (a new rule for this unit), then saved rules (attached by reference).</summary>
+    public IReadOnlyList<(string Value, string Label, string Hint)> AddRuleChoices(string filter = "")
+    {
+        var list = new List<(string, string, string)>();
+        foreach (var t in Defense.DefenseRuleTemplates.All)
+        {
+            if (filter.Length == 0 || t.Label.Contains(filter, StringComparison.CurrentCultureIgnoreCase) || t.Hint.Contains(filter, StringComparison.CurrentCultureIgnoreCase))
+            {
+                list.Add((TemplatePrefix + t.Id, $"шаблон: {t.Label}", t.Hint));
+            }
+        }
+
+        foreach (var c in AvailableRules(filter))
+        {
+            list.Add((c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (своё)"), c.Summary));
+        }
+
+        return list;
+    }
+
+    /// <summary>A new, unsaved rule from a template, named after the unit (opened in the rule editor, attached when saved).</summary>
+    public ContentItem? NewRuleFromTemplate(string templateId)
+    {
+        if (Defense.DefenseRuleTemplates.Find(templateId) is not { } template)
+        {
+            return null;
+        }
+
+        var item = Library.Create(ContentTypeRegistry.DefenseRule, $"{Item.Name}: {template.Label}");
+        item.Data = template.Build(Library.Registry.DefenseActions);
+        return item;
+    }
+
+    /// <summary>An unsaved copy of a saved rule with a new id (spec part 5 §6.4 «скопировать правило только для этого юнита»).</summary>
+    public ContentItem? CopyOfRule(string ruleId)
+    {
+        if (Library.Find(ContentTypeRegistry.DefenseRule, ruleId) is not { } rule)
+        {
+            return null;
+        }
+
+        var copy = rule.CopyAs(Library.NewId(ContentTypeRegistry.DefenseRule), ContentOrigin.User, $"{rule.Name} ({Item.Name})");
+        copy.Revision = 0;
+        return copy;
+    }
+
+    /// <summary>The unit refers to <paramref name="newId"/> instead of <paramref name="oldId"/>, in the same place (one undo step).</summary>
+    public void ReplaceRule(string oldId, string newId) => Apply("Правило заменено копией", (d, _) =>
+    {
+        var rules = ((UnitData)d).DefenseRules;
+        var index = rules.IndexOf(oldId);
+        if (index >= 0 && !rules.Contains(newId))
+        {
+            rules[index] = newId;
+        }
+    });
+
     // ------------------------------------------------------------------ resistances (spec part 5 §3, §7)
 
     /// <summary>The unit's base resistances: its sets in order, then its own values (spec part 5 §6.4).</summary>
@@ -423,12 +628,17 @@ public sealed class UnitEditorModel : DefinitionEditorModel
         var weak = new List<string>();
         foreach (var t in Library.Items(ContentTypeRegistry.DamageType))
         {
-            if (t.Data is not DamageTypeData { Legacy: false, Strategy: DamageTypeData.ResistanceAffected })
+            if (t.Data is not DamageTypeData { Legacy: false, Strategy: DamageTypeData.ResistanceAffected } d)
             {
                 continue;
             }
 
             var r = EffectiveResistance(t.Id);
+            if (d.Family.Length > 0 && Math.Abs(r - EffectiveResistance(d.Family)) < 1e-9)
+            {
+                continue; // a subtype like its family is already said by the family («физический +50 %»)
+            }
+
             var text = $"{t.Name.ToLowerInvariant()} {r.ToString("+0.##;−0.##", CultureInfo.InvariantCulture)} %";
             if (r > 0)
             {
@@ -440,12 +650,14 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             }
         }
 
+        var reactions = Unit.DefenseRules.Count + Unit.Shields.Count;
+        var tail = reactions > 0 ? $"; реакции: {Unit.DefenseRules.Count}" + (Unit.Shields.Count > 0 ? $", щиты: {Unit.Shields.Count}" : string.Empty) : string.Empty;
         if (strong.Count == 0 && weak.Count == 0)
         {
-            return "Сопротивлений нет: весь урон проходит полностью.";
+            return reactions > 0 ? $"Сопротивлений нет{tail}." : "Сопротивлений нет: весь урон проходит полностью.";
         }
 
-        return $"Сильные стороны: {(strong.Count == 0 ? "нет" : string.Join(", ", strong))}; слабости: {(weak.Count == 0 ? "нет" : string.Join(", ", weak))}.";
+        return $"Сильные стороны: {(strong.Count == 0 ? "нет" : string.Join(", ", strong))}; слабости: {(weak.Count == 0 ? "нет" : string.Join(", ", weak))}{tail}.";
     }
 }
 

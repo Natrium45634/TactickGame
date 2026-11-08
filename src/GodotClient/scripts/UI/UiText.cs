@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
@@ -101,6 +103,23 @@ public static class UiText
             _ => "скорость",
         };
         return (down ? "↓ " : "↑ ") + what;
+    }
+
+    /// <summary>
+    /// Every defense value of a unit for the marked debug of a test run (spec part 5 §7.4): resistances, rules, shields,
+    /// healing multiplier. Never part of the normal game card.
+    /// </summary>
+    public static string DefenseDebug(UnitState u, IReadOnlyDictionary<string, HexTactics.Core.Combat.DamageTypeDefinition> types)
+    {
+        string Name(string key) => key == HexTactics.Core.Combat.ResistanceSet.Global ? "все типы" : types.TryGetValue(key, out var t) ? t.Name.ToLowerInvariant() : key;
+        var values = u.Stats.Resistances.Values.OrderBy(v => v.Key, System.StringComparer.Ordinal)
+            .Select(v => $"{Name(v.Key)} {v.Value.ToString("+0.##;−0.##", System.Globalization.CultureInfo.InvariantCulture)} %").ToList();
+        var rules = u.Stats.DefenseRules.Select(r => $"«{(r.Name.Length > 0 ? r.Name : r.Id)}» (приоритет {r.Priority})").ToList();
+        var shields = u.Shields.Select(s => $"{s.Definition.Name} {Hp(s.Current)}/{Hp(s.Definition.Capacity)}").ToList();
+        return "⚙ ОТЛАДКА ЗАЩИТЫ (только тест из редактора)\n" +
+               $"сопротивления: {(values.Count == 0 ? "все 0 %" : string.Join(", ", values))}\n" +
+               $"правила: {(rules.Count == 0 ? "нет" : string.Join(", ", rules))} · щиты: {(shields.Count == 0 ? "нет" : string.Join(", ", shields))}" +
+               (u.Stats.HealingReceived != 1 ? $" · лечение ×{u.Stats.HealingReceived.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}" : string.Empty);
     }
 
     public static string UnitInfo(UnitState u, int? selectedWaypoint = null, bool paused = false, string? name = null)

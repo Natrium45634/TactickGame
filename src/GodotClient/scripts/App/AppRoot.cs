@@ -243,9 +243,16 @@ public partial class AppRoot : Node
                 {
                     if (AutomationIds.Find(arg) is not { } control)
                     {
+                        if (TryReveal(arg))
+                        {
+                            return AutomationRunner.Repeat;
+                        }
+
                         _automation.ReportCheck(false, $"ui:{arg} (control not found or hidden)");
                         return 1;
                     }
+
+                    _revealedFor = null;
 
                     // A control inside a scrolled panel is scrolled into view first (like a user would), then clicked
                     // on the next frame when the layout has moved it.
@@ -266,6 +273,12 @@ public partial class AppRoot : Node
                     var eq = arg.IndexOf('=');
                     var id = eq > 0 ? arg[..eq] : arg;
                     var value = eq > 0 ? arg[(eq + 1)..] : string.Empty;
+                    if (AutomationIds.Find(id) is null && TryReveal(id))
+                    {
+                        return AutomationRunner.Repeat;
+                    }
+
+                    _revealedFor = null;
                     _automation.ReportCheck(SetField(id, value), $"field:{id}={value}");
                     return 2;
                 }
@@ -317,6 +330,8 @@ public partial class AppRoot : Node
     }
 
     private string? _scrolledFor;
+    private string? _revealedFor;
+    private int _revealFrames;
 
     private static ScrollContainer? FindScroll(Node node)
     {
@@ -329,6 +344,27 @@ public partial class AppRoot : Node
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// A control in a collapsed section of the open editor: the editor opens that section (as a user would), the step runs
+    /// again on the next frames. Once per step, so a missing control still fails.
+    /// </summary>
+    private bool TryReveal(string id)
+    {
+        if (_revealedFor == id)
+        {
+            return ++_revealFrames < 6; // the editor rebuilds its panel within a frame or two
+        }
+
+        if (_developer?.ActiveEditor is not { } editor || !editor.Reveal(id))
+        {
+            return false;
+        }
+
+        _revealedFor = id;
+        _revealFrames = 0;
+        return true;
     }
 
     private static bool SetField(string id, string value)
@@ -397,6 +433,11 @@ public partial class AppRoot : Node
             case "category":
                 actual = _developer?.Category ?? "none";
                 ok = actual == a[1];
+                break;
+            case "control":
+                // expect:control:<automation id>:yes|no — the control exists and is visible
+                actual = AutomationIds.Find(a[1]) is null ? "no" : "yes";
+                ok = actual == a[2];
                 break;
             case "rows":
                 actual = _developer?.RowCount.ToString(CultureInfo.InvariantCulture) ?? "none";

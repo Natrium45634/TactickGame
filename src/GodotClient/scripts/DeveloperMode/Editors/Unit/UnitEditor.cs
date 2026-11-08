@@ -128,21 +128,87 @@ public partial class UnitEditor : DefinitionEditorShell
         return new Aabb(new Vector3((float)min.X, -VisualConfig.TileThickness, (float)min.Z), new Vector3((float)(max.X - min.X), 1.2f, (float)(max.Z - min.Z)));
     }
 
+    // ------------------------------------------------------------------ inspector (spec part 5 §7.1: one open section)
+
+    private const string SecMain = "main";
+    private const string SecAttack = "attack";
+    private const string SecRes = "res";
+    private const string SecMore = "more";
+
+    private static readonly string[] MainKeys = { "maxHealth", "moveSpeed", "attackRate", "side" };
+    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit" };
+
+    private string _section = SecMain;
+    private string _resSearch = string.Empty;
+    private bool _resAll;
+    private readonly HashSet<string> _expanded = new(System.StringComparer.Ordinal);
+    private bool _addRuleOpen;
+    private string? _openCard;
+    private string? _copyFrom;
+
     protected override void BuildProperties(Inspector inspector)
     {
-        var unit = _model.Unit;
-        inspector.Section("Характеристики");
-        foreach (var field in UnitData.Fields)
+        var sections = _model.Sections();
+        if (SectionHeader(inspector, SecMain, "Основное", sections.Main))
         {
-            if (field.Kind != HexTactics.Content.Schema.FieldKind.ReferenceList && field.Section == HexTactics.Content.Schema.FieldSections.Main)
-            {
-                inspector.Field(IdPrefix, field, unit, ApplyField);
-            }
+            BuildMain(inspector);
         }
 
-        inspector.Hint("Сила атаки (Attack Power) — урон одного удара и база навыков «% от атаки»; скорость атак — сколько ударов в секунду.");
+        if (SectionHeader(inspector, SecAttack, "Атака и навыки", sections.Attack))
+        {
+            BuildAttack(inspector);
+        }
 
-        inspector.Section("Навыки");
+        if (SectionHeader(inspector, SecRes, "Сопротивления", sections.Resistances))
+        {
+            BuildResistances(inspector);
+        }
+
+        if (SectionHeader(inspector, SecMore, "Дополнительно", sections.More))
+        {
+            BuildMore(inspector);
+        }
+    }
+
+    /// <summary>A section header: the open one shows its content, the others one line with their summary.</summary>
+    private bool SectionHeader(Inspector inspector, string id, string title, string summary)
+    {
+        var open = _section == id;
+        var button = inspector.Button($"{IdPrefix}sec.{id}", (open ? "▾ " : "▸ ") + title + (open ? string.Empty : "  ·  " + summary), () =>
+        {
+            _section = id;
+            Stamp++;
+        }, open ? ButtonKind.Primary : ButtonKind.Flat, summary);
+        button.Alignment = HorizontalAlignment.Left;
+        button.ClipText = true;
+        return open;
+    }
+
+    private void Fields(Inspector inspector, IEnumerable<string> keys)
+    {
+        foreach (var key in keys)
+        {
+            if (UnitData.Fields.FirstOrDefault(f => f.Key == key) is { } field)
+            {
+                inspector.Field(IdPrefix, field, _model.Unit, ApplyField);
+            }
+        }
+    }
+
+    private void BuildMain(Inspector inspector)
+    {
+        Fields(inspector, MainKeys);
+        Fields(inspector, UnitData.Fields.Where(f => f.Section == HexTactics.Content.Schema.FieldSections.Appearance).Select(f => f.Key));
+        inspector.Hint("Скорость атак — сколько обычных ударов в секунду; сила удара — в «Атака и навыки».");
+    }
+
+    private void BuildAttack(Inspector inspector)
+    {
+        var unit = _model.Unit;
+        Fields(inspector, AttackKeys);
+        inspector.Hint("Сила атаки (Attack Power) — урон одного удара и база навыков «% от атаки».");
+
+        inspector.Text("Навыки", size: 13);
         inspector.Hint("Ссылки на сохранённые навыки. Первый — кнопка R и меню ТД в бою; в одной ТД — одно применение.");
         for (var i = 0; i < unit.Skills.Count; i++)
         {
@@ -191,20 +257,60 @@ public partial class UnitEditor : DefinitionEditorShell
                 }
             });
         }
+    }
 
-        inspector.Section("Сопротивления");
-        inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип, от −500 до +500 %; сверх 100 % урон просто 0 — лечения и отражения сам по себе не даёт.");
+    /// <summary>
+    /// «Сопротивления» (spec part 5 §7.2, §7.5): sets, the short table (groups; subtypes under an open family; custom types by
+    /// search or «Показать все»), the special defenses as cards and the summary.
+    /// </summary>
+    private void BuildResistances(Inspector inspector)
+    {
+        var unit = _model.Unit;
+        inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип, −500…+500 %; сверх 100 % урон просто 0 — лечения и отражения это не даёт.");
         BuildProfiles(inspector);
-        foreach (var row in _model.ResistanceRows())
+
+        var view = _model.ResistanceView(_resSearch, _resAll, _expanded);
+        var tools = inspector.Row();
+        var search = AutomationIds.Register(new LineEdit { Text = _resSearch, PlaceholderText = "Поиск: тип, тег, семейство", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, ClearButtonEnabled = true }, IdPrefix + "res.search");
+        search.SetMeta("hx_commit_on_submit", true);
+        search.TextSubmitted += v => { _resSearch = v.Trim(); Stamp++; };
+        search.FocusExited += () =>
         {
+            if (search.Text.Trim() != _resSearch)
+            {
+                _resSearch = search.Text.Trim();
+                Stamp++;
+            }
+        };
+        search.TextChanged += v =>
+        {
+            if (v.Length == 0 && _resSearch.Length > 0)
+            {
+                _resSearch = string.Empty;
+                Stamp++;
+            }
+        };
+        tools.AddChild(search);
+        tools.AddChild(UiKit.Button(_resAll ? "Только основные" : "Показать все", () => { _resAll = !_resAll; Stamp++; }, ButtonKind.Flat, IdPrefix + "res.all",
+            _resAll ? "Скрыть нулевые строки и закрытые подтипы" : "Все типы урона, включая нулевые и свои"));
+
+        foreach (var viewRow in view.Rows)
+        {
+            var row = viewRow.Row;
+            var key = row.Key;
             var label = (row.Depth > 0 ? "    " : string.Empty) + row.Label;
             if (row.Bypass)
             {
-                inspector.ReadOnly(label, "обходит численные сопротивления (остановить — только «Иммунитет» ниже)");
+                if (row.Depth == 0)
+                {
+                    inspector.ReadOnly(label, "обходит численные R");
+                    inspector.Button($"{IdPrefix}res.{key}.rules", "Особые правила (иммунитет) ▸", () => OpenAddRule(DefenseTemplateFor(key), key), ButtonKind.Flat,
+                        "Чистый урон нельзя ослабить числом — только явным правилом защиты").Alignment = HorizontalAlignment.Left;
+                }
+
                 continue;
             }
 
-            var key = row.Key;
             inspector.LineText($"{IdPrefix}res.{key}", label + ", %", Inspector.Num(row.Value), v =>
             {
                 if (_model.SetResistance(key, v) is { } issue)
@@ -213,21 +319,77 @@ public partial class UnitEditor : DefinitionEditorShell
                     Stamp++;
                 }
             }, Explain(row));
+            if (viewRow.HasChildren && !_resAll && _resSearch.Length == 0)
+            {
+                inspector.Button($"{IdPrefix}res.{key}.expand", viewRow.Expanded ? "▾ скрыть подтипы" : "▸ подтипы", () =>
+                {
+                    if (!_expanded.Remove(key))
+                    {
+                        _expanded.Add(key);
+                    }
+
+                    Stamp++;
+                }, ButtonKind.Flat).Alignment = HorizontalAlignment.Left;
+            }
+
             if (row.Own && unit.ResistanceProfiles.Count > 0)
             {
-                inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Вернуть значение набора", () => _model.ResetResistance(key), ButtonKind.Flat, "Убрать своё значение юнита — действует значение набора (или 0)");
+                inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Вернуть значение набора", () => _model.ResetResistance(key), ButtonKind.Flat, "Убрать своё значение юнита — действует значение набора (или 0)").Alignment = HorizontalAlignment.Left;
             }
         }
 
-        inspector.Text(_model.ResistanceSummary(), size: 12);
+        if (view.Hidden > 0)
+        {
+            inspector.Hint($"Скрыто строк: {view.Hidden} (нулевые подтипы и свои типы) — поиск или «Показать все».");
+        }
 
         BuildDefenses(inspector);
+        inspector.Text(_model.ResistanceSummary(), size: 12);
+    }
 
-        inspector.Section("Внешний вид");
-        foreach (var field in UnitData.Fields.Where(f => f.Section == HexTactics.Content.Schema.FieldSections.Appearance))
+    private static string DefenseTemplateFor(string key) => key == HexTactics.Core.Combat.DamageTypes.True ? "immunity" : "complex";
+
+    private void OpenAddRule(string templateId, string? damageType)
+    {
+        _addRuleOpen = true;
+        _rulePick = UnitEditorModel.TemplatePrefix + templateId;
+        _ruleDamageType = damageType;
+        Stamp++;
+    }
+
+    private string? _ruleDamageType;
+
+    private void BuildMore(Inspector inspector)
+    {
+        var unit = _model.Unit;
+        inspector.ReadOnly("ID", _model.Item.Id);
+        inspector.ReadOnly("Редакция / схема", $"{_model.Item.Revision} / {_model.Item.Kind.SchemaVersion}");
+        inspector.ReadOnly("Наборы сопротивлений", unit.ResistanceProfiles.Count == 0 ? "нет" : string.Join(" → ", unit.ResistanceProfiles.Select(p => Library.Find(ContentTypeRegistry.ResistanceProfile, p)?.Name ?? p)));
+        var users = Library.UsedBy(_model.Item.Ref);
+        inspector.ReadOnly("Используется", users.Count == 0 ? "нигде" : string.Join(", ", users.Select(u => u.Name)));
+
+        inspector.Text("Скопировать сопротивления", size: 13);
+        var others = Library.Items(ContentTypeRegistry.Unit).Where(u => u.Id != _model.Item.Id && !u.HasErrors).ToList();
+        if (others.Count == 0)
         {
-            inspector.Field(IdPrefix, field, unit, ApplyField);
+            inspector.Hint("Других юнитов нет.");
+            return;
         }
+
+        _copyFrom = others.Any(o => o.Id == _copyFrom) ? _copyFrom : others[0].Id;
+        inspector.Choice(IdPrefix + "copy.from", "Из юнита", others.Select(o => new ChoiceOption(o.Id, o.Name)).ToList(), _copyFrom!, v => _copyFrom = v,
+            "Наборы и свои значения сопротивлений; правила и щиты не меняются.");
+        inspector.Button(IdPrefix + "copy.run", "Скопировать (Ctrl+Z — отменить)", () =>
+        {
+            if (_copyFrom is not null && _model.CopyResistancesFrom(_copyFrom) is { } refusal)
+            {
+                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            }
+            else
+            {
+                Message($"Сопротивления скопированы из «{Library.Find(ContentTypeRegistry.Unit, _copyFrom!)?.Name}».", null);
+            }
+        });
     }
 
     /// <summary>
@@ -242,105 +404,204 @@ public partial class UnitEditor : DefinitionEditorShell
             var id = unit.ResistanceProfiles[i];
             var item = Library.Find(ContentTypeRegistry.ResistanceProfile, id);
             var row = inspector.Row();
-            var title = new Label { Text = $"Набор: {item?.Name ?? "✗ " + id}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            var title = new Label { Text = $"Набор: {item?.Name ?? "✗ " + id} — {UnitEditorModel.ProfileSummary(Library, id)}", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            title.AddThemeFontSizeOverride("font_size", 12);
             row.AddChild(title);
             row.AddChild(UiKit.Button("✕", () => _model.RemoveProfile(id), ButtonKind.Normal, $"{IdPrefix}profile.{i}.remove", "Убрать набор у юнита (сам набор остаётся в библиотеке)"));
-            inspector.Text(UnitEditorModel.ProfileSummary(Library, id), dim: true, size: 12);
         }
 
         var choices = _model.AvailableProfiles();
+        var tools = inspector.Row();
         if (choices.Count > 0)
         {
             _profilePick = choices.Any(c => c.Id == _profilePick) ? _profilePick! : choices[0].Id;
-            inspector.Choice(IdPrefix + "profile.pick", "Набор сопротивлений", choices.Select(c => new ChoiceOption(c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (свой)"))).ToList(), _profilePick,
+            inspector.Choice(IdPrefix + "profile.pick", "Набор (пресет)", choices.Select(c => new ChoiceOption(c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (свой)"))).ToList(), _profilePick,
                 v => { _profilePick = v; Stamp++; }, choices.FirstOrDefault(c => c.Id == _profilePick)?.Summary);
-            inspector.Button(IdPrefix + "profile.add", "＋ Применить набор", () =>
+            tools.AddChild(UiKit.Button("＋ Применить набор", () =>
             {
                 if (_profilePick is not null && _model.AddProfile(_profilePick) is { } refusal)
                 {
                     Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
                 }
-            }, ButtonKind.Normal, "Значения набора — основа; свои значения юнита их перекрывают");
+            }, ButtonKind.Normal, IdPrefix + "profile.add", "Значения набора — основа; свои значения юнита их перекрывают"));
+            tools.MoveToFront();
         }
 
-        inspector.Button(IdPrefix + "profile.save", "Сохранить как набор", () =>
+        tools.AddChild(UiKit.Button("Сохранить как набор", () =>
         {
             var result = _model.SaveAsProfile($"{_model.Item.Name}: защита");
             Message(result.Ok ? $"Сохранён набор «{result.Item!.Name}» — его можно применить к другим юнитам." : "✗ " + result.Message, result.Ok ? null : HexTactics.Content.Model.IssueSeverity.Error);
-        }, ButtonKind.Flat, "Текущие сопротивления юнита — новым набором для других юнитов (юнит не меняется)");
+        }, ButtonKind.Flat, IdPrefix + "profile.save", "Текущие сопротивления юнита — новым набором для других юнитов (юнит не меняется)"));
     }
 
     /// <summary>
-    /// «Особые защиты и реакции» (spec part 5 §6.4, §8.3): attached rules by reference with their summaries, the picker of
-    /// saved rules, and the shields of the unit. Rules themselves are edited in the «Правила защиты» category.
+    /// «Особые защиты и реакции» (spec part 5 §7.2–§7.3): short cards of the rules and shields that open in place, «Добавить
+    /// правило» with templates and saved rules; a template or «Изменить копию» opens the rule editor on top and comes back here.
     /// </summary>
     private void BuildDefenses(Inspector inspector)
     {
         var unit = _model.Unit;
-        inspector.Section("Особые защиты и реакции");
-        inspector.Hint("Правила — ссылки на «Правила защиты» библиотеки (иммунитет, поглощение, отражение, ответный удар…); порядок — по приоритету правила.");
-        var summaries = _model.RuleSummaries();
-        for (var i = 0; i < summaries.Count; i++)
+        inspector.Text("Особые защиты и реакции", size: 13);
+        var cards = _model.DefenseCards();
+        var ruleIndex = 0;
+        var shieldIndex = 0;
+        var orderedShields = unit.Shields.Select((s, i) => (s, i)).OrderBy(x => x.s.Order).ThenBy(x => x.s.Name, System.StringComparer.Ordinal).Select(x => x.i).ToList();
+        foreach (var card in cards)
         {
-            var (id, name, summary) = summaries[i];
-            var row = inspector.Row();
-            var title = new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, AutowrapMode = TextServer.AutowrapMode.WordSmart };
-            row.AddChild(title);
-            row.AddChild(UiKit.Button("✕", () => _model.RemoveRule(id), ButtonKind.Normal, $"{IdPrefix}rule.{i}.remove", "Убрать правило у юнита (само правило остаётся в библиотеке)"));
-            var text = inspector.Text(summary, dim: true, size: 12);
-            if (summary.StartsWith('✗'))
+            var isShield = card.Id.StartsWith("shield:", System.StringComparison.Ordinal);
+            var cardId = isShield ? $"{IdPrefix}shield.{orderedShields[shieldIndex]}" : $"{IdPrefix}rule.{ruleIndex}";
+            var open = _openCard == cardId;
+            var button = inspector.Button(cardId + ".card", (open ? "▾ " : "▸ ") + card.Title + "  ·  " + card.Short, () => { _openCard = open ? null : cardId; Stamp++; }, ButtonKind.Flat, card.Summary);
+            button.Alignment = HorizontalAlignment.Left;
+            button.ClipText = true;
+            if (card.Problem)
             {
-                text.AddThemeColorOverride("font_color", UiKit.Error);
+                button.AddThemeColorOverride("font_color", UiKit.Error);
+            }
+
+            if (open && !isShield)
+            {
+                var ruleId = card.Id;
+                inspector.Text(card.Summary, dim: true, size: 12);
+                var row = inspector.Row();
+                row.AddChild(UiKit.Button("Изменить копию", () => EditCopy(ruleId), ButtonKind.Normal, $"{cardId}.copy", "Копия правила только для этого юнита; общее правило не меняется"));
+                row.AddChild(UiKit.Button("✕ Убрать", () => { _openCard = null; _model.RemoveRule(ruleId); }, ButtonKind.Normal, $"{cardId}.remove", "Убрать правило у юнита (само правило остаётся в библиотеке)"));
+            }
+            else if (open)
+            {
+                BuildShield(inspector, orderedShields[shieldIndex]);
+            }
+
+            if (isShield)
+            {
+                shieldIndex++;
+            }
+            else
+            {
+                ruleIndex++;
             }
         }
 
-        if (summaries.Count == 0)
+        if (cards.Count == 0)
         {
-            inspector.Hint("Особых правил нет.");
+            inspector.Hint("Особых защит нет — обычному юниту они не нужны.");
         }
 
-        inspector.LineText(IdPrefix + "rule.filter", "Добавить правило: поиск", _ruleFilter, v => { _ruleFilter = v; Stamp++; });
-        var choices = _model.AvailableRules(_ruleFilter);
-        if (choices.Count == 0)
-        {
-            inspector.Hint(_ruleFilter.Length > 0 ? "Ничего не найдено." : "Свободных правил нет — создайте правило в категории «Правила защиты».");
-        }
-        else
-        {
-            _rulePick = choices.Any(c => c.Id == _rulePick) ? _rulePick! : choices[0].Id;
-            inspector.Choice(IdPrefix + "rule.pick", "Правило из библиотеки", choices.Select(c => new ChoiceOption(c.Id, c.Name + (c.IsBuiltIn ? string.Empty : " (своё)"))).ToList(), _rulePick,
-                v => { _rulePick = v; Stamp++; }, choices.FirstOrDefault(c => c.Id == _rulePick)?.Summary);
-            inspector.Button(IdPrefix + "rule.add", "＋ Добавить правило", () =>
-            {
-                if (_rulePick is not null && _model.AddRule(_rulePick) is { } refusal)
-                {
-                    Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
-                }
-            });
-        }
-
-        inspector.Text("Щиты", size: 13);
-        inspector.Hint("Щит принимает уже рассчитанный урон до HP (и чистый тоже, если тип подходит); в бою начинается полным.");
-        var types = new List<ChoiceOption> { new(ShieldData.AnyType, "любой урон") };
-        types.AddRange(Library.Items(ContentTypeRegistry.DamageType).Where(t => t.Data is DamageTypeData { Legacy: false }).Select(t => new ChoiceOption(t.Id, t.Name)));
-        for (var i = 0; i < unit.Shields.Count; i++)
-        {
-            var shield = unit.Shields[i];
-            var index = i;
-            inspector.LineText($"{IdPrefix}shield.{i}.name", $"Щит {i + 1}: название", shield.Name, v => ApplyShield(index, "name", v));
-            inspector.LineText($"{IdPrefix}shield.{i}.capacity", "Прочность, HP", Inspector.Num(shield.Capacity), v => ApplyShield(index, "capacity", v), "Больше 0, не больше 100 000.");
-            inspector.Choice($"{IdPrefix}shield.{i}.damageTypeId", "Принимает", types, shield.DamageType, v => ApplyShield(index, "damageTypeId", v), "Семейство принимает и свои подтипы.");
-            inspector.LineText($"{IdPrefix}shield.{i}.order", "Порядок", shield.Order.ToString(CultureInfo.InvariantCulture), v => ApplyShield(index, "order", v), "Меньше — тратится раньше.");
-            inspector.Button($"{IdPrefix}shield.{i}.remove", "✕ Убрать щит", () => _model.RemoveShield(index), ButtonKind.Flat);
-        }
-
-        inspector.Button(IdPrefix + "shield.add", "＋ Добавить щит", () =>
+        var actions = inspector.Row();
+        actions.AddChild(UiKit.Button(_addRuleOpen ? "▾ Добавить правило" : "＋ Добавить правило", () => { _addRuleOpen = !_addRuleOpen; Stamp++; }, ButtonKind.Normal, IdPrefix + "rule.addmenu",
+            "Шаблон (новое правило для этого юнита) или сохранённое правило библиотеки"));
+        actions.AddChild(UiKit.Button("＋ Щит", () =>
         {
             if (_model.AddShield() is { } refusal)
             {
                 Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
             }
+            else
+            {
+                _openCard = $"{IdPrefix}shield.{_model.Unit.Shields.Count - 1}";
+            }
+        }, ButtonKind.Normal, IdPrefix + "shield.add"));
+        if (_addRuleOpen)
+        {
+            BuildAddRule(inspector);
+        }
+    }
+
+    private void BuildAddRule(Inspector inspector)
+    {
+        inspector.LineText(IdPrefix + "rule.filter", "Поиск: шаблоны и правила", _ruleFilter, v => { _ruleFilter = v; Stamp++; });
+        var choices = _model.AddRuleChoices(_ruleFilter);
+        if (choices.Count == 0)
+        {
+            inspector.Hint("Ничего не найдено.");
+            return;
+        }
+
+        _rulePick = choices.Any(c => c.Value == _rulePick) ? _rulePick! : choices[0].Value;
+        inspector.Choice(IdPrefix + "rule.pick", "Шаблон или правило", choices.Select(c => new ChoiceOption(c.Value, c.Label)).ToList(), _rulePick,
+            v => { _rulePick = v; Stamp++; }, choices.FirstOrDefault(c => c.Value == _rulePick).Hint);
+        inspector.Button(IdPrefix + "rule.add", "Добавить", () =>
+        {
+            if (_rulePick is null)
+            {
+                return;
+            }
+
+            if (_rulePick.StartsWith(UnitEditorModel.TemplatePrefix, System.StringComparison.Ordinal))
+            {
+                var item = _model.NewRuleFromTemplate(_rulePick[UnitEditorModel.TemplatePrefix.Length..]);
+                if (item is null)
+                {
+                    return;
+                }
+
+                if (_ruleDamageType is { } type && item.Data is DefenseRuleData data && data.Trigger != HexTactics.Content.Registry.DefenseActionRegistry.OnStatusApplied)
+                {
+                    data.DamageType = type;
+                }
+
+                _ruleDamageType = null;
+                RequestNested(item, saved =>
+                {
+                    if (saved is not null && _model.AddRule(saved.Id) is null)
+                    {
+                        Message($"Правило «{saved.Name}» сохранено и добавлено юниту.", null);
+                    }
+                    else
+                    {
+                        Message("Правило не сохранено — юнит не изменился.", HexTactics.Content.Model.IssueSeverity.Warning);
+                    }
+
+                    Stamp++;
+                });
+                return;
+            }
+
+            if (_model.AddRule(_rulePick) is { } refusal)
+            {
+                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            }
+            else
+            {
+                _addRuleOpen = false;
+            }
+        }, ButtonKind.Primary, "Шаблон откроет редактор правила; после сохранения правило добавится юниту");
+    }
+
+    /// <summary>«Изменить копию» (spec part 5 §7.3): the copy opens in the rule editor; when saved the unit refers to it.</summary>
+    private void EditCopy(string ruleId)
+    {
+        if (_model.CopyOfRule(ruleId) is not { } copy)
+        {
+            return;
+        }
+
+        RequestNested(copy, saved =>
+        {
+            if (saved is not null)
+            {
+                _model.ReplaceRule(ruleId, saved.Id);
+                Message($"Юнит использует копию «{saved.Name}»; общее правило не изменилось.", null);
+            }
+            else
+            {
+                Message("Копия не сохранена — юнит не изменился.", HexTactics.Content.Model.IssueSeverity.Warning);
+            }
+
+            Stamp++;
         });
+    }
+
+    private void BuildShield(Inspector inspector, int index)
+    {
+        var shield = _model.Unit.Shields[index];
+        var types = new List<ChoiceOption> { new(ShieldData.AnyType, "любой урон") };
+        types.AddRange(Library.Items(ContentTypeRegistry.DamageType).Where(t => t.Data is DamageTypeData { Legacy: false }).Select(t => new ChoiceOption(t.Id, t.Name)));
+        inspector.LineText($"{IdPrefix}shield.{index}.name", "Название", shield.Name, v => ApplyShield(index, "name", v));
+        inspector.LineText($"{IdPrefix}shield.{index}.capacity", "Прочность, HP", Inspector.Num(shield.Capacity), v => ApplyShield(index, "capacity", v), "Больше 0, не больше 100 000. В бою начинается полным.");
+        inspector.Choice($"{IdPrefix}shield.{index}.damageTypeId", "Принимает", types, shield.DamageType, v => ApplyShield(index, "damageTypeId", v), "Семейство принимает и свои подтипы; чистый урон щит тоже принимает.");
+        inspector.LineText($"{IdPrefix}shield.{index}.order", "Порядок", shield.Order.ToString(CultureInfo.InvariantCulture), v => ApplyShield(index, "order", v), "Меньше — тратится раньше.");
+        inspector.Button($"{IdPrefix}shield.{index}.remove", "✕ Убрать щит", () => { _openCard = null; _model.RemoveShield(index); }, ButtonKind.Flat);
     }
 
     private void ApplyShield(int index, string key, object? value)
@@ -349,6 +610,73 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
             Stamp++;
+        }
+    }
+
+    /// <summary>Opens the section (and the family, card or menu) that holds an automation control (spec part 5 §7.1).</summary>
+    public override bool Reveal(string automationId)
+    {
+        if (!automationId.StartsWith(IdPrefix, System.StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var id = automationId[IdPrefix.Length..];
+        var key = id.Split('.')[0];
+        if (MainKeys.Contains(key) || key is "color" or "scale")
+        {
+            _section = SecMain;
+        }
+        else if (AttackKeys.Contains(key) || key == "skill")
+        {
+            _section = SecAttack;
+        }
+        else if (key == "copy")
+        {
+            _section = SecMore;
+        }
+        else if (key is "res" or "profile" or "rule" or "shield")
+        {
+            _section = SecRes;
+            var parts = id.Split('.');
+            if (key == "rule" && parts.Length > 1 && (parts[1] is "filter" or "pick" or "add"))
+            {
+                _addRuleOpen = true;
+            }
+            else if ((key is "rule" or "shield") && parts.Length > 2 && int.TryParse(parts[1], out _))
+            {
+                _openCard = $"{IdPrefix}{key}.{parts[1]}";
+            }
+            else if (key == "res" && parts.Length > 1 && parts[1] is not ("search" or "all"))
+            {
+                RevealResistance(string.Join('.', parts.Skip(1)).Replace(".reset", string.Empty, System.StringComparison.Ordinal).Replace(".expand", string.Empty, System.StringComparison.Ordinal).Replace(".rules", string.Empty, System.StringComparison.Ordinal));
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        Stamp++;
+        return true;
+    }
+
+    private void RevealResistance(string typeKey)
+    {
+        if (_model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Any(r => r.Row.Key == typeKey))
+        {
+            return;
+        }
+
+        if (Library.Find(ContentTypeRegistry.DamageType, typeKey)?.Data is DamageTypeData { Family.Length: > 0 } d)
+        {
+            _expanded.Add(d.Family);
+        }
+
+        if (!_model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Any(r => r.Row.Key == typeKey))
+        {
+            _resSearch = string.Empty;
+            _resAll = true;
         }
     }
 
@@ -432,6 +760,25 @@ public partial class UnitEditor : DefinitionEditorShell
                     return true;
                 }
 
+            case "section":
+                // expect:section:main|attack|res|more — the open section of the inspector
+                actual = _section;
+                ok = actual == a[1];
+                return true;
+            case "res-rows":
+                // expect:res-rows:<keys joined by ,> — the visible rows of the resistance table
+                actual = string.Join(",", _model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Select(r => r.Row.Key == UnitData.GlobalResistance ? "global" : r.Row.Key.Replace("core.damage.", string.Empty, System.StringComparison.Ordinal)));
+                ok = actual == a[1];
+                return true;
+            case "res-has":
+                // expect:res-has:<row label>:yes|no — a row with this label is visible in the table
+                actual = _model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Any(r => r.Row.Label == a[1]) ? "yes" : "no";
+                ok = actual == a[2];
+                return true;
+            case "res-summary":
+                actual = _model.ResistanceSummary();
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
             case "rules":
                 // expect:rules:N or expect:rules:<names joined by ,>
                 actual = string.Join(",", _model.RuleSummaries().Select(r => r.Name));

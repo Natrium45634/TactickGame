@@ -73,6 +73,14 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
 
     public event Action<ContentItem>? TestRequested;
 
+    public event Action<ContentItem, Action<ContentItem?>>? NestedRequested;
+
+    /// <summary>Asks the host to edit <paramref name="item"/> on top of this editor (spec part 5 §7.3).</summary>
+    protected void RequestNested(ContentItem item, Action<ContentItem?> done) => NestedRequested?.Invoke(item, done);
+
+    /// <summary>Editors with collapsed sections open the one holding the control (automation, like a user would).</summary>
+    public virtual bool Reveal(string automationId) => false;
+
     protected void Attach(ContentLibrary library, DefinitionEditorModel model)
     {
         Library = library;

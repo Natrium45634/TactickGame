@@ -453,6 +453,41 @@ $script:PersistenceScenarioV23 = (@(
     'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV22
 
+# v0.24.0+ (spec part 5 §7.1–§7.5; acceptance §11.5): the unit inspector — one open section of four; the tank of §7.3 in a few
+# steps (physical +50 in «Сопротивления»); the short table (groups, subtypes under ▸, search narrows, «Показать все»); true
+# damage → «Особые правила» → an immunity template edited on top of the unit and attached on return; a saved rule added and
+# «Изменить копию» (the built-in rule keeps 300 %); a shield card; copying protection from another unit and Ctrl+Z; the
+# marked defense debug exists only in a test run and is off by default; normal play has no such control.
+$script:RegressionScenarioV24 = $script:RegressionScenarioV23 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'expect:section:main', 'field:unit.name=Танк v24', 'ui:unit.sec.res',
+    'expect:section:res', 'expect:res-rows:global,physical,magical,true', 'field:unit.res.core.damage.physical=50',
+    'expect:res-summary:Сильные стороны: физический +50 %', 'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.res.core.damage.physical.expand', 'expect:res-rows:global,physical,blunt,piercing,slashing,magical,true',
+    'field:unit.res.search=Плазма', 'expect:res-has:Плазма:yes', 'expect:res-has:Физический:no', 'field:unit.res.search=',
+    'expect:res-has:Плазма:no', 'ui:unit.res.all', 'expect:res-has:Плазма:yes', 'ui:unit.res.all', 'expect:res-has:Плазма:no',
+    'ui:unit.res.core.damage.true.rules', 'ui:unit.rule.add', 'expect:editor:defense_rule', 'expect:rule-field:damageTypeId:core.damage.true',
+    'expect:rule-actions:immunity', 'field:rule.name=Иммунитет к чистому', 'ui:rule.save', 'expect:errors:0', 'ui:rule.back', 'expect:editor:unit',
+    'expect:section:res', 'expect:rules:Иммунитет к чистому', 'expect:dirty:yes',
+    'field:unit.rule.pick=Огненная регенерация и круговое отражение (пример)', 'ui:unit.rule.add', 'expect:rules:2', 'ui:unit.rule.0.card',
+    'ui:unit.rule.0.copy', 'expect:editor:defense_rule', 'expect:name:Огненная регенерация и круговое отражение (пример) (Танк v24)',
+    'field:rule.minimumEffectiveResistancePercent=200', 'ui:rule.save', 'expect:errors:0', 'ui:rule.back', 'expect:editor:unit',
+    'expect:res-summary:реакции: 2', 'ui:unit.shield.add', 'field:unit.shield.0.capacity=50', 'expect:shield:0:Щит:50', 'expect:res-summary:щиты: 1',
+    'ui:unit.sec.attack', 'expect:section:attack', 'field:unit.attackPower=12', 'expect:unit-field:attackPower:12', 'ui:unit.sec.more',
+    'field:unit.copy.from=Латник', 'ui:unit.copy.run', 'expect:profiles:Маг в латах', 'key:ctrl+z', 'expect:profiles:0',
+    'expect:resistance:core.damage.slashing:50', 'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:enemy:3,4@Танк v24', 'select:1', 'expect:info:1:ОТЛАДКА:no', 'expect:info:1:сопротив:no',
+    'ui:game.debugdefense', 'expect:info:1:ОТЛАДКА ЗАЩИТЫ:yes', 'expect:info:1:физический +50 %:yes', 'expect:info:1:Щит 50/50:yes',
+    'ui:game.debugdefense', 'expect:info:1:ОТЛАДКА:no', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.defense_rule', 'row:name=Огненная регенерация и круговое отражение (пример)', 'ui:dev.open', 'expect:rule-summary:сопротивлении ≥ 300 %',
+    'ui:rule.back', 'ui:dev.back', 'ui:menu.play', 'expect:screen:play', 'expect:control:game.debugdefense:no', 'expect:control:game.menu:yes',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV24 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Танк v24', 'ui:dev.open', 'expect:editor:unit', 'expect:section:main', 'expect:rules:2',
+    'expect:shield:0:Щит:50', 'expect:resistance:core.damage.slashing:50', 'expect:unit-field:attackPower:12', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + ($script:PersistenceScenarioV23 -replace 'ui:dev.cat.defense_rule;expect:rows:2', 'ui:dev.cat.defense_rule;expect:rows:4')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -513,7 +548,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
+            $scenario = if ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
+                        elseif ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
                         elseif ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
                         elseif ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }
                         elseif ([version]$Version -ge [version]'0.20.0') { $script:RegressionScenarioV20 }
@@ -532,7 +568,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }
+            if ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }
+            elseif ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }
             elseif ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }
             elseif ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
             elseif ([version]$Version -ge [version]'0.20.0') { $persistence = $script:PersistenceScenarioV20 }

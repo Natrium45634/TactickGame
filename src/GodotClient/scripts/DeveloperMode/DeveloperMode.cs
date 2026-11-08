@@ -50,6 +50,7 @@ public partial class DeveloperMode : Node
     private Control _hubPanel = null!;
     private VBoxContainer _hubItems = null!;
     private Button? _groupButton;
+    private readonly Stack<(Node Editor, Action<ContentItem?> Done, string ChildKind, string ChildId)> _parents = new();
     private bool _hub;
     private VBoxContainer _details = null!;
     private VBoxContainer _messageList = null!;
@@ -794,6 +795,7 @@ public partial class DeveloperMode : Node
         _editorNode = factory(item, draft);
         var editor = (IContentEditor)_editorNode;
         editor.CloseRequested += RequestCloseEditor;
+        editor.NestedRequested += OpenNested;
         editor.TestRequested += copy => TestRequested?.Invoke(copy);
         _catalogLayer.Visible = false;
         AddChild(_editorNode);
@@ -831,10 +833,43 @@ public partial class DeveloperMode : Node
         });
     }
 
+    /// <summary>
+    /// Edits <paramref name="item"/> on top of the open editor (spec part 5 §7.3): the parent editor is set aside with its
+    /// unsaved state and comes back when the nested one closes; <paramref name="done"/> gets the saved object or null.
+    /// </summary>
+    public void OpenNested(ContentItem item, Action<ContentItem?> done)
+    {
+        if (_editorNode is null || !Editors.TryGetValue(item.Kind.Id, out var factory))
+        {
+            return;
+        }
+
+        var parent = _editorNode;
+        RemoveChild(parent);
+        _parents.Push((parent, done, item.Kind.Id, item.Id));
+        _editorNode = factory(item, null);
+        var editor = (IContentEditor)_editorNode;
+        editor.CloseRequested += RequestCloseEditor;
+        editor.TestRequested += copy => TestRequested?.Invoke(copy);
+        editor.NestedRequested += OpenNested;
+        AddChild(_editorNode);
+    }
+
     private void CloseEditor()
     {
         if (_editorNode is null)
         {
+            return;
+        }
+
+        if (_parents.Count > 0)
+        {
+            var (parent, done, childKind, childId) = _parents.Pop();
+            RemoveChild(_editorNode);
+            _editorNode.QueueFree();
+            _editorNode = parent;
+            AddChild(parent);
+            done(_library.Find(childKind, childId));
             return;
         }
 

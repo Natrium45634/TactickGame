@@ -518,12 +518,24 @@ public partial class GameMode : Node3D
         }
     }
 
+    /// <summary>
+    /// The unit card. In a test run from the editor the explicitly marked defense debug (spec part 5 §7.4) can add every
+    /// value; in a normal match the card never shows resistances, rules or shield points.
+    /// </summary>
+    private string Info(HexTactics.Core.Units.UnitState unit, int? waypoint)
+    {
+        var text = UiText.UnitInfo(unit, waypoint, _sim.IsPaused, _sim.State.Roster.FindByUnit(unit.Id)?.Name);
+        return _isTest && _defenseDebug ? text + "\n" + UiText.DefenseDebug(unit, _sim.Settings.DamageTypes) : text;
+    }
+
+    private bool _defenseDebug;
+
     private void UpdateHud()
     {
         var size = GetViewport().GetVisibleRect().Size;
         _statusLabel.Text = $"Окно {size.X:0}×{size.Y:0} · {Engine.GetFramesPerSecond():0} FPS · юнитов: {_sim.State.UnitCount}";
         var selected = _fsm.SelectedUnit is { } id ? _sim.State.FindUnit(id) : null;
-        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : UiText.UnitInfo(selected, _fsm.SelectedWaypointId, _sim.IsPaused, _sim.State.Roster.FindByUnit(selected.Id)?.Name);
+        _selectionLabel.Text = selected is null ? "Юнит не выбран (щелчок ЛКМ по юниту)" : Info(selected, _fsm.SelectedWaypointId);
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Player);
         _enemyButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Enemy);
         _pauseButton.SetPressedNoSignal(_sim.IsPaused);
@@ -935,6 +947,17 @@ public partial class GameMode : Node3D
         _hud.AddLabel($"{BuildInfo.Commit} · Godot {BuildInfo.EngineVersion}\n{BuildInfo.DotNetVersion}", dim: true, fontSize: 12);
         _hud.AddLabel($"Карта: {_title}", fontSize: 12);
         AutomationIds.Register(_hud.AddButton(_isTest ? "← Вернуться в редактор" : "← Главное меню", RequestExit), "game.menu");
+        if (_isTest)
+        {
+            // Spec part 5 §7.4: only a test run from the editor has the (clearly marked) defense debug; normal play has none.
+            Button debug = null!;
+            debug = AutomationIds.Register(_hud.AddButton("Отладка защиты (тест): выкл", () =>
+            {
+                _defenseDebug = !_defenseDebug;
+                debug.Text = _defenseDebug ? "Отладка защиты (тест): вкл" : "Отладка защиты (тест): выкл";
+            }), "game.debugdefense");
+        }
+
         _hud.AddSeparator();
 
         _hud.AddHeader("Время");
@@ -1403,7 +1426,7 @@ public partial class GameMode : Node3D
                 {
                     // expect:info:ID:text:yes|no — the unit card of the game shows (or must not show) the text
                     var unit = Unit(1);
-                    var info = unit is null ? string.Empty : UiText.UnitInfo(unit, null, _sim.IsPaused, _sim.State.Roster.FindByUnit(unit.Id)?.Name);
+                    var info = unit is null ? string.Empty : Info(unit, null);
                     var has = info.Contains(a[2], StringComparison.Ordinal);
                     actual = has ? "yes" : "no";
                     ok = actual == a[3];
