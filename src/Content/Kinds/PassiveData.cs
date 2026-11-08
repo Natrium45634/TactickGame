@@ -26,6 +26,13 @@ public static class PassiveOperations
     public const string DefenseDeltaFlat = "defense_delta_flat";
     public const string DefenseDeltaPercent = "defense_delta_percent";
     public const string GrantDefenseRule = "grant_defense_rule";
+    public const string CountMatchingUnits = "count_matching_units";
+
+    /// <summary>Characteristics the engine executes (the others are numbers of the <c>unit_stat</c> registry, D-158).</summary>
+    public static readonly string[] EngineStats = { "attackPower", "maxHealth", "moveSpeed", "attackRate" };
+
+    /// <summary>Characteristics a «per matching ally» bonus may change in battle (spec part 6 §5.5).</summary>
+    public static readonly string[] DynamicStats = { "attackPower", "moveSpeed", "attackRate" };
 
     public static IReadOnlyList<PassiveOperation> All { get; } = new[]
     {
@@ -43,6 +50,8 @@ public static class PassiveOperations
             false, false, true, false, false, -1_000_000, 1_000_000, "очк.", 30),
         new PassiveOperation(DefenseDeltaPercent, "защита A ± %", "Меняет накопленную базовую защиту A слоя: +20 % — 100 → 120; затем прибавляются очки.",
             false, false, true, false, false, -100, 1000, "%", 20),
+        new PassiveOperation(CountMatchingUnits, "за каждого подходящего союзника", "Пример вожака: +3 % силы атаки за каждого другого живого волка той же стаи. Пересчитывается при появлении и гибели юнитов; себя не считает, если не указано.",
+            true, false, false, false, false, -100, 1000, "% за юнита", 3),
         new PassiveOperation(GrantDefenseRule, "правило защиты", "Подключает сохранённое правило защиты (иммунитет, отражение, щит…) как постоянную особенность юнита.",
             false, false, false, true, false, 0, 0, string.Empty, 0),
     };
@@ -94,6 +103,27 @@ public sealed class PassiveData
     /// <summary>Stacking group of percentage damage modifiers; empty — the standard additive group of the operation.</summary>
     public string StackGroup { get; set; } = string.Empty;
 
+    /// <summary>
+    /// In a species: what this effect does to an ancestor's effect with the same id (spec part 6 §5.2 <c>effectKey</c>):
+    /// <c>replace</c> (default), <c>disable</c> (removes it, the operation is ignored) or <c>stack</c> (both act).
+    /// </summary>
+    public string Inherit { get; set; } = InheritReplace;
+
+    public const string InheritReplace = "replace";
+    public const string InheritDisable = "disable";
+    public const string InheritStack = "stack";
+
+    /// <summary>«Per matching ally»: species filter (or empty — any), same pack, the owner itself, radius (0 — any), limit (0 — none).</summary>
+    public string CountSpecies { get; set; } = string.Empty;
+
+    public bool CountSamePack { get; set; } = true;
+
+    public bool CountSelf { get; set; }
+
+    public int CountRadius { get; set; }
+
+    public int CountMax { get; set; }
+
     public PassiveOperation? Definition => PassiveOperations.Find(Operation);
 
     public JsonObject ToJson()
@@ -134,6 +164,20 @@ public sealed class PassiveData
             o["stackGroup"] = StackGroup;
         }
 
+        if (Inherit != InheritReplace)
+        {
+            o["inherit"] = Inherit;
+        }
+
+        if (Operation == PassiveOperations.CountMatchingUnits)
+        {
+            o["countSpecies"] = CountSpecies;
+            o["countSamePack"] = CountSamePack;
+            o["countSelf"] = CountSelf;
+            o["countRadius"] = CountRadius;
+            o["countMax"] = CountMax;
+        }
+
         return o;
     }
 
@@ -149,6 +193,12 @@ public sealed class PassiveData
         Rule = JsonFields.Text(obj, "ruleId", string.Empty, issues, path),
         HealthBelowPercent = JsonFields.Number(obj, "healthBelowPercent", 0, issues, path),
         StackGroup = JsonFields.Text(obj, "stackGroup", string.Empty, issues, path),
+        Inherit = JsonFields.Text(obj, "inherit", InheritReplace, issues, path),
+        CountSpecies = JsonFields.Text(obj, "countSpecies", string.Empty, issues, path),
+        CountSamePack = JsonFields.Flag(obj, "countSamePack", true, issues, path),
+        CountSelf = JsonFields.Flag(obj, "countSelf", false, issues, path),
+        CountRadius = JsonFields.Integer(obj, "countRadius", 0, issues, path),
+        CountMax = JsonFields.Integer(obj, "countMax", 0, issues, path),
     };
 
     /// <summary>Library objects the passive refers to.</summary>
@@ -169,6 +219,16 @@ public sealed class PassiveData
         {
             yield return new ContentRef("defense_rule", Rule);
         }
+
+        if (def?.UsesStat == true && !PassiveOperations.EngineStats.Contains(Stat) && Stat.Length > 0)
+        {
+            yield return new ContentRef("unit_stat", Stat);
+        }
+
+        if (Operation == PassiveOperations.CountMatchingUnits && CountSpecies.Length > 0)
+        {
+            yield return new ContentRef("species", CountSpecies);
+        }
     }
 
     public void RemapReferences(IReadOnlyDictionary<ContentRef, string> newIds)
@@ -186,6 +246,16 @@ public sealed class PassiveData
         if (newIds.TryGetValue(new ContentRef("defense_rule", Rule), out var rule))
         {
             Rule = rule;
+        }
+
+        if (newIds.TryGetValue(new ContentRef("unit_stat", Stat), out var stat))
+        {
+            Stat = stat;
+        }
+
+        if (newIds.TryGetValue(new ContentRef("species", CountSpecies), out var species))
+        {
+            CountSpecies = species;
         }
     }
 
@@ -207,9 +277,32 @@ public sealed class PassiveData
             issues.Error($"{path}.id", $"неверный ID пассива «{Id}» (1–32 символа a–z, 0–9, _ и -)");
         }
 
-        if (def.UsesStat && PassiveOperations.Stats.All(s => s.Value != Stat))
+        if (def.UsesStat && !PassiveOperations.EngineStats.Contains(Stat) && !ContentIds.IsValid(Stat))
         {
             issues.Error($"{path}.stat", $"неизвестная характеристика «{Stat}»");
+        }
+
+        if (Operation == PassiveOperations.CountMatchingUnits)
+        {
+            if (!PassiveOperations.DynamicStats.Contains(Stat))
+            {
+                issues.Error($"{path}.stat", "бонус «за каждого союзника» меняет в бою только силу атаки, скорость движения или темп атак");
+            }
+
+            if (CountSpecies.Length > 0 && !ContentIds.IsValid(CountSpecies))
+            {
+                issues.Error($"{path}.countSpecies", $"неверный вид «{CountSpecies}»");
+            }
+
+            if (CountRadius is < 0 or > 32 || CountMax is < 0 or > 1000)
+            {
+                issues.Error($"{path}.countRadius", "радиус 0…32 гекса, предел 0…1000 (0 — без предела)");
+            }
+        }
+
+        if (Inherit is not (InheritReplace or InheritDisable or InheritStack))
+        {
+            issues.Error($"{path}.inherit", $"режим наследования «{Inherit}»: replace, disable или stack");
         }
 
         if (def.UsesDamageType && DamageType.Length > 0 && !ContentIds.IsValid(DamageType))
@@ -248,7 +341,8 @@ public sealed class PassiveData
     public PassiveData Clone() => new()
     {
         Id = Id, Name = Name, Operation = Operation, Stat = Stat, DamageType = DamageType, Key = Key, Value = Value, Rule = Rule,
-        HealthBelowPercent = HealthBelowPercent, StackGroup = StackGroup,
+        HealthBelowPercent = HealthBelowPercent, StackGroup = StackGroup, Inherit = Inherit,
+        CountSpecies = CountSpecies, CountSamePack = CountSamePack, CountSelf = CountSelf, CountRadius = CountRadius, CountMax = CountMax,
     };
 
     private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);

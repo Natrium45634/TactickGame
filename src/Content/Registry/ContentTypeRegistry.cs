@@ -72,9 +72,15 @@ public sealed class ContentTypeRegistry
     public const string DefenseRule = "defense_rule";
     public const string ResistanceProfile = "resistance_profile";
     public const string CombatRuleset = "combat_ruleset";
+    public const string UnitStat = "unit_stat";
+    public const string Species = "species";
+    public const string Trait = "trait";
 
     /// <summary>The «Механики» group of the catalog.</summary>
     public const string MechanicsGroup = "mechanics";
+
+    /// <summary>Catalog group «Происхождение и теги» (spec part 6 §5.2, §9.1): the species tree and the shared traits.</summary>
+    public const string OriginGroup = "origin";
 
     private readonly List<ContentKind> _kinds = new();
 
@@ -138,7 +144,7 @@ public sealed class ContentTypeRegistry
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 6, Migrate = Migrations.Unit,
+            SchemaVersion = 7, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -183,6 +189,27 @@ public sealed class ContentTypeRegistry
             Description = "Общие константы боя проекта: K защиты A (урон × K / (K + A)) и K по семействам; назначаются карте.",
             Read = (o, i) => CombatRulesetData.Read(o, i), CreateDefault = () => new CombatRulesetData(), Fields = CombatRulesetData.Fields,
             Group = MechanicsGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = UnitStat, Title = "Характеристики", Singular = "характеристика", Folder = "unit_stats", Order = 90,
+            Description = "Числовые характеристики юнитов (ловкость и свои): база, диапазон, округление. Меняются пассивами и тегами; на бой влияют только через механику, которая их читает.",
+            Read = (o, i) => UnitStatData.Read(o, i), CreateDefault = () => new UnitStatData { BaseValue = 0 },
+            Group = MechanicsGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = Species, Title = "Дерево видов", Singular = "вид", Folder = "species", Order = 25,
+            Description = "Происхождение юнитов: у вида один родитель, потомок считается всеми предками (Лунный волк — Волк — Зверь) и наследует их эффекты один раз.",
+            Read = (o, i) => SpeciesData.Read(o, i), CreateDefault = () => new SpeciesData(),
+            Group = OriginGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = Trait, Title = "Теги", Singular = "тег", Folder = "traits", Order = 26,
+            Description = "Общие переиспользуемые особенности юнитов («Вожак», «Матёрый», «Раненый»): эффекты, допустимые виды, взаимоисключение, повтор.",
+            Read = (o, i) => TraitData.Read(o, i), CreateDefault = () => new TraitData(),
+            Group = OriginGroup,
         });
         return registry;
     }

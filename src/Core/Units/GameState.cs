@@ -107,6 +107,7 @@ public sealed class GameState
         _units.Add(unit.Id, unit);
         _occupancy[cell] = unit.Id;
         OccupancyVersion++;
+        RosterVersion++;
         return unit;
     }
 
@@ -131,6 +132,7 @@ public sealed class GameState
         {
             unit.CurrentHealth = 0;
             unit.LifeState = LifeState.Dead;
+            RosterVersion++;
         }
 
         return dealt;
@@ -209,7 +211,21 @@ public sealed class GameState
     }
 
     private static void RecomputeStats(UnitState unit) =>
-        unit.Stats = HexTactics.Core.Effects.StatModifiers.Effective(unit.BaseStats, unit._statuses);
+        unit.Stats = HexTactics.Core.Effects.StatModifiers.Effective(unit.BaseStats, unit._statuses, unit.PackPercent);
+
+    /// <summary>
+    /// Changes whenever a unit appears or dies (spec part 6 §5.5): systems that depend on who is on the map recount only
+    /// then, not every frame.
+    /// </summary>
+    public long RosterVersion { get; private set; }
+
+    /// <summary>Sets the «per matching ally» bonuses of a unit (percentage points by characteristic) and recomputes its stats.</summary>
+    public void SetPackPercent(UnitId id, IReadOnlyDictionary<string, double> percent)
+    {
+        var unit = GetUnit(id);
+        unit.PackPercent = percent;
+        RecomputeStats(unit);
+    }
 
     public void SetActiveSkill(UnitId id, HexTactics.Core.Skills.SkillExecution? execution)
     {

@@ -30,6 +30,23 @@ public sealed record DamageModifier(DamageModifierKind Kind, string? DamageTypeI
         : DamageTypeId == type.Id || DamageTypeId == type.FamilyId;
 }
 
+/// <summary>
+/// A bonus «per matching ally» (spec part 6 §5.5 <c>CountMatchingUnits</c>): the owner's characteristic changes by
+/// <see cref="PercentPerUnit"/> percentage points for every living ally of its side that is of the species
+/// <see cref="SpeciesId"/> (or a descendant; null — any) and, with <see cref="SamePack"/>, of the owner's pack. Recounted by
+/// the simulation when units appear, die or leave — never kept after a death.
+/// </summary>
+public sealed record CountModifier(string Stat, double PercentPerUnit, string? SpeciesId, bool SamePack, string Source)
+{
+    public bool IncludeSelf { get; init; }
+
+    /// <summary>0 — the whole map; N — only allies within N hexes.</summary>
+    public int Radius { get; init; }
+
+    /// <summary>0 — no limit.</summary>
+    public int MaxCount { get; init; }
+}
+
 /// <summary>One applied source of a modifier, for «откуда взялось» (spec part 6 §4.3, §9.2).</summary>
 public readonly record struct ModifierSource(string Source, double Percent, string Group);
 

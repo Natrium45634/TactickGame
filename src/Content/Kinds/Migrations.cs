@@ -73,6 +73,7 @@ public static class Migrations
     /// Unit 3 → 4: no resistance sets; the unit's resistances become its own values (same numbers).
     /// Unit 4 → 5 (spec part 6 §3.5, §10.3): defense A = 0 and no armor penetration — K / (K + 0) = 1, old hits stay the same.
     /// Unit 5 → 6 (spec part 6 §10.3): no personal passives — nothing changes.
+    /// Unit 6 → 7: no species, traits, pack or own characteristic values — nothing changes.
     /// </summary>
     public static JsonObject? Unit(int from, JsonObject data, IssueList issues)
     {
@@ -96,6 +97,12 @@ public static class Migrations
                 return copy;
             case 5:
                 copy["passives"] ??= new JsonArray(); // spec part 6 §10.3: no individual passives for old units
+                return copy;
+            case 6:
+                copy["species"] ??= string.Empty; // spec part 6 §10.3: no species, no traits, no pack, no own stats
+                copy["traits"] ??= new JsonArray();
+                copy["packId"] ??= string.Empty;
+                copy["stats"] ??= new JsonObject();
                 return copy;
             default:
                 return null;

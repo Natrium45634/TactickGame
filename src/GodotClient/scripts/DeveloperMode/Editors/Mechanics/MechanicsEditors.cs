@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Godot;
@@ -435,5 +436,303 @@ public partial class CombatRulesetEditor : SmallBoardEditor
                 ok = false;
                 return false;
         }
+    }
+}
+
+/// <summary>A registry characteristic (spec part 6 §5.7): unit label, base value, range, rounding.</summary>
+public partial class UnitStatEditor : SmallBoardEditor
+{
+    private UnitStatEditorModel _model = null!;
+
+    public override string Kind => ContentTypeRegistry.UnitStat;
+
+    protected override string IdPrefix => "stat.";
+
+    protected override string KindTitle => "Характеристика";
+
+    public void Configure(ContentLibrary library, ContentItem item, ContentItem? draft = null)
+    {
+        _model = new UnitStatEditorModel(library, item);
+        if (draft is not null)
+        {
+            _model.LoadDraft(draft);
+        }
+
+        Attach(library, _model);
+    }
+
+    protected override void UpdateCanvas() => Fills?.ClearAll();
+
+    private void Set(string key, string value)
+    {
+        if (_model.Set(key, value) is { } issue)
+        {
+            Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+            Stamp++;
+        }
+    }
+
+    protected override void BuildProperties(Inspector inspector)
+    {
+        var s = _model.Stat;
+        inspector.Section("Характеристика");
+        inspector.LineText(IdPrefix + "unit", "Единица (очки, %, гекс/с…)", s.Unit, v => Set("unit", v));
+        inspector.LineText(IdPrefix + "base", "Базовое значение", Inspector.Num(s.BaseValue), v => Set("base", v), "Его получает каждый юнит без своего значения.");
+        inspector.LineText(IdPrefix + "min", "Минимум", Inspector.Num(s.Min), v => Set("min", v));
+        inspector.LineText(IdPrefix + "max", "Максимум", Inspector.Num(s.Max), v => Set("max", v));
+        inspector.LineText(IdPrefix + "decimals", "Знаков после запятой (0–4)", s.Decimals.ToString(CultureInfo.InvariantCulture), v => Set("decimals", v));
+    }
+
+    protected override void BuildPreview(Inspector preview)
+    {
+        preview.Section("Как работает");
+        foreach (var line in _model.Preview())
+        {
+            preview.Text(line, size: 12);
+        }
+    }
+
+    protected override bool Expect(string[] a, out string actual, out bool ok)
+    {
+        if (a[0] == "stat-base")
+        {
+            actual = _model.Stat.BaseValue.ToString("0.##", CultureInfo.InvariantCulture);
+            ok = actual == a[1];
+            return true;
+        }
+
+        actual = "unknown";
+        ok = false;
+        return false;
+    }
+}
+
+/// <summary>A node of the species tree (spec part 6 §5.2): parent, icon, inherited effects, lineage and users.</summary>
+public partial class SpeciesEditor : SmallBoardEditor
+{
+    private SpeciesEditorModel _model = null!;
+
+    public override string Kind => ContentTypeRegistry.Species;
+
+    protected override string IdPrefix => "species.";
+
+    protected override string KindTitle => "Вид";
+
+    public SpeciesEditorModel SpeciesModel => _model;
+
+    public void Configure(ContentLibrary library, ContentItem item, ContentItem? draft = null)
+    {
+        _model = new SpeciesEditorModel(library, item);
+        if (draft is not null)
+        {
+            _model.LoadDraft(draft);
+        }
+
+        Attach(library, _model);
+    }
+
+    protected override void UpdateCanvas()
+    {
+        if (Fills is null)
+        {
+            return;
+        }
+
+        Fills.ClearAll();
+        Fills.SetFill(Center, new Color(0.55f, 0.7f, 0.5f, 0.8f));
+    }
+
+    protected override void BuildProperties(Inspector inspector)
+    {
+        inspector.Section("Вид");
+        inspector.ReadOnly("Линия", _model.Lineage());
+        inspector.Choice(IdPrefix + "parent", "Родитель", _model.Parents().Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), _model.Species.Parent, v =>
+        {
+            if (_model.SetParent(v) is { } refusal)
+            {
+                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+                Stamp++;
+            }
+        }, "Ровно один родитель или корень. Потомок считается всеми предками; цикл запрещён.");
+        inspector.LineText(IdPrefix + "icon", "Значок (до 4 символов)", _model.Species.Icon, v => _model.SetIcon(v));
+        inspector.Section("Эффекты вида");
+        inspector.Hint("Действуют на юнитов этого вида и всех потомков — один раз. Потомок с тем же ключом эффекта заменяет, отключает или дополняет эффект предка.");
+        BuildEffectList(inspector, IdPrefix + "effect.", _model.EffectCards(), _model.Species.Effects, _model.AddEffect, _model.RemoveEffect, _model.SetEffect, inheritance: true, "＋ Добавить эффект");
+    }
+
+    protected override void BuildPreview(Inspector preview)
+    {
+        preview.Section("Вид словами");
+        foreach (var line in _model.Preview())
+        {
+            preview.Text(line, size: 12);
+        }
+    }
+
+    public override bool Reveal(string id)
+    {
+        var parts = id.Split('.');
+        if (parts.Length > 3 && parts[0] == "species" && parts[1] == "effect" && parts[2] is not ("template" or "add"))
+        {
+            OpenEffect(IdPrefix + "effect.", parts[2]);
+            return true;
+        }
+
+        return false;
+    }
+
+    protected override bool Expect(string[] a, out string actual, out bool ok)
+    {
+        switch (a[0])
+        {
+            case "species-lineage":
+                actual = _model.Lineage();
+                ok = actual == string.Join(":", a.Skip(1));
+                return true;
+            case "species-preview":
+                actual = string.Join(" | ", _model.Preview());
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
+            default:
+                actual = "unknown";
+                ok = false;
+                return false;
+        }
+    }
+}
+
+/// <summary>A shared trait (spec part 6 §5.3, §5.6): category, effects, allowed species, conflicts and stacking.</summary>
+public partial class TraitEditor : SmallBoardEditor
+{
+    private TraitEditorModel _model = null!;
+    private string? _speciesPick;
+    private string? _traitPick;
+
+    public override string Kind => ContentTypeRegistry.Trait;
+
+    protected override string IdPrefix => "trait.";
+
+    protected override string KindTitle => "Тег";
+
+    public TraitEditorModel TraitModel => _model;
+
+    public void Configure(ContentLibrary library, ContentItem item, ContentItem? draft = null)
+    {
+        _model = new TraitEditorModel(library, item);
+        if (draft is not null)
+        {
+            _model.LoadDraft(draft);
+        }
+
+        Attach(library, _model);
+    }
+
+    protected override void UpdateCanvas()
+    {
+        if (Fills is null)
+        {
+            return;
+        }
+
+        Fills.ClearAll();
+        var c = HexTactics.Content.Schema.FieldSchema.IsColor(_model.Trait.Color) ? Color.FromHtml(_model.Trait.Color) : new Color(0.7f, 0.6f, 0.4f);
+        Fills.SetFill(Center, new Color(c, 0.85f));
+    }
+
+    private void Refuse(string? refusal)
+    {
+        if (refusal is not null)
+        {
+            Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            Stamp++;
+        }
+    }
+
+    protected override void BuildProperties(Inspector inspector)
+    {
+        var t = _model.Trait;
+        inspector.Section("Тег");
+        inspector.Choice(IdPrefix + "category", "Категория", TraitData.Categories.Select(c => new ChoiceOption(c.Value, c.Label)).ToList(), t.Category, v => _model.SetCategory(v));
+        inspector.LineText(IdPrefix + "icon", "Значок (до 4 символов)", t.Icon, v => _model.SetIcon(v));
+        inspector.Section("Эффекты");
+        inspector.Hint("Тег может быть и без эффектов — тогда это классификация для фильтров. Эффекты действуют у каждого юнита с тегом.");
+        BuildEffectList(inspector, IdPrefix + "effect.", _model.EffectCards(), t.Effects, _model.AddEffect, _model.RemoveEffect, _model.SetEffect, inheritance: false, "＋ Добавить эффект");
+
+        inspector.Section("Совместимость");
+        inspector.LineText(IdPrefix + "group", "Группа взаимоисключения (необязательно)", t.ExclusiveGroup, v => Refuse(_model.SetExclusive(v, t.ConflictPolicy, t.Priority)),
+            "Например «Здоровье»: «Здоров», «Ранен», «Критически ранен».");
+        if (t.ExclusiveGroup.Length > 0)
+        {
+            inspector.Choice(IdPrefix + "policy", "Если у юнита два тега группы", new List<ChoiceOption>
+            {
+                new(TraitData.PolicyError, "ошибка — выбрать один"), new(TraitData.PolicyReplace, "действует последний"), new(TraitData.PolicyHighest, "действует старший по приоритету"),
+            }, t.ConflictPolicy, v => Refuse(_model.SetExclusive(t.ExclusiveGroup, v, t.Priority)));
+            inspector.LineText(IdPrefix + "priority", "Приоритет", t.Priority.ToString(CultureInfo.InvariantCulture), v =>
+                Refuse(int.TryParse(v.Trim(), out var p) ? _model.SetExclusive(t.ExclusiveGroup, t.ConflictPolicy, p) : "приоритет — целое число"));
+        }
+
+        inspector.Choice(IdPrefix + "stack", "Если тег указан дважды", new List<ChoiceOption>
+        {
+            new(TraitData.StackUnique, "действует один раз"), new(TraitData.StackStack, "складывается"),
+        }, t.StackPolicy, v => Refuse(_model.SetStacking(v, t.MaxStacks)));
+        if (t.StackPolicy == TraitData.StackStack)
+        {
+            inspector.LineText(IdPrefix + "maxstacks", "Не больше раз (1–16)", t.MaxStacks.ToString(CultureInfo.InvariantCulture), v =>
+                Refuse(int.TryParse(v.Trim(), out var m) ? _model.SetStacking(t.StackPolicy, m) : "предел — целое число"));
+        }
+
+        var species = Library.Items(ContentTypeRegistry.Species).Select(s => new ChoiceOption(s.Id, (t.AllowedSpecies.Contains(s.Id) ? "✓ " : string.Empty) + s.Name)).ToList();
+        if (species.Count > 0)
+        {
+            _speciesPick = species.Any(s => s.Value == _speciesPick) ? _speciesPick : species[0].Value;
+            inspector.Choice(IdPrefix + "species.pick", "Только для видов (✓ — выбран; пусто — для всех)", species, _speciesPick!, v => _speciesPick = v);
+            inspector.Button(IdPrefix + "species.toggle", "Добавить / убрать вид", () => Refuse(_model.Toggle("allowedSpecies", _speciesPick!)), ButtonKind.Flat);
+        }
+
+        var traits = Library.Items(ContentTypeRegistry.Trait).Where(x => x.Id != _model.Item.Id)
+            .Select(x => new ChoiceOption(x.Id, (t.RequiredTraits.Contains(x.Id) ? "нужен: " : t.ExcludedTraits.Contains(x.Id) ? "несовместим: " : string.Empty) + x.Name)).ToList();
+        if (traits.Count > 0)
+        {
+            _traitPick = traits.Any(x => x.Value == _traitPick) ? _traitPick : traits[0].Value;
+            inspector.Choice(IdPrefix + "other.pick", "Другой тег", traits, _traitPick!, v => _traitPick = v);
+            var row = inspector.Row();
+            row.AddChild(UiKit.Button("Нужен / не нужен", () => Refuse(_model.Toggle("requiredTraits", _traitPick!)), ButtonKind.Flat, IdPrefix + "require", "Тег действует только вместе с выбранным"));
+            row.AddChild(UiKit.Button("Несовместим / совместим", () => Refuse(_model.Toggle("excludedTraits", _traitPick!)), ButtonKind.Flat, IdPrefix + "exclude", "Тег нельзя назначить вместе с выбранным"));
+        }
+    }
+
+    protected override void BuildPreview(Inspector preview)
+    {
+        preview.Section("Тег словами");
+        foreach (var line in _model.Preview())
+        {
+            preview.Text(line, size: 12);
+        }
+    }
+
+    public override bool Reveal(string id)
+    {
+        var parts = id.Split('.');
+        if (parts.Length > 3 && parts[0] == "trait" && parts[1] == "effect" && parts[2] is not ("template" or "add"))
+        {
+            OpenEffect(IdPrefix + "effect.", parts[2]);
+            return true;
+        }
+
+        return false;
+    }
+
+    protected override bool Expect(string[] a, out string actual, out bool ok)
+    {
+        if (a[0] == "trait-preview")
+        {
+            actual = string.Join(" | ", _model.Preview());
+            ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+            return true;
+        }
+
+        actual = "unknown";
+        ok = false;
+        return false;
     }
 }

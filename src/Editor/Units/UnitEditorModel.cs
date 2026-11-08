@@ -329,138 +329,106 @@ public sealed class UnitEditorModel : DefinitionEditorModel
     public static IReadOnlyList<PassiveOperation> PassiveTemplates => PassiveOperations.All;
 
     /// <summary>Adds a passive of an operation with its default value (one undo step); returns its id or a refusal.</summary>
-    public (string? Id, string? Refusal) AddPassive(string operation)
-    {
-        if (PassiveOperations.Find(operation) is not { } op)
-        {
-            return (null, $"нет шаблона «{operation}»");
-        }
+    public (string? Id, string? Refusal) AddPassive(string operation) => AddEffect(d => ((UnitData)d).Passives, operation, "Пассив");
 
-        if (Unit.Passives.Count >= PassiveData.MaxPerUnit)
-        {
-            return (null, $"не больше {PassiveData.MaxPerUnit} пассивов");
-        }
-
-        var n = 1;
-        while (Unit.Passives.Any(p => p.Id == $"p{n}"))
-        {
-            n++;
-        }
-
-        var passive = new PassiveData
-        {
-            Id = $"p{n}",
-            Name = char.ToUpper(op.Template[0], CultureInfo.CurrentCulture) + op.Template[1..],
-            Operation = operation,
-            Value = op.DefaultValue,
-            Rule = op.UsesRule ? Library.Items(ContentTypeRegistry.DefenseRule).FirstOrDefault(r => !r.HasErrors)?.Id ?? string.Empty : string.Empty,
-        };
-        Apply($"Пассив «{passive.Name}»", (d, _) => ((UnitData)d).Passives.Add(passive.Clone()));
-        return (passive.Id, null);
-    }
-
-    public void RemovePassive(string id)
-    {
-        var name = Unit.Passives.FirstOrDefault(p => p.Id == id)?.Name ?? id;
-        Apply($"Убрать пассив «{name}»", (d, _) => ((UnitData)d).Passives.RemoveAll(p => p.Id == id));
-    }
+    public void RemovePassive(string id) => RemoveEffect(d => ((UnitData)d).Passives, id, "пассив");
 
     /// <summary>Changes one field of a passive from input; a refusal leaves the passive as it was.</summary>
-    public ContentIssue? SetPassive(string id, string key, object? input)
+    public ContentIssue? SetPassive(string id, string key, object? input) => SetEffect(d => ((UnitData)d).Passives, "passives", id, key, input);
+
+    public IReadOnlyList<PassiveCard> PassiveCards() => EffectCards(Unit.Passives);
+
+    // ------------------------------------------------------------------ species, traits, pack, characteristics (spec part 6 §5)
+
+    public string? SetSpecies(string speciesId)
     {
-        var index = Unit.Passives.FindIndex(p => p.Id == id);
-        if (index < 0)
+        if (speciesId.Length > 0 && Library.Find(ContentTypeRegistry.Species, speciesId) is null)
         {
-            return ContentIssue.Error($"passives.{id}", "нет такого пассива");
+            return $"вид «{speciesId}» не найден";
         }
 
-        var probe = Unit.Passives[index].Clone();
-        var path = $"passives[{index}].{key}";
-        double? Number()
-        {
-            if (input is double d)
-            {
-                return d;
-            }
-
-            return input is string t && double.TryParse(t.Trim().Replace(',', '.').TrimEnd('%').Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : null;
-        }
-
-        switch (key)
-        {
-            case "name":
-                probe.Name = ((input as string) ?? string.Empty).Trim();
-                break;
-            case "stat":
-                probe.Stat = input as string ?? probe.Stat;
-                break;
-            case "damageTypeId":
-                probe.DamageType = input as string ?? string.Empty;
-                if (probe.DamageType.Length > 0 && Library.Find(ContentTypeRegistry.DamageType, probe.DamageType) is null)
-                {
-                    return ContentIssue.Error(path, $"нет типа урона «{probe.DamageType}» — значение не изменено");
-                }
-
-                break;
-            case "key":
-                probe.Key = input as string ?? UnitData.GlobalResistance;
-                if (probe.Key != UnitData.GlobalResistance && Library.Find(ContentTypeRegistry.DamageType, probe.Key) is null)
-                {
-                    return ContentIssue.Error(path, $"нет типа урона «{probe.Key}» — значение не изменено");
-                }
-
-                break;
-            case "ruleId":
-                probe.Rule = input as string ?? string.Empty;
-                if (Library.Find(ContentTypeRegistry.DefenseRule, probe.Rule) is null)
-                {
-                    return ContentIssue.Error(path, $"нет правила защиты «{probe.Rule}» — значение не изменено");
-                }
-
-                break;
-            case "value":
-                if (Number() is not { } value)
-                {
-                    return ContentIssue.Error(path, $"«{input}» — не число, значение не изменено");
-                }
-
-                probe.Value = Math.Round(value, 2, MidpointRounding.AwayFromZero);
-                break;
-            case "healthBelowPercent":
-                if (Number() is not { } below)
-                {
-                    return ContentIssue.Error(path, $"«{input}» — не число, значение не изменено");
-                }
-
-                probe.HealthBelowPercent = below;
-                break;
-            case "stackGroup":
-                probe.StackGroup = ((input as string) ?? string.Empty).Trim();
-                break;
-            default:
-                return ContentIssue.Error(path, "нет такого поля пассива");
-        }
-
-        var issues = new IssueList();
-        probe.Validate(issues, $"passives[{index}]");
-        if (issues.Items.FirstOrDefault(i => i.IsError) is { } issue)
-        {
-            return issue with { Message = issue.Message + " — значение не изменено" };
-        }
-
-        Apply($"Пассив «{probe.Name}»", (d, _) => ((UnitData)d).Passives[index] = probe.Clone());
+        Apply("Вид юнита", (d, _) => ((UnitData)d).Species = speciesId);
         return null;
     }
 
-    public IReadOnlyList<PassiveCard> PassiveCards() => Unit.Passives
-        .Select(p =>
+    /// <summary>Adds a trait (also a second time — it acts again only if the trait stacks).</summary>
+    public string? AddTrait(string traitId)
+    {
+        if (Library.Find(ContentTypeRegistry.Trait, traitId) is not { } trait)
         {
-            var issues = new IssueList();
-            p.Validate(issues, "p");
-            var broken = issues.Items.Any(i => i.IsError) || p.References().Any(r => Library.Find(r.Kind, r.Id) is null);
-            return new PassiveCard(p.Id, p.Name, (broken ? "✗ " : string.Empty) + PassiveEffects.Describe(p, Library), broken);
-        })
-        .ToList();
+            return $"тег «{traitId}» не найден";
+        }
+
+        if (Unit.Traits.Count >= UnitData.MaxTraits)
+        {
+            return $"не больше {UnitData.MaxTraits} тегов";
+        }
+
+        Apply($"Тег «{trait.Name}»", (d, _) => ((UnitData)d).Traits.Add(traitId));
+        return null;
+    }
+
+    public void RemoveTrait(int index) => Apply("Убрать тег", (d, _) =>
+    {
+        var u = (UnitData)d;
+        if (index >= 0 && index < u.Traits.Count)
+        {
+            u.Traits.RemoveAt(index);
+        }
+    });
+
+    public string? SetPackId(string pack)
+    {
+        if (pack.Trim().Length > 40)
+        {
+            return "стая — до 40 символов";
+        }
+
+        Apply("Стая", (d, _) => ((UnitData)d).PackId = pack.Trim());
+        return null;
+    }
+
+    /// <summary>The unit's own base of a registry characteristic; empty input — the characteristic's base again.</summary>
+    public ContentIssue? SetCustomStat(string statId, string input)
+    {
+        if (Library.Find(ContentTypeRegistry.UnitStat, statId)?.Data is not UnitStatData stat)
+        {
+            return ContentIssue.Error($"stats.{statId}", $"нет характеристики «{statId}»");
+        }
+
+        if (input.Trim().Length == 0)
+        {
+            Apply("Своё значение характеристики", (d, _) => ((UnitData)d).CustomStats.Remove(statId));
+            return null;
+        }
+
+        if (!double.TryParse(input.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || !double.IsFinite(v) || v < stat.Min || v > stat.Max)
+        {
+            return ContentIssue.Error($"stats.{statId}", $"значение: число от {stat.Min.ToString("0.##", CultureInfo.InvariantCulture)} до {stat.Max.ToString("0.##", CultureInfo.InvariantCulture)} — не изменено");
+        }
+
+        Apply("Своё значение характеристики", (d, _) => ((UnitData)d).CustomStats[statId] = stat.Clamp(v));
+        return null;
+    }
+
+    /// <summary>The unit's traits with whether each acts (a conflict, a species filter or a repeat may switch one off).</summary>
+    public IReadOnlyList<(int Index, string Id, string Name, bool Acts, string Note)> TraitChips()
+    {
+        var active = PassiveEffects.ActiveTraits(Unit, Library).ToDictionary(x => x.Trait.Id, x => x.Times);
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var list = new List<(int, string, string, bool, string)>();
+        for (var i = 0; i < Unit.Traits.Count; i++)
+        {
+            var id = Unit.Traits[i];
+            var n = seen[id] = seen.GetValueOrDefault(id) + 1;
+            var item = Library.Find(ContentTypeRegistry.Trait, id);
+            var acts = active.TryGetValue(id, out var times) && n <= times;
+            var note = item is null ? "не найден" : acts ? string.Empty : n > 1 ? "повтор не действует" : "не действует: вид или группа";
+            list.Add((i, id, item?.Name ?? id, acts, note));
+        }
+
+        return list;
+    }
 
     /// <summary>
     /// «Откуда взялось» (spec part 6 §4.3, §9.2): every value the passives change — base, final and each source — and the
@@ -470,10 +438,10 @@ public sealed class UnitEditorModel : DefinitionEditorModel
     {
         string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
         var lines = new List<string>();
-        foreach (var stat in PassiveOperations.Stats.Select(s => s.Value))
+        foreach (var stat in PassiveEffects.StatChoices(Library).Select(s => s.Value))
         {
             var b = PassiveEffects.Stat(Unit, Library, stat);
-            if (b.Sources.Count > 0)
+            if (b.Sources.Count > 0 || (!PassiveOperations.EngineStats.Contains(stat) && Unit.CustomStats.ContainsKey(stat)))
             {
                 lines.Add($"{b.Label}: {N(b.Base)} → {N(b.Final)} ({string.Join("; ", b.Sources.Select(x => $"{x.Change} · {x.Source}"))})");
             }
@@ -493,6 +461,11 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             var sum = group.Sum(m => m.Percent);
             lines.Add($"{what} (группа «{group.Key.Group}», проценты складываются): {sum.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} % при совпадении типа = ×{N(Math.Max(0, 1 + (sum / 100)))} — " +
                       string.Join("; ", group.Select(m => $"{m.Percent.ToString("+0.##;−0.##;0", CultureInfo.InvariantCulture)} % {(m.DamageTypeId is { } t ? Library.Find(ContentTypeRegistry.DamageType, t)?.Name.ToLowerInvariant() ?? t : "все типы")}{(m.HealthBelowPercent is { } h ? $" (здоровье ниже {N(h)} %)" : string.Empty)} · {m.Source}")));
+        }
+
+        foreach (var c in PassiveEffects.CountModifiers(Unit, Library))
+        {
+            lines.Add($"В бою: {PassiveOperations.Stats.FirstOrDefault(s => s.Value == c.Stat)?.Label ?? c.Stat} {c.PercentPerUnit.ToString("+0.##;−0.##", CultureInfo.InvariantCulture)} % за каждого подходящего союзника (стая «{(Unit.PackId.Length == 0 ? "нет" : Unit.PackId)}») · {c.Source}");
         }
 
         foreach (var rule in PassiveEffects.GrantedRules(Unit, Library))

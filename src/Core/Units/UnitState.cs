@@ -75,6 +75,12 @@ public sealed class UnitState
     /// <summary>Characteristics of the unit's definition, without temporary modifiers.</summary>
     public UnitStats BaseStats { get; }
 
+    /// <summary>
+    /// Current «per matching ally» bonuses by characteristic in percentage points (spec part 6 §5.5), set by the pack system;
+    /// part of <see cref="Stats"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> PackPercent { get; internal set; } = new Dictionary<string, double>();
+
     /// <summary>Active timed statuses (modifiers, periodic effects), in application order.</summary>
     public IReadOnlyList<HexTactics.Core.Effects.StatusEffect> Statuses => _statuses;
 

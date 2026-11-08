@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 
 namespace HexTactics.Core.Combat;
@@ -54,6 +55,18 @@ public sealed record UnitStats
     /// deals before D0, incoming ones the damage it takes after R, A and the flat reduction.
     /// </summary>
     public IReadOnlyList<DamageModifier> DamageModifiers { get; init; } = System.Array.Empty<DamageModifier>();
+
+    /// <summary>Species lineage of the definition, from its own species up to the root (spec part 6 §5.2 <c>isA</c>); empty — none.</summary>
+    public IReadOnlyList<string> Species { get; init; } = System.Array.Empty<string>();
+
+    /// <summary>Pack / group of the unit (spec part 6 §5.5 <c>packId</c>); empty — no pack.</summary>
+    public string PackId { get; init; } = string.Empty;
+
+    /// <summary>Bonuses per matching ally (spec part 6 §5.5), recounted when the roster of the map changes.</summary>
+    public IReadOnlyList<CountModifier> CountModifiers { get; init; } = System.Array.Empty<CountModifier>();
+
+    /// <summary>True if the definition is of <paramref name="speciesId"/> or one of its descendants.</summary>
+    public bool IsA(string speciesId) => Species.Contains(speciesId);
 
     /// <summary>Defense rules of the unit definition in the order of the definition (spec part 5 §4, §6.4).</summary>
     public IReadOnlyList<DefenseRule> DefenseRules { get; init; } = System.Array.Empty<DefenseRule>();

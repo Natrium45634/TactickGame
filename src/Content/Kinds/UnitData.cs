@@ -65,6 +65,20 @@ public sealed class UnitData : IContentData
 
     public const int MaxResistanceProfiles = 8;
 
+    /// <summary>The unit's species (spec part 6 §5.2): one node of the tree, its ancestors count too; empty — none.</summary>
+    public string Species { get; set; } = string.Empty;
+
+    /// <summary>Shared traits of the unit in order (spec part 6 §5.3); a trait listed twice acts once unless it stacks.</summary>
+    public List<string> Traits { get; } = new();
+
+    public const int MaxTraits = 16;
+
+    /// <summary>Pack of the unit (spec part 6 §5.5 <c>packId</c>) for «per matching ally» bonuses; empty — none.</summary>
+    public string PackId { get; set; } = string.Empty;
+
+    /// <summary>Own base values of registry characteristics (spec part 6 §5.7), e.g. Agility; missing — the stat's base.</summary>
+    public SortedDictionary<string, double> CustomStats { get; } = new(System.StringComparer.Ordinal);
+
     /// <summary>Personal permanent passives of the unit (spec part 6 §4), in order; not shared with other units.</summary>
     public List<PassiveData> Passives { get; } = new();
 
@@ -205,6 +219,10 @@ public sealed class UnitData : IContentData
             ["defenseRules"] = Strings(DefenseRules),
             ["shields"] = ShieldsJson(),
             ["passives"] = new JsonArray(Passives.Select(p => (JsonNode)p.ToJson()).ToArray()),
+            ["species"] = Species,
+            ["traits"] = Strings(Traits),
+            ["packId"] = PackId,
+            ["stats"] = ValuesJson(CustomStats),
             ["side"] = Side,
             ["color"] = Color,
             ["scale"] = Scale,
@@ -267,6 +285,10 @@ public sealed class UnitData : IContentData
             }
         }
 
+        data.Species = JsonFields.Text(obj, "species", string.Empty, issues, string.Empty);
+        data.Traits.AddRange(JsonFields.TextList(obj, "traits", issues, string.Empty));
+        data.PackId = JsonFields.Text(obj, "packId", string.Empty, issues, string.Empty);
+        ReadValues(obj, "stats", data.CustomStats, issues, "характеристика — число");
         if (JsonFields.Array(obj, "passives", issues, string.Empty) is { } passives)
         {
             for (var i = 0; i < passives.Count; i++)
@@ -408,9 +430,29 @@ public sealed class UnitData : IContentData
         }
 
         var rules = new HashSet<string>(DefenseRules, System.StringComparer.Ordinal);
+        var other = new HashSet<ContentRef>();
+        if (Species.Length > 0 && other.Add(new ContentRef("species", Species)))
+        {
+            yield return new ContentRef("species", Species);
+        }
+
+        foreach (var t in Traits.Distinct(System.StringComparer.Ordinal))
+        {
+            other.Add(new ContentRef("trait", t));
+            yield return new ContentRef("trait", t);
+        }
+
+        foreach (var s in CustomStats.Keys)
+        {
+            if (other.Add(new ContentRef("unit_stat", s)))
+            {
+                yield return new ContentRef("unit_stat", s);
+            }
+        }
+
         foreach (var r in Passives.SelectMany(p => p.References()))
         {
-            if ((r.Kind == "damage_type" && types.Add(r.Id)) || (r.Kind == "defense_rule" && rules.Add(r.Id)))
+            if ((r.Kind == "damage_type" && types.Add(r.Id)) || (r.Kind == "defense_rule" && rules.Add(r.Id)) || (r.Kind is not ("damage_type" or "defense_rule") && other.Add(r)))
             {
                 yield return r;
             }
@@ -462,6 +504,29 @@ public sealed class UnitData : IContentData
         foreach (var p in Passives)
         {
             p.RemapReferences(newIds);
+        }
+
+        if (newIds.TryGetValue(new ContentRef("species", Species), out var species))
+        {
+            Species = species;
+        }
+
+        for (var i = 0; i < Traits.Count; i++)
+        {
+            if (newIds.TryGetValue(new ContentRef("trait", Traits[i]), out var trait))
+            {
+                Traits[i] = trait;
+            }
+        }
+
+        foreach (var key in new List<string>(CustomStats.Keys))
+        {
+            if (newIds.TryGetValue(new ContentRef("unit_stat", key), out var renamed))
+            {
+                var value = CustomStats[key];
+                CustomStats.Remove(key);
+                CustomStats[renamed] = value;
+            }
         }
     }
 
@@ -545,6 +610,29 @@ public sealed class UnitData : IContentData
             }
         }
 
+        if (Species.Length > 0 && !ContentIds.IsValid(Species))
+        {
+            context.Issues.Error("species", $"неверная ссылка на вид «{Species}»");
+        }
+
+        if (Traits.Count > MaxTraits)
+        {
+            context.Issues.Error("traits", $"не больше {MaxTraits} тегов");
+        }
+
+        if (PackId.Length > 40)
+        {
+            context.Issues.Error("packId", "стая — до 40 символов");
+        }
+
+        foreach (var (key, value) in CustomStats)
+        {
+            if (!ContentIds.IsValid(key) || !double.IsFinite(value))
+            {
+                context.Issues.Error($"stats.{key}", $"характеристика «{key}»: неверный ключ или значение");
+            }
+        }
+
         if (Passives.Count > PassiveData.MaxPerUnit)
         {
             context.Issues.Error("passives", $"не больше {PassiveData.MaxPerUnit} пассивов");
@@ -607,6 +695,14 @@ public sealed class UnitData : IContentData
         }
 
         copy.Passives.AddRange(Passives.Select(p => p.Clone()));
+        copy.Species = Species;
+        copy.Traits.AddRange(Traits);
+        copy.PackId = PackId;
+        foreach (var (key, value) in CustomStats)
+        {
+            copy.CustomStats[key] = value;
+        }
+
         return copy;
     }
 }

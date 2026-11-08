@@ -49,9 +49,26 @@ public partial class DeveloperMode : Node
     private Control _listPanel = null!;
     private Control _hubPanel = null!;
     private VBoxContainer _hubItems = null!;
-    private Button? _groupButton;
+    private readonly Dictionary<string, Button> _groupButtons = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Catalog groups shown as one entry with a first screen (spec part 5 §6.1 «Механики», part 6 §9.1 «Происхождение и
+    /// теги»): title, tooltip and the explanation of the first screen.
+    /// </summary>
+    private static readonly Dictionary<string, (string Title, string Hint, string Text)> Groups = new(StringComparer.Ordinal)
+    {
+        [HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup] = ("Механики", "Типы урона, правила защиты, профили, правила боя, характеристики и проверка на ударе",
+            "Из чего складывается урон и защита. Числа и правила отсюда видны только в режиме «Разработчик»; в игре — лишь последствия боя."),
+        [HexTactics.Content.Registry.ContentTypeRegistry.OriginGroup] = ("Происхождение и теги", "Дерево видов и общие теги юнитов",
+            "Вид — одна ветка дерева (Лунный волк — это и Волк, и Зверь), его эффекты наследуются один раз. Теги — общие особенности для многих юнитов: «Вожак», «Матёрый», «Раненый». Юниту назначаются в «Особенностях»."),
+    };
+
+    private Label _hubTitle = null!;
+    private Label _hubText = null!;
     private readonly Stack<(Node Editor, Action<ContentItem?> Done, string ChildKind, string ChildId)> _parents = new();
-    private bool _hub;
+    private string? _hubGroup;
+
+    private bool _hub => _hubGroup is not null;
     private VBoxContainer _details = null!;
     private VBoxContainer _messageList = null!;
     private Button _create = null!;
@@ -80,7 +97,7 @@ public partial class DeveloperMode : Node
 
     public string? SelectedId => _selectedId;
 
-    public string Category => _hub ? HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup : _browser.Kind;
+    public string Category => _hubGroup ?? _browser.Kind;
 
     public int RowCount => _hub ? 0 : _browser.Rows().Count;
 
@@ -128,6 +145,24 @@ public partial class DeveloperMode : Node
         Editors["resistance_profile"] = (item, draft) =>
         {
             var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.ResistanceProfileEditor { Name = "ResistanceProfileEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["unit_stat"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.UnitStatEditor { Name = "UnitStatEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["species"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.SpeciesEditor { Name = "SpeciesEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
+        Editors["trait"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.TraitEditor { Name = "TraitEditor" };
             editor.Configure(_library, item, draft);
             return editor;
         };
@@ -261,16 +296,17 @@ public partial class DeveloperMode : Node
         foreach (var entry in _browser.Categories())
         {
             var kind = entry.Kind.Id;
-            var grouped = entry.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup;
-            if (grouped && _groupButton is null)
+            var group = entry.Kind.Group is { } g && Groups.ContainsKey(g) ? g : null;
+            var grouped = group is not null;
+            if (group is not null && !_groupButtons.ContainsKey(group))
             {
-                // Spec part 5 §6.1: «Механики» is one entry with its own first screen; its sections stay one click away below it.
-                _groupButton = UiKit.Button("Механики", () => SelectCategory(HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup), ButtonKind.Flat, "dev.cat.mechanics",
-                    "Типы урона, правила защиты, наборы сопротивлений и проверка на ударе", 15);
-                _groupButton.Alignment = HorizontalAlignment.Left;
-                _groupButton.ToggleMode = true;
-                _groupButton.CustomMinimumSize = new Vector2(0, 38);
-                column.AddChild(_groupButton);
+                // Spec part 5 §6.1, part 6 §9.1: a group is one entry with its own first screen; its sections stay one click away below it.
+                var groupButton = UiKit.Button(Groups[group].Title, () => SelectCategory(group), ButtonKind.Flat, "dev.cat." + group, Groups[group].Hint, 15);
+                groupButton.Alignment = HorizontalAlignment.Left;
+                groupButton.ToggleMode = true;
+                groupButton.CustomMinimumSize = new Vector2(0, 38);
+                _groupButtons[group] = groupButton;
+                column.AddChild(groupButton);
             }
 
             var button = UiKit.Button(entry.Kind.Title, () => SelectCategory(kind), ButtonKind.Flat, "dev.cat." + kind, entry.Kind.Description, grouped ? 13 : 15);
@@ -392,8 +428,8 @@ public partial class DeveloperMode : Node
         panel.Visible = false;
         var column = UiKit.Column(14);
         panel.AddChild(column);
-        column.AddChild(UiKit.Label("Механики", 20));
-        column.AddChild(UiKit.Label("Из чего складывается урон и защита. Числа и правила отсюда видны только в режиме «Разработчик»; в игре — лишь последствия боя.", 13, dim: true, wrap: true));
+        column.AddChild(_hubTitle = UiKit.Label("Механики", 20));
+        column.AddChild(_hubText = UiKit.Label(string.Empty, 13, dim: true, wrap: true));
         _hubItems = UiKit.Column(12);
         column.AddChild(_hubItems);
         return panel;
@@ -406,7 +442,9 @@ public partial class DeveloperMode : Node
             child.QueueFree();
         }
 
-        foreach (var entry in _browser.Categories().Where(c => c.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup))
+        _hubTitle.Text = Groups[_hubGroup!].Title;
+        _hubText.Text = Groups[_hubGroup!].Text;
+        foreach (var entry in _browser.Categories().Where(c => c.Kind.Group == _hubGroup))
         {
             var kind = entry.Kind.Id;
             var card = UiKit.Panel(UiKit.Background, 12);
@@ -424,7 +462,10 @@ public partial class DeveloperMode : Node
             _hubItems.AddChild(card);
         }
 
-        _hubItems.AddChild(UiKit.Label("«Проверить на ударе» — в редакторе правила, типа урона и юнита: один удар в отдельной песочнице с разбором по стадиям; библиотека, матч и файлы не меняются.", 12, dim: true, wrap: true));
+        if (_hubGroup == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup)
+        {
+            _hubItems.AddChild(UiKit.Label("«Проверить на ударе» — в редакторе правила, типа урона и юнита: один удар в отдельной песочнице с разбором по стадиям; библиотека, матч и файлы не меняются.", 12, dim: true, wrap: true));
+        }
     }
 
     private Control BuildDetails()
@@ -473,7 +514,7 @@ public partial class DeveloperMode : Node
 
     private void SelectCategory(string kind)
     {
-        _hub = kind == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup;
+        _hubGroup = Groups.ContainsKey(kind) ? kind : null;
         if (!_hub)
         {
             _browser.Kind = kind;
@@ -515,11 +556,11 @@ public partial class DeveloperMode : Node
             b.SetPressedNoSignal(!_hub && c.Kind.Id == _browser.Kind);
         }
 
-        if (_groupButton is not null)
+        foreach (var (group, groupButton) in _groupButtons)
         {
-            var mechanics = categories.Where(c => c.Kind.Group == HexTactics.Content.Registry.ContentTypeRegistry.MechanicsGroup).ToList();
-            _groupButton.Text = $"Механики   {mechanics.Sum(c => c.Count)}" + (mechanics.Sum(c => c.WithErrors) is > 0 and var e ? $"  ⚠{e}" : string.Empty);
-            _groupButton.SetPressedNoSignal(_hub || mechanics.Any(c => c.Kind.Id == _browser.Kind));
+            var members = categories.Where(c => c.Kind.Group == group).ToList();
+            groupButton.Text = $"{Groups[group].Title}   {members.Sum(c => c.Count)}" + (members.Sum(c => c.WithErrors) is > 0 and var e ? $"  ⚠{e}" : string.Empty);
+            groupButton.SetPressedNoSignal(_hubGroup == group || (!_hub && members.Any(c => c.Kind.Id == _browser.Kind)));
         }
 
         _listPanel.Visible = !_hub;

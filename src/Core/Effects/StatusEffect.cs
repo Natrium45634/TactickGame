@@ -107,10 +107,32 @@ public sealed class StatusEffect
 /// <summary>Effective characteristics = base characteristics changed by the active modifiers, within safe limits.</summary>
 public static class StatModifiers
 {
-    public static UnitStats Effective(UnitStats baseStats, IEnumerable<StatusEffect> statuses)
+    /// <param name="packPercent">«Per matching ally» bonuses by characteristic in percentage points (spec part 6 §5.5); they
+    /// add to the percentages of the temporary modifiers.</param>
+    public static UnitStats Effective(UnitStats baseStats, IEnumerable<StatusEffect> statuses, IReadOnlyDictionary<string, double>? packPercent = null)
     {
         double speedP = 0, speedD = 0, powerP = 0, powerD = 0, rateP = 0, rateD = 0, healP = 0, healD = 0;
         var any = false;
+        if (packPercent is not null)
+        {
+            foreach (var (stat, percent) in packPercent)
+            {
+                any |= percent != 0;
+                switch (stat)
+                {
+                    case Stats.MoveSpeed:
+                        speedP += percent / 100;
+                        break;
+                    case Stats.AttackPower:
+                        powerP += percent / 100;
+                        break;
+                    case Stats.AttackRate:
+                        rateP += percent / 100;
+                        break;
+                }
+            }
+        }
+
         foreach (var s in statuses)
         {
             if (s.Kind != StatusKind.Modifier)

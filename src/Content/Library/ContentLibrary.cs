@@ -214,6 +214,67 @@ public sealed class ContentLibrary
             WarnBypassedArmor(profile.Armor.Keys, issues);
         }
 
+        if (item.Data is SpeciesData species && species.Parent.Length > 0)
+        {
+            // Spec part 6 §5.2, §10.3: one parent, no cycle (Волк → Лунный волк → Волк), a reasonable depth.
+            var seen = new HashSet<string>(StringComparer.Ordinal) { item.Id };
+            var id = species.Parent;
+            var depth = 0;
+            while (id.Length > 0 && Find(ContentTypeRegistry.Species, id)?.Data is SpeciesData parent)
+            {
+                if (!seen.Add(id))
+                {
+                    issues.Error("data.parent", $"цикл в дереве видов через «{Find(ContentTypeRegistry.Species, id)!.Name}»");
+                    break;
+                }
+
+                if (++depth > SpeciesData.MaxDepth)
+                {
+                    issues.Error("data.parent", $"дерево видов глубже {SpeciesData.MaxDepth} уровней");
+                    break;
+                }
+
+                id = parent.Parent;
+            }
+        }
+
+        if (item.Data is UnitData traitsOf && traitsOf.Traits.Count > 0)
+        {
+            // Spec part 6 §5.3, §5.6: allowed species, required / excluded traits, exclusive groups with the «error» policy.
+            var have = traitsOf.Traits.ToHashSet(StringComparer.Ordinal);
+            var found = traitsOf.Traits.Distinct(StringComparer.Ordinal).Select(t => Find(ContentTypeRegistry.Trait, t)).Where(t => t?.Data is TraitData).Select(t => t!).ToList();
+            foreach (var t in found)
+            {
+                var d = (TraitData)t.Data;
+                if (d.AllowedSpecies.Count > 0 && !d.AllowedSpecies.Any(sp => Runtime.PassiveEffects.IsA(this, traitsOf.Species, sp)))
+                {
+                    issues.Error("data.traits", $"тег «{t.Name}» допустим только для видов: {string.Join(", ", d.AllowedSpecies.Select(sp => Find(ContentTypeRegistry.Species, sp)?.Name ?? sp))}");
+                }
+
+                foreach (var need in d.RequiredTraits.Where(r => !have.Contains(r)))
+                {
+                    issues.Error("data.traits", $"тег «{t.Name}» требует тег «{Find(ContentTypeRegistry.Trait, need)?.Name ?? need}»");
+                }
+
+                foreach (var bad in d.ExcludedTraits.Where(have.Contains))
+                {
+                    issues.Error("data.traits", $"тег «{t.Name}» несовместим с тегом «{Find(ContentTypeRegistry.Trait, bad)?.Name ?? bad}»");
+                }
+            }
+
+            foreach (var group in found.GroupBy(t => ((TraitData)t.Data).ExclusiveGroup).Where(g => g.Key.Length > 0 && g.Count() > 1))
+            {
+                if (group.Any(t => ((TraitData)t.Data).ConflictPolicy == TraitData.PolicyError))
+                {
+                    issues.Error("data.traits", $"взаимоисключающие теги группы «{group.Key}»: {string.Join(", ", group.Select(t => t.Name))} — оставьте один");
+                }
+                else
+                {
+                    issues.Warning("data.traits", $"группа «{group.Key}»: действует один тег из {string.Join(", ", group.Select(t => t.Name))}");
+                }
+            }
+        }
+
         if (item.Data is CombatRulesetData ruleset)
         {
             foreach (var key in ruleset.DefenseKByFamily.Keys)

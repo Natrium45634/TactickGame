@@ -469,3 +469,257 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
         return lines;
     }
 }
+
+/// <summary>A registry characteristic (spec part 6 §5.7): unit label, base value, range and rounding, with its users.</summary>
+public sealed class UnitStatEditorModel : DefinitionEditorModel
+{
+    public UnitStatEditorModel(ContentLibrary library, ContentItem item)
+        : base(library, item)
+    {
+        if (item.Data is not UnitStatData)
+        {
+            throw new ArgumentException("Not a characteristic.", nameof(item));
+        }
+    }
+
+    public UnitStatData Stat => (UnitStatData)Item.Data;
+
+    /// <summary>Sets «unit», «base», «min», «max» or «decimals» from input; a refusal leaves the value as it was.</summary>
+    public ContentIssue? Set(string key, object? input)
+    {
+        var probe = (UnitStatData)Stat.Clone();
+        var text = (input as string ?? Convert.ToString(input, CultureInfo.InvariantCulture) ?? string.Empty).Trim();
+        if (key == "unit")
+        {
+            probe.Unit = text;
+        }
+        else if (!double.TryParse(text.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || !double.IsFinite(v))
+        {
+            return ContentIssue.Error(key, $"«{input}» — не число, значение не изменено");
+        }
+        else
+        {
+            switch (key)
+            {
+                case "base": probe.BaseValue = v; break;
+                case "min": probe.Min = v; break;
+                case "max": probe.Max = v; break;
+                case "decimals": probe.Decimals = (int)Math.Round(v); break;
+                default: return ContentIssue.Error(key, "нет такого поля");
+            }
+        }
+
+        var issues = new IssueList();
+        probe.Validate(new ValidationContext(issues, Library.Registry.Effects, Library.Limits));
+        if (issues.Items.FirstOrDefault(i => i.IsError) is { } issue)
+        {
+            return issue with { Message = issue.Message + " — значение не изменено" };
+        }
+
+        Apply($"Характеристика: {key}", (d, _) =>
+        {
+            var s = (UnitStatData)d;
+            (s.Unit, s.BaseValue, s.Min, s.Max, s.Decimals) = (probe.Unit, probe.BaseValue, probe.Min, probe.Max, probe.Decimals);
+        });
+        return null;
+    }
+
+    public IReadOnlyList<string> Preview()
+    {
+        string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        var users = Library.UsedBy(Item.Ref);
+        return new[]
+        {
+            $"Каждый юнит имеет {Item.Name.ToLowerInvariant()} {N(Stat.BaseValue)} {Stat.Unit}, если у него нет своего значения; диапазон {N(Stat.Min)}…{N(Stat.Max)}, знаков после запятой: {Stat.Decimals}.",
+            "Пассивы и теги меняют её: база × (1 + %) + число. На бой она влияет только через механику, которая её читает; в этой редакции таких нет — значение видно и меняется, но ничего не ускоряет и не даёт уклонения.",
+            users.Count == 0 ? "Пока не используется." : $"Используют: {string.Join(", ", users.Select(u => $"{u.Kind.Singular} «{u.Name}»"))}.",
+        };
+    }
+}
+
+/// <summary>A node of the species tree (spec part 6 §5.2): parent (no cycle), effects with inheritance, lineage and users.</summary>
+public sealed class SpeciesEditorModel : DefinitionEditorModel
+{
+    public SpeciesEditorModel(ContentLibrary library, ContentItem item)
+        : base(library, item)
+    {
+        if (item.Data is not SpeciesData)
+        {
+            throw new ArgumentException("Not a species.", nameof(item));
+        }
+    }
+
+    public SpeciesData Species => (SpeciesData)Item.Data;
+
+    /// <summary>Possible parents: every species except this one and its descendants (no cycle).</summary>
+    public IReadOnlyList<FieldOption> Parents()
+    {
+        var list = new List<FieldOption> { new(string.Empty, "— корень дерева —") };
+        list.AddRange(Library.Items(ContentTypeRegistry.Species)
+            .Where(sp => sp.Id != Item.Id && !HexTactics.Content.Runtime.PassiveEffects.IsA(Library, sp.Id, Item.Id))
+            .Select(sp => new FieldOption(sp.Id, sp.Name)));
+        return list;
+    }
+
+    public string? SetParent(string parentId)
+    {
+        if (parentId.Length > 0 && (parentId == Item.Id || HexTactics.Content.Runtime.PassiveEffects.IsA(Library, parentId, Item.Id)))
+        {
+            return "цикл в дереве видов запрещён: родитель не может быть потомком";
+        }
+
+        if (parentId.Length > 0 && Library.Find(ContentTypeRegistry.Species, parentId) is null)
+        {
+            return $"вид «{parentId}» не найден";
+        }
+
+        Apply("Родитель вида", (d, _) => ((SpeciesData)d).Parent = parentId);
+        return null;
+    }
+
+    public void SetIcon(string icon) => Apply("Значок вида", (d, _) => ((SpeciesData)d).Icon = icon.Trim());
+
+    public (string? Id, string? Refusal) AddEffect(string operation) => AddEffect(d => ((SpeciesData)d).Effects, operation, "Эффект");
+
+    public void RemoveEffect(string id) => RemoveEffect(d => ((SpeciesData)d).Effects, id, "эффект");
+
+    public ContentIssue? SetEffect(string id, string key, object? input) => SetEffect(d => ((SpeciesData)d).Effects, "effects", id, key, input);
+
+    public IReadOnlyList<HexTactics.Editor.Units.PassiveCard> EffectCards() => EffectCards(Species.Effects);
+
+    /// <summary>«Лунный волк → Волк → Зверь»: this species (unsaved parent included) and its ancestors.</summary>
+    public string Lineage()
+    {
+        var names = new List<string> { Item.Name };
+        names.AddRange(HexTactics.Content.Runtime.PassiveEffects.SpeciesChain(Library, Species.Parent).Select(i => i.Name));
+        return string.Join(" → ", names);
+    }
+
+    public IReadOnlyList<string> Preview()
+    {
+        var probe = new UnitData { Species = Item.Id };
+        var overlay = Library.Overlay(new[] { Item });
+        var active = HexTactics.Content.Runtime.PassiveEffects.Active(probe, overlay);
+        var lines = new List<string> { $"Линия: {Lineage()} — юнит этого вида считается каждым из них." };
+        lines.Add(active.Count == 0 ? "Эффектов нет." : "Действует на юнитов вида (каждый эффект один раз): " +
+            string.Join("; ", active.Select(a => $"{HexTactics.Content.Runtime.PassiveEffects.Describe(a.Passive, overlay)} · {a.Source}")));
+        var children = Library.Items(ContentTypeRegistry.Species).Where(sp => sp.Data is SpeciesData d && d.Parent == Item.Id).Select(sp => sp.Name).ToList();
+        if (children.Count > 0)
+        {
+            lines.Add($"Потомки: {string.Join(", ", children)} — изменения действуют и на них после сохранения.");
+        }
+
+        var users = Library.UsedBy(Item.Ref).Where(u => u.Kind.Id == ContentTypeRegistry.Unit).ToList();
+        lines.Add(users.Count == 0 ? "Юнитов этого вида пока нет." : $"Юниты: {string.Join(", ", users.Select(u => u.Name))}.");
+        return lines;
+    }
+}
+
+/// <summary>A shared trait (spec part 6 §5.3, §5.6): category, effects, allowed species, conflicts, stacking and users.</summary>
+public sealed class TraitEditorModel : DefinitionEditorModel
+{
+    public TraitEditorModel(ContentLibrary library, ContentItem item)
+        : base(library, item)
+    {
+        if (item.Data is not TraitData)
+        {
+            throw new ArgumentException("Not a trait.", nameof(item));
+        }
+    }
+
+    public TraitData Trait => (TraitData)Item.Data;
+
+    public void SetCategory(string category) => Apply("Категория тега", (d, _) => ((TraitData)d).Category = category);
+
+    public void SetIcon(string icon) => Apply("Значок тега", (d, _) => ((TraitData)d).Icon = icon.Trim());
+
+    public string? SetExclusive(string group, string policy, int priority)
+    {
+        if (group.Trim().Length > 40 || policy is not (TraitData.PolicyError or TraitData.PolicyReplace or TraitData.PolicyHighest) || priority is < -1000 or > 1000)
+        {
+            return "группа — до 40 символов, политика error / replace / highest_priority, приоритет −1000…1000";
+        }
+
+        Apply("Взаимоисключение", (d, _) =>
+        {
+            var t = (TraitData)d;
+            (t.ExclusiveGroup, t.ConflictPolicy, t.Priority) = (group.Trim(), policy, priority);
+        });
+        return null;
+    }
+
+    public string? SetStacking(string policy, int max)
+    {
+        if (policy is not (TraitData.StackUnique or TraitData.StackStack) || max is < 1 or > 16)
+        {
+            return "повтор: unique или stack, предел 1…16";
+        }
+
+        Apply("Повтор тега", (d, _) => ((TraitData)d).StackPolicy = policy);
+        Apply("Предел повтора", (d, _) => ((TraitData)d).MaxStacks = max);
+        return null;
+    }
+
+    /// <summary>Adds or removes an id in «allowed species», «required» or «excluded» traits.</summary>
+    public string? Toggle(string list, string id)
+    {
+        var kind = list == "allowedSpecies" ? ContentTypeRegistry.Species : ContentTypeRegistry.Trait;
+        if (Library.Find(kind, id) is null)
+        {
+            return $"«{id}» не найден";
+        }
+
+        if (kind == ContentTypeRegistry.Trait && id == Item.Id)
+        {
+            return "тег не может ссылаться на себя";
+        }
+
+        Apply("Условия тега", (d, _) =>
+        {
+            var t = (TraitData)d;
+            var target = list switch { "allowedSpecies" => t.AllowedSpecies, "requiredTraits" => t.RequiredTraits, _ => t.ExcludedTraits };
+            if (!target.Remove(id))
+            {
+                target.Add(id);
+            }
+        });
+        return null;
+    }
+
+    public (string? Id, string? Refusal) AddEffect(string operation) => AddEffect(d => ((TraitData)d).Effects, operation, "Эффект");
+
+    public void RemoveEffect(string id) => RemoveEffect(d => ((TraitData)d).Effects, id, "эффект");
+
+    public ContentIssue? SetEffect(string id, string key, object? input) => SetEffect(d => ((TraitData)d).Effects, "effects", id, key, input);
+
+    public IReadOnlyList<HexTactics.Editor.Units.PassiveCard> EffectCards() => EffectCards(Trait.Effects);
+
+    public IReadOnlyList<string> Preview()
+    {
+        var t = Trait;
+        var lines = new List<string>
+        {
+            t.Effects.Count == 0 ? "Без эффектов — только классификация (фильтры «имеет тег»)." :
+                "Эффекты: " + string.Join("; ", t.Effects.Select(e => HexTactics.Content.Runtime.PassiveEffects.Describe(e, Library))),
+            t.StackPolicy == TraitData.StackStack ? $"Повтор: складывается до {t.MaxStacks} раз." : "Повтор: один раз, даже если указан дважды.",
+        };
+        if (t.ExclusiveGroup.Length > 0)
+        {
+            lines.Add($"Группа «{t.ExclusiveGroup}»: " + (t.ConflictPolicy switch
+            {
+                TraitData.PolicyReplace => "действует последний указанный у юнита тег группы.",
+                TraitData.PolicyHighest => $"действует тег с наибольшим приоритетом (этот — {t.Priority}).",
+                _ => "два тега группы у одного юнита — ошибка, нужно выбрать один.",
+            }));
+        }
+
+        if (t.AllowedSpecies.Count > 0)
+        {
+            lines.Add("Только для видов: " + string.Join(", ", t.AllowedSpecies.Select(s => Library.Find(ContentTypeRegistry.Species, s)?.Name ?? s)) + " (и их потомков).");
+        }
+
+        var users = Library.UsedBy(Item.Ref).Where(u => u.Kind.Id == ContentTypeRegistry.Unit).ToList();
+        lines.Add(users.Count == 0 ? "Пока ни у одного юнита." : $"У юнитов: {string.Join(", ", users.Select(u => u.Name))} — изменения действуют на всех после сохранения.");
+        return lines;
+    }
+}

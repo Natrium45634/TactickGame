@@ -146,7 +146,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private bool _addRuleOpen;
     private string? _openCard;
     private string? _copyFrom;
-    private string _passiveTemplate = HexTactics.Content.Kinds.PassiveOperations.OutgoingDamagePercent;
+
 
     protected override void BuildProperties(Inspector inspector)
     {
@@ -178,118 +178,63 @@ public partial class UnitEditor : DefinitionEditorShell
     }
 
     /// <summary>
-    /// «Особенности» (spec part 6 §4.1, §9.2): the unit's personal passives as cards; «＋ Добавить пассив» from a template; an
-    /// open card shows only the fields of its operation. Shared tags join this section in v0.29.0.
+    /// «Особенности» (spec part 6 §4.1, §5, §9.2): the species (one branch of the tree), the shared traits as chips, the pack,
+    /// own values of registry characteristics and the personal passives as cards.
     /// </summary>
     private void BuildFeatures(Inspector inspector)
     {
-        inspector.Hint("Пассив — постоянная особенность этого юнита: действует всё время, пока юнит жив (или при заданном условии), без кнопки и без слота навыка. Другие юниты не меняются.");
-        foreach (var card in _model.PassiveCards())
-        {
-            var cardId = $"{IdPrefix}passive.{card.Id}";
-            var open = _openCard == cardId;
-            var button = inspector.Button(cardId + ".card", (open ? "▾ " : "▸ ") + card.Name + "  ·  " + card.Summary, () => { _openCard = open ? null : cardId; Stamp++; }, ButtonKind.Flat, card.Summary);
-            button.Alignment = HorizontalAlignment.Left;
-            button.ClipText = true;
-            if (card.Problem)
-            {
-                button.AddThemeColorOverride("font_color", UiKit.Error);
-            }
+        var unit = _model.Unit;
+        var species = new List<ChoiceOption> { new(string.Empty, "— без вида —") };
+        species.AddRange(Library.Items(ContentTypeRegistry.Species).Select(sp => new ChoiceOption(sp.Id, string.Join(" → ", HexTactics.Content.Runtime.PassiveEffects.SpeciesChain(Library, sp.Id).Select(i => i.Name)))));
+        inspector.Choice(IdPrefix + "species", "Вид", species, unit.Species, v => Refuse(_model.SetSpecies(v)), "Юнит считается и всеми предками вида; эффекты вида действуют один раз.");
 
-            if (open)
-            {
-                BuildPassive(inspector, card.Id);
-            }
+        inspector.Text("Теги", size: 13);
+        foreach (var chip in _model.TraitChips())
+        {
+            var row = inspector.Row();
+            var label = UiKit.Label((chip.Acts ? "● " : "○ ") + chip.Name + (chip.Note.Length > 0 ? $" — {chip.Note}" : string.Empty), 13);
+            label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            row.AddChild(label);
+            var index = chip.Index;
+            row.AddChild(UiKit.Button("✕", () => _model.RemoveTrait(index), ButtonKind.Normal, $"{IdPrefix}trait.{index}.remove", "Убрать тег у юнита (сам тег остаётся в библиотеке)"));
         }
 
-        if (_model.Unit.Passives.Count == 0)
+        var traits = Library.Items(ContentTypeRegistry.Trait).Where(t => !t.Archived).Select(t => new ChoiceOption(t.Id, t.Name)).ToList();
+        if (traits.Count > 0)
         {
-            inspector.Hint("Пассивов нет.");
-        }
-
-        var templates = UnitEditorModel.PassiveTemplates.Select(t => new ChoiceOption(t.Id, t.Template)).ToList();
-        inspector.Choice(IdPrefix + "passive.template", "Шаблон пассива", templates, _passiveTemplate, v => { _passiveTemplate = v; Stamp++; },
-            UnitEditorModel.PassiveTemplates.FirstOrDefault(t => t.Id == _passiveTemplate)?.Hint);
-        inspector.Button(IdPrefix + "passive.add", "＋ Добавить пассив", () =>
-        {
-            var (id, refusal) = _model.AddPassive(_passiveTemplate);
-            if (refusal is not null)
-            {
-                Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
-            }
-            else
-            {
-                _openCard = $"{IdPrefix}passive.{id}";
-            }
-        });
-    }
-
-    private void BuildPassive(Inspector inspector, string id)
-    {
-        if (_model.Unit.Passives.FirstOrDefault(p => p.Id == id) is not { Definition: { } op } passive)
-        {
-            return;
-        }
-
-        var prefix = $"{IdPrefix}passive.{id}.";
-        void Set(string key, object? value)
-        {
-            if (_model.SetPassive(id, key, value) is { } issue)
-            {
-                Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
-                Stamp++;
-            }
-        }
-
-        inspector.Hint(op.Hint);
-        inspector.LineText(prefix + "name", "Название", passive.Name, v => Set("name", v));
-        if (op.UsesStat)
-        {
-            inspector.Choice(prefix + "stat", "Характеристика", HexTactics.Content.Kinds.PassiveOperations.Stats.Select(s => new ChoiceOption(s.Value, s.Label)).ToList(), passive.Stat, v => Set("stat", v));
-        }
-
-        if (op.UsesDamageType)
-        {
-            var types = new List<ChoiceOption> { new(string.Empty, op.Id == HexTactics.Content.Kinds.PassiveOperations.IncomingDamagePercent ? "все сопротивляемые типы" : "все типы") };
-            types.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.Any, passive.DamageType.Length == 0 ? null : passive.DamageType, allowCreate: true));
-            inspector.Choice(prefix + "type", "Тип урона (тип или семейство с подтипами)", types, passive.DamageType, v =>
-            {
-                if (v == HexTactics.Editor.Library.ReferenceCatalog.CreateValue)
-                {
-                    CreateReference(ContentTypeRegistry.DamageType, created => Set("damageTypeId", created));
-                    return;
-                }
-
-                Set("damageTypeId", v);
-            });
-        }
-
-        if (op.UsesKey)
-        {
-            var keys = new List<ChoiceOption> { new(UnitData.GlobalResistance, "все сопротивляемые типы") };
-            keys.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.ResistanceAffected, passive.Key == UnitData.GlobalResistance ? null : passive.Key, allowCreate: false));
-            inspector.Choice(prefix + "key", "Слой", keys, passive.Key, v => Set("key", v));
-        }
-
-        if (op.UsesRule)
-        {
-            var rules = Library.Items(ContentTypeRegistry.DefenseRule).Where(r => !r.Archived || r.Id == passive.Rule).Select(r => new ChoiceOption(r.Id, r.Name)).ToList();
-            inspector.Choice(prefix + "rule", "Правило защиты", rules, passive.Rule, v => Set("ruleId", v));
+            _traitPick = traits.Any(t => t.Value == _traitPick) ? _traitPick : traits[0].Value;
+            inspector.Choice(IdPrefix + "trait.pick", "Добавить тег", traits, _traitPick!, v => _traitPick = v);
+            inspector.Button(IdPrefix + "trait.add", "＋ Добавить тег", () => Refuse(_model.AddTrait(_traitPick!)));
         }
         else
         {
-            inspector.LineText(prefix + "value", $"Значение{(op.Unit.Length > 0 ? ", " + op.Unit : string.Empty)}", Inspector.Num(passive.Value), v => Set("value", v),
-                $"от {Inspector.Num(op.Min)} до {Inspector.Num(op.Max)}");
+            inspector.Hint("Тегов в библиотеке нет — «Происхождение и теги» → «Теги».");
         }
 
-        if (op.UsesCondition)
+        inspector.LineText(IdPrefix + "pack", "Стая (packId)", unit.PackId, v => Refuse(_model.SetPackId(v)), "Юниты одной стаи считаются вместе бонусами «за каждого союзника».");
+        foreach (var stat in Library.Items(ContentTypeRegistry.UnitStat))
         {
-            inspector.LineText(prefix + "below", "Только пока здоровье ниже, % (0 — всегда)", Inspector.Num(passive.HealthBelowPercent), v => Set("healthBelowPercent", v));
-            inspector.LineText(prefix + "group", "Группа суммирования (необязательно)", passive.StackGroup, v => Set("stackGroup", v),
-                "Проценты одной группы складываются (+50 % и +20 % → +70 %), разные группы перемножаются. Пусто — общая группа.");
+            var id = stat.Id;
+            var final = HexTactics.Content.Runtime.PassiveEffects.Stat(unit, Library, id);
+            inspector.LineText($"{IdPrefix}stat.{id}", $"{stat.Name} (своя база; итог {Inspector.Num(final.Final)})", unit.CustomStats.TryGetValue(id, out var own) ? Inspector.Num(own) : string.Empty,
+                v => { if (_model.SetCustomStat(id, v) is { } issue) { Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error); Stamp++; } },
+                $"Пусто — база характеристики ({Inspector.Num(((HexTactics.Content.Kinds.UnitStatData)stat.Data).BaseValue)}).");
         }
 
-        inspector.Button(prefix + "remove", "✕ Убрать пассив", () => { _openCard = null; _model.RemovePassive(id); }, ButtonKind.Flat);
+        inspector.Text("Пассивы", size: 13);
+        inspector.Hint("Пассив — постоянная особенность этого юнита: действует всё время, пока юнит жив (или при заданном условии), без кнопки и без слота навыка. Другие юниты не меняются.");
+        BuildEffectList(inspector, IdPrefix + "passive.", _model.PassiveCards(), unit.Passives, _model.AddPassive, _model.RemovePassive, _model.SetPassive, inheritance: false, "＋ Добавить пассив");
+    }
+
+    private string? _traitPick;
+
+    private void Refuse(string? refusal)
+    {
+        if (refusal is not null)
+        {
+            Message("✗ " + refusal, HexTactics.Content.Model.IssueSeverity.Error);
+            Stamp++;
+        }
     }
 
     /// <summary>A section header: the open one shows its content, the others one line with their summary.</summary>
@@ -770,13 +715,13 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             _section = SecMore;
         }
-        else if (key == "passive")
+        else if (key is "passive" or "species" or "trait" or "pack" or "stat")
         {
             _section = SecFeatures;
             var parts = id.Split('.');
-            if (parts.Length > 2 && parts[1] is not ("template" or "add"))
+            if (key == "passive" && parts.Length > 2 && parts[1] is not ("template" or "add"))
             {
-                _openCard = $"{IdPrefix}passive.{parts[1]}";
+                OpenEffect(IdPrefix + "passive.", parts[1]);
             }
         }
         else if (key is "res" or "armor" or "profile" or "rule" or "shield")

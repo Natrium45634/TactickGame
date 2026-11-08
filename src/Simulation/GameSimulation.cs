@@ -6,6 +6,7 @@ using HexTactics.Core.Map;
 using HexTactics.Core.Orders;
 using HexTactics.Core.Roster;
 using HexTactics.Core.Spawning;
+using HexTactics.Core.Combat;
 using HexTactics.Core.Units;
 
 namespace HexTactics.Simulation;
@@ -27,6 +28,8 @@ public sealed class GameSimulation
         Settings = settings ?? SimulationSettings.Default;
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
+        _packs = new PackSystem(State);
+        AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
         AddSystem(new MovementSystem(State, _events, Settings, Layout));
         Damage = new DamageResolver(State, _events, Settings);
         Effects = new EffectResolver(State, _events, Damage);
@@ -165,8 +168,17 @@ public sealed class GameSimulation
         State.SetSkills(unit.Id, request.Profile?.Skills ?? Settings.DefaultSkillSet);
         State.SetDefinition(unit.Id, request.Profile?.DefinitionId ?? Settings.DefaultUnitId);
         _events.Add(new UnitSpawned(Tick, unit.Id, cell, request.Method));
+        _packs.Refresh(force: false); // a new member counts at once, also on the tactical pause
         return new SpawnResult(unit.Id, cell, SpawnError.None, null);
     }
+
+    private readonly PackSystem _packs;
+
+    /// <summary>Recounts the «per matching ally» bonuses now (also on the pause); the simulation does it itself on changes.</summary>
+    public void RefreshPacks() => _packs.Refresh(force: false);
+
+    /// <summary>How many allies a unit's «per matching ally» modifier counts now (developer preview and tests).</summary>
+    public int CountMatching(UnitId owner, CountModifier modifier) => _packs.Count(State.GetUnit(owner), modifier);
 
     // ------------------------------------------------------------------ roster placement (spec part 2 §5)
 

@@ -299,6 +299,159 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
             .Select(o => new ChoiceOption(o.Value, o.Label, o.Color is { } c && FieldSchema.IsColor(c) ? Color.FromHtml(c) : null, o.Group))
             .ToList();
 
+    private readonly Dictionary<string, string?> _openEffect = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _effectTemplate = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A list of effects as cards (spec part 6 §4.1, §5.3; unit passives, species and trait effects share it): a template
+    /// choice and «＋ Добавить», the open card shows only the fields of its operation.
+    /// </summary>
+    protected void BuildEffectList(Inspector inspector, string prefix, IReadOnlyList<HexTactics.Editor.Units.PassiveCard> cards, IReadOnlyList<HexTactics.Content.Kinds.PassiveData> effects,
+        Func<string, (string? Id, string? Refusal)> add, Action<string> remove, Func<string, string, object?, ContentIssue?> set, bool inheritance, string addLabel)
+    {
+        var open = _openEffect.GetValueOrDefault(prefix);
+        foreach (var card in cards)
+        {
+            var cardId = prefix + card.Id;
+            var isOpen = open == card.Id;
+            var button = inspector.Button(cardId + ".card", (isOpen ? "▾ " : "▸ ") + card.Name + "  ·  " + card.Summary, () => { _openEffect[prefix] = isOpen ? null : card.Id; Stamp++; }, ButtonKind.Flat, card.Summary);
+            button.Alignment = HorizontalAlignment.Left;
+            button.ClipText = true;
+            if (card.Problem)
+            {
+                button.AddThemeColorOverride("font_color", UiKit.Error);
+            }
+
+            if (isOpen && effects.FirstOrDefault(e => e.Id == card.Id) is { } effect)
+            {
+                BuildEffectCard(inspector, cardId + ".", effect, (key, value) =>
+                {
+                    if (set(card.Id, key, value) is { } issue)
+                    {
+                        Message("✗ " + issue.Message, IssueSeverity.Error);
+                        Stamp++;
+                    }
+                }, () => { _openEffect[prefix] = null; remove(card.Id); }, inheritance);
+            }
+        }
+
+        if (cards.Count == 0)
+        {
+            inspector.Hint("Пока пусто.");
+        }
+
+        var template = _effectTemplate.GetValueOrDefault(prefix, HexTactics.Content.Kinds.PassiveOperations.OutgoingDamagePercent);
+        var templates = HexTactics.Content.Kinds.PassiveOperations.All.Select(t => new ChoiceOption(t.Id, t.Template)).ToList();
+        inspector.Choice(prefix + "template", "Шаблон", templates, template, v => { _effectTemplate[prefix] = v; Stamp++; },
+            HexTactics.Content.Kinds.PassiveOperations.Find(template)?.Hint);
+        inspector.Button(prefix + "add", addLabel, () =>
+        {
+            var (id, refusal) = add(template);
+            if (refusal is not null)
+            {
+                Message("✗ " + refusal, IssueSeverity.Error);
+            }
+            else
+            {
+                _openEffect[prefix] = id;
+            }
+        });
+    }
+
+    /// <summary>Opens the card of an effect (automation: a step to one of its fields reveals it).</summary>
+    protected void OpenEffect(string prefix, string id)
+    {
+        _openEffect[prefix] = id;
+        Stamp++;
+    }
+
+    private void BuildEffectCard(Inspector inspector, string prefix, HexTactics.Content.Kinds.PassiveData effect, Action<string, object?> set, Action remove, bool inheritance)
+    {
+        if (effect.Definition is not { } op)
+        {
+            inspector.Hint($"✗ неизвестная операция «{effect.Operation}» — эффект не действует.");
+            inspector.Button(prefix + "remove", "✕ Убрать", remove, ButtonKind.Flat);
+            return;
+        }
+
+        inspector.Hint(op.Hint);
+        inspector.LineText(prefix + "name", "Название", effect.Name, v => set("name", v));
+        if (op.UsesStat)
+        {
+            var stats = HexTactics.Content.Runtime.PassiveEffects.StatChoices(Library)
+                .Where(c => op.Id != HexTactics.Content.Kinds.PassiveOperations.CountMatchingUnits || HexTactics.Content.Kinds.PassiveOperations.DynamicStats.Contains(c.Value))
+                .Select(c => new ChoiceOption(c.Value, c.Label)).ToList();
+            inspector.Choice(prefix + "stat", "Характеристика", stats, effect.Stat, v => set("stat", v));
+        }
+
+        if (op.UsesDamageType)
+        {
+            var types = new List<ChoiceOption> { new(string.Empty, op.Id == HexTactics.Content.Kinds.PassiveOperations.IncomingDamagePercent ? "все сопротивляемые типы" : "все типы") };
+            types.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, ReferenceFilter.Any, effect.DamageType.Length == 0 ? null : effect.DamageType, allowCreate: true));
+            inspector.Choice(prefix + "type", "Тип урона (тип или семейство с подтипами)", types, effect.DamageType, v =>
+            {
+                if (v == HexTactics.Editor.Library.ReferenceCatalog.CreateValue)
+                {
+                    CreateReference(ContentTypeRegistry.DamageType, created => set("damageTypeId", created));
+                    return;
+                }
+
+                set("damageTypeId", v);
+            });
+        }
+
+        if (op.UsesKey)
+        {
+            var keys = new List<ChoiceOption> { new(HexTactics.Content.Kinds.UnitData.GlobalResistance, "все сопротивляемые типы") };
+            keys.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, ReferenceFilter.ResistanceAffected, effect.Key == HexTactics.Content.Kinds.UnitData.GlobalResistance ? null : effect.Key, allowCreate: false));
+            inspector.Choice(prefix + "key", "Слой", keys, effect.Key, v => set("key", v));
+        }
+
+        if (op.UsesRule)
+        {
+            var rules = Library.Items(ContentTypeRegistry.DefenseRule).Where(r => !r.Archived || r.Id == effect.Rule).Select(r => new ChoiceOption(r.Id, r.Name)).ToList();
+            inspector.Choice(prefix + "rule", "Правило защиты", rules, effect.Rule, v => set("ruleId", v));
+        }
+        else
+        {
+            inspector.LineText(prefix + "value", $"Значение{(op.Unit.Length > 0 ? ", " + op.Unit : string.Empty)}", Inspector.Num(effect.Value), v => set("value", v),
+                $"от {Inspector.Num(op.Min)} до {Inspector.Num(op.Max)}");
+        }
+
+        if (op.Id == HexTactics.Content.Kinds.PassiveOperations.CountMatchingUnits)
+        {
+            // Spec part 6 §9.3: «Подсчитать: живые союзники · вид · та же стая · исключить себя».
+            var species = new List<ChoiceOption> { new(string.Empty, "любой вид") };
+            species.AddRange(Library.Items(ContentTypeRegistry.Species).Select(sp => new ChoiceOption(sp.Id, sp.Name + " и потомки")));
+            inspector.Choice(prefix + "countspecies", "Считать союзников вида", species, effect.CountSpecies, v => set("countSpecies", v));
+            inspector.Check(prefix + "samepack", "Только той же стаи (packId)", effect.CountSamePack, on => set("countSamePack", on));
+            inspector.Check(prefix + "self", "Считать и себя", effect.CountSelf, on => set("countSelf", on));
+            inspector.LineText(prefix + "radius", "Радиус, гексов (0 — вся карта)", effect.CountRadius.ToString(CultureInfo.InvariantCulture), v => set("countRadius", v));
+            inspector.LineText(prefix + "max", "Не больше (0 — без предела)", effect.CountMax.ToString(CultureInfo.InvariantCulture), v => set("countMax", v));
+        }
+
+        if (op.UsesCondition)
+        {
+            inspector.LineText(prefix + "below", "Только пока здоровье ниже, % (0 — всегда)", Inspector.Num(effect.HealthBelowPercent), v => set("healthBelowPercent", v));
+            inspector.LineText(prefix + "group", "Группа суммирования (необязательно)", effect.StackGroup, v => set("stackGroup", v),
+                "Проценты одной группы складываются (+50 % и +20 % → +70 %), разные группы перемножаются. Пусто — общая группа.");
+        }
+
+        if (inheritance)
+        {
+            // Spec part 6 §5.2: an effect with the key of an ancestor's replaces, disables or stacks with it.
+            inspector.ReadOnly("Ключ эффекта", effect.Id);
+            inspector.Choice(prefix + "inherit", "Если у предка эффект с тем же ключом", new List<ChoiceOption>
+            {
+                new(HexTactics.Content.Kinds.PassiveData.InheritReplace, "заменить его"),
+                new(HexTactics.Content.Kinds.PassiveData.InheritDisable, "отключить его (этот не действует)"),
+                new(HexTactics.Content.Kinds.PassiveData.InheritStack, "действовать вместе"),
+            }, effect.Inherit, v => set("inherit", v));
+        }
+
+        inspector.Button(prefix + "remove", "✕ Убрать", remove, ButtonKind.Flat);
+    }
+
     /// <summary>
     /// «＋ Новый тип урона…» in a selector (spec part 6 §2.2, §5.3): choose the base, edit the new type on top of this editor;
     /// once it is saved the field takes its id, and this editor comes back with its unsaved edits.

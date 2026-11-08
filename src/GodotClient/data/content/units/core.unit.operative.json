@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "id": "core.unit.operative",
   "kind": "unit",
   "name": "Оперативник",
@@ -41,6 +41,10 @@
     "defenseRules": [],
     "shields": [],
     "passives": [],
-    "resistanceProfiles": []
+    "resistanceProfiles": [],
+    "species": "",
+    "traits": [],
+    "packId": "",
+    "stats": {}
   }
 }
