@@ -683,7 +683,7 @@ $script:PersistenceScenarioV30 = (@(
     'ui:menu.dev', 'ui:dev.cat.combat_ruleset', 'row:name=Засада', 'ui:dev.open', 'expect:ruleset-preview:передний левый фланг 40 %',
     'expect:ruleset-preview:сверхкрит ×3', 'ui:rules.back', 'ui:dev.cat.unit', 'row:name=Убийца', 'ui:dev.open', 'expect:unit-field:critChance:200', 'ui:unit.back',
     'ui:dev.cat.map', 'row:name=Арена засады', 'ui:dev.open', 'expect:map-ruleset:core.ruleset.standard', 'ui:map.back', 'ui:dev.back'
-) -join ';') + ';' + $script:PersistenceScenarioV29
+) -join ';') + ';' + $script:PersistenceScenarioV29.Replace('ui:dev.cat.combat_ruleset;expect:rows:3;', 'ui:dev.cat.combat_ruleset;expect:rows:4;') # «Засада» is the fourth ruleset
 
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
