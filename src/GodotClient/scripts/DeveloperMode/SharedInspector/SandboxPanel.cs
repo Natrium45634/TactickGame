@@ -79,8 +79,8 @@ public sealed class SandboxPanel
             panel.Choice(_prefix + "sandbox.target", "Цель", targets, _setup.TargetUnitId ?? string.Empty, v => _setup = _setup with { TargetUnitId = v.Length == 0 ? null : v });
         }
 
-        var types = library.Items(ContentTypeRegistry.DamageType).Where(t => t.Data is DamageTypeData { Legacy: false } || t.Id == _setup.DamageTypeId)
-            .Select(t => new ChoiceOption(t.Id, t.Name)).ToList();
+        var types = HexTactics.Editor.Library.ReferenceCatalog.Options(library, ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.Any, _setup.DamageTypeId)
+            .Select(o => new ChoiceOption(o.Value, o.Label.Replace(" (свой)", string.Empty, StringComparison.Ordinal), null, o.Group)).ToList();
         if (types.All(t => t.Value != _setup.DamageTypeId))
         {
             types.Insert(0, new ChoiceOption(_setup.DamageTypeId, "редактируемый тип"));

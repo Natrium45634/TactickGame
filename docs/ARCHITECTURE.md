@@ -1,10 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.25.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.26.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
-типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»). Формат контента —
+типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
+зависимости). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -412,6 +413,16 @@ tests/*  ──► соответствующие сборки
 - **Точка расширения для стихий (с v0.25.0, ТЗ ч.5 §13.4, D-141).** `IDamageStage` в `SimulationSettings.PreDamageStages`
   исполняется в `DamageResolver` до D0 для каждого события; в этой редакции список пуст. Новые категории «Механик» — через
   `ContentKind.Group`, новые реакции — через `DefenseActionRegistry`, новые типы — данными `damage_type`.
+- **Единый реестр определений (с v0.26.0, ТЗ ч.6 §2, D-144–D-149).** Реестр = `ContentTypeRegistry` (виды и схемы) +
+  `ContentLibrary` (объекты по `kind + id`). `ContentLibrary.Changed` вызывается при каждом изменении (`Bump`), на него
+  подписан `DefinitionEditorShell` (перестройка инспектора без сброса черновика). Варианты полей-ссылок —
+  `Editor/Library/ReferenceCatalog` (группы по семействам, фильтр `FieldSchema.RefFilter`, архивные и служебные скрыты, пока
+  не выбраны, пункт создания `ReferenceCatalog.CreateValue`); инспектор получает их функцией `Inspector.References`, а выбор
+  пункта создания — через `Inspector.CreateRequested` → `DefinitionEditorShell.CreateReference` (диалог основы и вложенный
+  `DamageTypeEditor`, как правило поверх юнита). Зависимости: `ContentLibrary.ReplaceReferences` (транзакционная перепривязка
+  через `RemapReferences`), `SetArchived`; команды отмены `LibraryCommands.Archive/ReplaceAndDelete`; диалог — 
+  `DeveloperMode.AskDependents`. Неизвестные поля файла: `ContentSerializer` хранит их в `ContentItem.ExtraEnvelope/ExtraData`
+  и дописывает при записи (известные поля вида — `typed.ToJson()` и `ContentKind.OptionalDataKeys`).
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -549,6 +560,9 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 копирование — `unit.copy.from|run`; бой — `game.debugdefense`; `expect:control:<id>:yes|no` — элемент есть на экране.
 Шаг к элементу закрытой секции сначала раскрывает её (до 6 кадров). С v0.24.1: `expect:on-screen:<id>:yes|no` — элемент
 целиком в окне. С v0.25.0 шаги `ui:`/`field:`/`row:` после смены открытого редактора ждут 4 кадра.
+С v0.26.0: в поле-ссылке `field:<id>=__create__` выбирает «＋ Новый тип урона…»; `dtype.element` — флажок «элемент»;
+каталог — `dev.unarchive`, диалог удаления — `dialog.replace.pick`, `dialog.replace`, `dialog.archive`; `expect:resistance`
+принимает и название типа.
 Регрессионные сценарии релиза — `tools/verify_release.ps1` (`$RegressionScenarioV05` для v0.5–v0.6, `$RegressionScenarioV07`
 для v0.7, `$RegressionScenarioV08` = V07 + ростер для v0.8, `$RegressionScenarioV09` = V08 + команда для v0.9, `$RegressionScenarioV10` = V09 (взгляд спутника ±60°) + команда из
 трёх с двумя КТД для v0.10, `$RegressionScenarioV11` = V10 + замер времени трёх переходов для v0.11, `$RegressionScenarioV12` = V11 + атака мишени
@@ -563,10 +577,11 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV23` = V22 + «Механики» (тип, набор, песочница, наборы юнита) для v0.23.0,
 `$RegressionScenarioV24` = V23 + секции юнита, таблица, карточки, правило поверх юнита, отладка теста для v0.24.0,
 `$RegressionScenarioV241` = V24 + кнопки панелей в пределах окна для v0.24.1,
-`$RegressionScenarioV25` = V241 + UX-испытание пяти юнитов, их бой, экспорт «Защиты» для v0.25.0+ (`$CleanImportScenarioV25` —
+`$RegressionScenarioV25` = V241 + UX-испытание пяти юнитов, их бой, экспорт «Защиты» для v0.25.0,
+`$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0+ (`$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

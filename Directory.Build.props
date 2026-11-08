@@ -5,7 +5,7 @@
     that this value matches project.godot and the Git tag before building a release.
   -->
   <PropertyGroup>
-    <HexTacticsVersion>0.25.0</HexTacticsVersion>
+    <HexTacticsVersion>0.26.0</HexTacticsVersion>
     <Version>$(HexTacticsVersion)</Version>
     <Product>HexTactics</Product>
     <Company>HexTactics prototype</Company>

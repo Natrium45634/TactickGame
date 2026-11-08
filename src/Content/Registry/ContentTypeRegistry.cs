@@ -47,6 +47,9 @@ public sealed class ContentKind
 
     public required Func<IContentData> CreateDefault { get; init; }
 
+    /// <summary>Keys of <c>data</c> the kind reads but writes only when set (not «unknown» fields, spec part 6 §2.4).</summary>
+    public IReadOnlyCollection<string> OptionalDataKeys { get; init; } = Array.Empty<string>();
+
     /// <summary>Fields of the definition for generic property panels and validation.</summary>
     public IReadOnlyList<FieldSchema> Fields { get; init; } = Array.Empty<FieldSchema>();
 
@@ -126,7 +129,7 @@ public sealed class ContentTypeRegistry
         {
             Id = Map, Title = "Карты", Singular = "карта", Folder = "maps", Order = 10,
             Description = "Поля из гексов: размер, типы местности, базы и зоны.",
-            Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData(),
+            Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData(), OptionalDataKeys = new[] { "testPoints" },
         });
         registry.Register(new ContentKind
         {
@@ -154,6 +157,7 @@ public sealed class ContentTypeRegistry
             Id = DamageType, Title = "Типы урона", Singular = "тип урона", Folder = "damage_types", Order = 50,
             Description = "Физический (колющий, режущий, дробящий), магический, чистый и свои типы: семейство и стратегия расчёта.",
             Read = (o, i) => DamageTypeData.Read(o, i), CreateDefault = () => new DamageTypeData { Family = "core.damage.physical" },
+            OptionalDataKeys = new[] { "legacy" },
             Group = MechanicsGroup,
         });
         registry.Register(new ContentKind

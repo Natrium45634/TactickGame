@@ -7,7 +7,8 @@ using HexTactics.Client.UI;
 namespace HexTactics.Client.DeveloperMode.SharedInspector;
 
 /// <summary>An option of a choice field: stored value, shown text and an optional colour swatch.</summary>
-public sealed record ChoiceOption(string Value, string Text, Color? Swatch = null);
+/// <summary>One entry of a drop-down; entries with a new <see cref="Group"/> start with a separator titled by it.</summary>
+public sealed record ChoiceOption(string Value, string Text, Color? Swatch = null, string? Group = null);
 
 /// <summary>
 /// Builds the left property panel of the editors (spec part 4 §3.1): clear labels, the control, a built-in hint, read-only
@@ -127,27 +128,42 @@ public sealed class Inspector
     /// Library objects a reference field can point to, by kind (set by the editor: damage types etc.). Without it reference
     /// fields are left to the editor's own controls.
     /// </summary>
-    public Func<string, string?, IReadOnlyList<ChoiceOption>>? References { get; set; }
+    /// <summary>The options of a reference field (by its schema: kind, typed filter) for the current value.</summary>
+    public Func<HexTactics.Content.Schema.FieldSchema, string?, IReadOnlyList<ChoiceOption>>? References { get; set; }
+
+    /// <summary>
+    /// «＋ Создать…» chosen in a reference field (spec part 6 §5.3): the host opens a constructor and calls the second argument
+    /// with the id of the saved object.
+    /// </summary>
+    public Action<string, Action<string>>? CreateRequested { get; set; }
 
     public OptionButton Choice(string id, string label, IReadOnlyList<ChoiceOption> options, string selected, Action<string> commit, string? hint = null)
     {
         var option = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, ClipText = true }, id);
+        string? group = null;
         for (var i = 0; i < options.Count; i++)
         {
             var o = options[i];
+            if (o.Group is { } g && g != group)
+            {
+                group = g;
+                option.AddSeparator(g); // groups of a long list (spec part 6 §2.3): families, «Создать»
+            }
+
+            var index = option.ItemCount;
             if (o.Swatch is { } swatch)
             {
-                option.AddIconItem(Swatch(swatch), o.Text, i);
+                option.AddIconItem(Swatch(swatch), o.Text, index);
             }
             else
             {
-                option.AddItem(o.Text, i);
+                option.AddItem(o.Text, index);
             }
 
-            option.SetItemMetadata(i, o.Value);
+            option.SetItemMetadata(index, o.Value);
             if (o.Value == selected)
             {
-                option.Select(i);
+                option.Select(index);
             }
         }
 
@@ -253,13 +269,22 @@ public sealed class Inspector
                     }
 
                     var current = value as string ?? string.Empty;
-                    options.AddRange(References(refKind, current));
+                    options.AddRange(References(field, current));
                     if (current.Length > 0 && options.TrueForAll(o => o.Value != current))
                     {
                         options.Add(new ChoiceOption(current, $"{current} (нет в списке)"));
                     }
 
-                    return Choice(id, label, options, current, v => apply(field, v), field.Hint);
+                    return Choice(id, label, options, current, v =>
+                    {
+                        if (v == HexTactics.Editor.Library.ReferenceCatalog.CreateValue)
+                        {
+                            CreateRequested?.Invoke(refKind, created => apply(field, created));
+                            return;
+                        }
+
+                        apply(field, v);
+                    }, field.Hint);
                 }
             default:
                 return null; // references are edited by the editor's own list controls

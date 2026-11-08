@@ -10,6 +10,7 @@ using HexTactics.Client.UI;
 using HexTactics.Content.Library;
 using HexTactics.Core.Hex;
 using HexTactics.Content.Model;
+using HexTactics.Content.Registry;
 using HexTactics.Content.Schema;
 using HexTactics.Editor.Definitions;
 
@@ -86,6 +87,21 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
         Library = library;
         Model = model;
         Model.Changed += () => Stamp++;
+        Library.Changed += OnLibraryChanged;
+    }
+
+    /// <summary>
+    /// The library changed (a type saved in another editor, an import …): selectors are rebuilt from it at the next frame
+    /// (spec part 6 §2.2 p.6); the edited object itself is the model's and is not touched.
+    /// </summary>
+    private void OnLibraryChanged() => Stamp++;
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationPredelete && Library is not null)
+        {
+            Library.Changed -= OnLibraryChanged;
+        }
     }
 
     public override void _Ready()
@@ -274,21 +290,46 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
     /// Choices of reference fields: the library objects of a kind (damage types for effects and attacks, spec part 5 §8);
     /// legacy damage types are offered only where they are already used.
     /// </summary>
-    protected IReadOnlyList<ChoiceOption> ReferenceOptions(string kind, string? current)
-    {
-        var list = new List<ChoiceOption>();
-        foreach (var item in Library.Items(kind))
-        {
-            if (item.Data is HexTactics.Content.Kinds.DamageTypeData { Legacy: true } && item.Id != current)
-            {
-                continue;
-            }
+    /// <summary>The options of a reference field from the one library (typed filter, groups, «＋ Создать…»).</summary>
+    protected IReadOnlyList<ChoiceOption> ReferenceOptions(FieldSchema field, string? current) =>
+        ReferenceOptions(field.RefKind ?? string.Empty, field.RefFilter, current, allowCreate: true);
 
-            list.Add(new ChoiceOption(item.Id, item.IsBuiltIn ? item.Name : $"{item.Name} (свой)",
-                item.Data is HexTactics.Content.Kinds.DamageTypeData d ? Color.FromHtml(d.Color) : null));
+    protected IReadOnlyList<ChoiceOption> ReferenceOptions(string kind, ReferenceFilter filter, string? current, bool allowCreate) =>
+        HexTactics.Editor.Library.ReferenceCatalog.Options(Library, kind, filter, current, allowCreate)
+            .Select(o => new ChoiceOption(o.Value, o.Label, o.Color is { } c && FieldSchema.IsColor(c) ? Color.FromHtml(c) : null, o.Group))
+            .ToList();
+
+    /// <summary>
+    /// «＋ Новый тип урона…» in a selector (spec part 6 §2.2, §5.3): choose the base, edit the new type on top of this editor;
+    /// once it is saved the field takes its id, and this editor comes back with its unsaved edits.
+    /// </summary>
+    protected void CreateReference(string kind, Action<string> assign)
+    {
+        if (kind != ContentTypeRegistry.DamageType)
+        {
+            return;
         }
 
-        return list;
+        var buttons = HexTactics.Editor.Mechanics.DamageTypeEditorModel.Bases
+            .Select(b => new DialogButton(b.Value switch { "physical" => "На основе физического", "magical" => "На основе магического", "true" => "На основе чистого", _ => "Новое семейство" },
+                "dialog.base." + b.Value, ButtonKind.Normal, () =>
+                    RequestNested(HexTactics.Editor.Mechanics.DamageTypeEditorModel.CreateFrom(Library, b.Value, "Новый тип урона"), saved =>
+                    {
+                        if (saved is not null)
+                        {
+                            assign(saved.Id);
+                            Message($"Тип «{saved.Name}» создан и выбран; он уже есть во всех списках типов урона.", null);
+                        }
+                        else
+                        {
+                            Message("Тип урона не сохранён — поле не изменилось.", IssueSeverity.Warning);
+                        }
+
+                        Stamp++;
+                    })))
+            .Append(new DialogButton("Отмена", "dialog.cancel", ButtonKind.Flat, () => Stamp++, IsCancel: true))
+            .ToList();
+        ModalDialog.Show(this, "Новый тип урона", "Тип создаётся поверх этого редактора; после «Сохранить» и «← Каталог» он будет выбран в поле. Несохранённые правки здесь сохранятся.", buttons, width: 820);
     }
 
     // ------------------------------------------------------------------ frame
@@ -415,9 +456,9 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
         bar.AddChild(UiKit.Button("← Каталог", () => CloseRequested?.Invoke(), ButtonKind.Flat, IdPrefix + "back", "Вернуться в каталог (спросит про несохранённые изменения)"));
 
         _left = SidePanel(360, out var left);
-        Inspector = new Inspector(left) { References = ReferenceOptions };
+        Inspector = new Inspector(left) { References = ReferenceOptions, CreateRequested = CreateReference };
         _right = SidePanel(340, out var right);
-        Preview = new Inspector(right) { References = ReferenceOptions };
+        Preview = new Inspector(right) { References = ReferenceOptions, CreateRequested = CreateReference };
 
         _bottom = UiKit.Panel(UiKit.PanelColor, 8);
         _root.AddChild(_bottom);

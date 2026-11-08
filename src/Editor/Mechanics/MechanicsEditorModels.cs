@@ -146,6 +146,17 @@ public sealed class DamageTypeEditorModel : DefinitionEditorModel
         return null;
     }
 
+    /// <summary>The «Элемент» category of a user element (spec part 6 §2.2): grouping and labels only, never the calculation.</summary>
+    public void SetElement(bool on) => Apply(on ? "Категория: элемент" : "Без категории «элемент»", (d, _) =>
+    {
+        var c = ((DamageTypeData)d).Classification;
+        c.Remove(DamageTypeData.Element);
+        if (on)
+        {
+            c.Insert(0, DamageTypeData.Element);
+        }
+    });
+
     /// <summary>Tags from a comma separated text («fire, plasma»).</summary>
     public string? SetTags(string text)
     {

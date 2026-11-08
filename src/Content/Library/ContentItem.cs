@@ -50,6 +50,20 @@ public sealed class ContentItem
 
     public List<string> Tags { get; } = new();
 
+    /// <summary>
+    /// Archived (spec part 6 §2.4): kept with its id for everything that still refers to it, but no longer offered in
+    /// selectors for new choices. A third way besides deleting with replaced references and cancelling.
+    /// </summary>
+    public bool Archived { get; set; }
+
+    /// <summary>
+    /// Envelope fields this version does not know (spec part 6 §2.4): written back unchanged, never executed.
+    /// </summary>
+    public System.Text.Json.Nodes.JsonObject? ExtraEnvelope { get; set; }
+
+    /// <summary>Fields of <c>data</c> this version does not read: written back unchanged, never executed.</summary>
+    public System.Text.Json.Nodes.JsonObject? ExtraData { get; set; }
+
     public IContentData Data { get; set; }
 
     public ContentOrigin Origin { get; }
@@ -97,6 +111,9 @@ public sealed class ContentItem
             Modified = Modified,
             SourcePath = origin == Origin && id == Id ? SourcePath : null,
             Issues = Issues,
+            Archived = Archived,
+            ExtraEnvelope = (System.Text.Json.Nodes.JsonObject?)ExtraEnvelope?.DeepClone(),
+            ExtraData = (System.Text.Json.Nodes.JsonObject?)ExtraData?.DeepClone(),
         };
         copy.Tags.AddRange(Tags);
         return copy;

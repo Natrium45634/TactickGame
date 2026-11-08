@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
 using HexTactics.Content.Registry;
@@ -207,6 +208,59 @@ public static class LibraryCommands
             },
             () => Check(library.Restore(deleted!)));
     }
+
+    /// <summary>Archives or brings back (spec part 6 §2.4); Undo does the opposite.</summary>
+    public static IEditorCommand Archive(ContentLibrary library, ContentItem item, bool archived)
+    {
+        var kind = item.Kind.Id;
+        var id = item.Id;
+        return new DelegateCommand(
+            archived ? $"В архив «{item.Name}»" : $"Из архива «{item.Name}»",
+            () => Check(library.SetArchived(kind, id, archived)),
+            () => Check(library.SetArchived(kind, id, !archived)));
+    }
+
+    /// <summary>
+    /// «Заменить ссылки и удалить» (spec part 6 §2.4): every user of the object refers to <paramref name="replacementId"/>,
+    /// then the object is deleted. Undo restores the object and the previous versions of its users.
+    /// </summary>
+    public static IEditorCommand ReplaceAndDelete(ContentLibrary library, ContentItem item, string replacementId)
+    {
+        var target = item.Ref;
+        var before = library.UsedBy(target).Select(u => u.Clone()).ToList();
+        DeletedContent? deleted = null;
+        return new DelegateCommand(
+            $"Заменить ссылки на «{item.Name}» и удалить",
+            () =>
+            {
+                Check(library.ReplaceReferences(target, replacementId));
+                var (result, d) = library.Delete(target.Kind, target.Id);
+                Check(result);
+                deleted = d;
+            },
+            () =>
+            {
+                Check(library.Restore(deleted!));
+                foreach (var user in before)
+                {
+                    Check(library.Save(user.Clone()));
+                }
+            });
+    }
+
+    /// <summary>Objects that can replace <paramref name="item"/> in its users: same kind; damage types of the same strategy.</summary>
+    public static IReadOnlyList<ContentItem> Replacements(ContentLibrary library, ContentItem item) => library.Items(item.Kind.Id)
+        .Where(i => i.Id != item.Id && !i.Archived && !i.HasErrors)
+        .Where(i => item.Data is not Content.Kinds.DamageTypeData d || (i.Data is Content.Kinds.DamageTypeData o && o.Strategy == d.Strategy && !o.Legacy))
+        .OrderBy(i => item.Data is Content.Kinds.DamageTypeData d && i.Data is Content.Kinds.DamageTypeData o && (o.Family == d.Family || i.Id == d.Family) ? 0 : 1)
+        .ThenBy(i => i.Name, StringComparer.CurrentCulture)
+        .ToList();
+
+    /// <summary>«юниты: Танк, Маг; навыки: Разряд» — the users of an object grouped by category.</summary>
+    public static string DependencyReport(ContentLibrary library, ContentItem item) => string.Join("; ", library.UsedBy(item.Ref)
+        .GroupBy(u => u.Kind)
+        .OrderBy(g => g.Key.Order)
+        .Select(g => $"{g.Key.Title.ToLowerInvariant()}: {string.Join(", ", g.Select(u => u.Name))}"));
 
     private static void Check(ContentOperationResult result)
     {

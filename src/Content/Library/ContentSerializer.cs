@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -53,6 +54,11 @@ public static class ContentSerializer
 
     private static readonly JsonDocumentOptions ReadOptions = new() { MaxDepth = 32 };
 
+    private static readonly HashSet<string> EnvelopeKeys = new(StringComparer.Ordinal)
+    {
+        "schemaVersion", "id", "kind", "name", "description", "revision", "modified", "tags", "references", "data", "archived",
+    };
+
     public static string Write(ContentItem item)
     {
         var references = new JsonArray();
@@ -83,7 +89,29 @@ public static class ContentSerializer
 
         root["tags"] = tags;
         root["references"] = references;
-        root["data"] = item.Data.ToJson();
+        if (item.Archived)
+        {
+            root["archived"] = true;
+        }
+
+        var data = item.Data.ToJson();
+        foreach (var (key, value) in item.ExtraData ?? new JsonObject())
+        {
+            if (!data.ContainsKey(key))
+            {
+                data[key] = value?.DeepClone(); // unknown fields of a newer or other tool travel along unchanged
+            }
+        }
+
+        root["data"] = data;
+        foreach (var (key, value) in item.ExtraEnvelope ?? new JsonObject())
+        {
+            if (!root.ContainsKey(key))
+            {
+                root[key] = value?.DeepClone();
+            }
+        }
+
         return root.ToJsonString(WriteOptions) + "\n";
     }
 
@@ -188,6 +216,27 @@ public static class ContentSerializer
         }
 
         item.Tags.AddRange(JsonFields.TextList(root, "tags", issues, string.Empty));
+        item.Archived = JsonFields.Flag(root, "archived", false, issues, string.Empty);
+
+        // Spec part 6 §2.4: fields this version does not know are kept (written back as they are), never executed.
+        var known = typed.ToJson();
+        foreach (var (key, value) in data)
+        {
+            if (!known.ContainsKey(key) && !kind.OptionalDataKeys.Contains(key))
+            {
+                (item.ExtraData ??= new JsonObject())[key] = value?.DeepClone();
+                issues.Warning(JsonFields.Join("data", key), $"поле «{key}» этой версией не поддерживается — сохранено без изменений и не действует");
+            }
+        }
+
+        foreach (var (key, value) in root)
+        {
+            if (!EnvelopeKeys.Contains(key))
+            {
+                (item.ExtraEnvelope ??= new JsonObject())[key] = value?.DeepClone();
+            }
+        }
+
         if (schemaVersion < kind.SchemaVersion)
         {
             issues.Warning("schemaVersion", $"объект обновлён со схемы {schemaVersion} до {kind.SchemaVersion}");

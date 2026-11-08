@@ -540,7 +540,7 @@ public partial class DeveloperMode : Node
         foreach (var row in rows)
         {
             var item = _tree.CreateItem(root);
-            item.SetText(0, row.IsBuiltIn ? "🔒 " + row.Name : row.Name);
+            item.SetText(0, (row.IsBuiltIn ? "🔒 " : row.Item.Archived ? "🗄 " : string.Empty) + row.Name);
             item.SetText(1, row.Summary);
             item.SetText(2, row.Id);
             item.SetText(3, row.Modified);
@@ -622,6 +622,12 @@ public partial class DeveloperMode : Node
             var label = UiKit.Label(target is null ? $"✗ {r.Kind}:{r.Id} — нет в библиотеке" : $"{target.Kind.Singular}: {target.Name}", 12, wrap: true);
             label.AddThemeColorOverride("font_color", target is null ? UiKit.Error : UiKit.Text);
             _details.AddChild(label);
+        }
+
+        if (item.Archived)
+        {
+            _details.AddChild(UiKit.Label("В архиве: ссылки работают, в новых выборах объект не предлагается.", 12, dim: true, wrap: true));
+            _details.AddChild(UiKit.Button("Вернуть из архива", Unarchive, ButtonKind.Normal, "dev.unarchive"));
         }
 
         _details.AddChild(UiKit.Header("Используется в"));
@@ -1178,7 +1184,7 @@ public partial class DeveloperMode : Node
         var users = _library.UsedBy(item.Ref);
         if (users.Count > 0)
         {
-            AddMessage($"«{item.Name}» нельзя удалить: на него ссылаются {string.Join(", ", users.Select(u => $"{u.Kind.Singular} «{u.Name}»"))}. Сначала уберите ссылки.", IssueSeverity.Error);
+            AskDependents(item);
             return;
         }
 
@@ -1187,6 +1193,58 @@ public partial class DeveloperMode : Node
             new DialogButton("Отмена", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true),
             new DialogButton("Удалить", "dialog.ok", ButtonKind.Danger, () => Run(LibraryCommands.Delete(_library, item), $"Удалено: «{item.Name}».")),
         });
+    }
+
+    /// <summary>
+    /// Deleting an object others depend on (spec part 6 §2.4): the dependents are listed, and the choice is cancel, replace
+    /// every reference by a compatible object and delete, or archive — never a silent re-binding.
+    /// </summary>
+    private void AskDependents(ContentItem item)
+    {
+        var replacements = LibraryCommands.Replacements(_library, item);
+        var pick = replacements.FirstOrDefault()?.Id;
+        var buttons = new List<DialogButton> { new("Отмена", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true) };
+        if (replacements.Count > 0)
+        {
+            buttons.Add(new DialogButton("Заменить ссылки и удалить", "dialog.replace", ButtonKind.Danger, () =>
+            {
+                if (pick is not null)
+                {
+                    Run(LibraryCommands.ReplaceAndDelete(_library, item, pick), $"Ссылки на «{item.Name}» заменены на «{_library.Find(item.Kind.Id, pick)?.Name}», объект удалён.");
+                }
+            }));
+        }
+
+        buttons.Add(new DialogButton("В архив", "dialog.archive", ButtonKind.Normal, () =>
+            Run(LibraryCommands.Archive(_library, item, true), $"«{item.Name}» в архиве: ссылки работают, для новых выборов он скрыт.")));
+        ModalDialog.Show(this, $"Удалить «{item.Name}»?", $"На объект ссылаются — {LibraryCommands.DependencyReport(_library, item)}. Молча перепривязывать ссылки нельзя: выберите замену или архив.", buttons,
+            content: box =>
+            {
+                if (replacements.Count == 0)
+                {
+                    box.AddChild(UiKit.Label("Совместимой замены нет — можно только отправить в архив.", 13, dim: true, wrap: true));
+                    return;
+                }
+
+                box.AddChild(UiKit.Label("Заменить на:", 13));
+                var option = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None }, "dialog.replace.pick");
+                for (var i = 0; i < replacements.Count; i++)
+                {
+                    option.AddItem(replacements[i].Name, i);
+                    option.SetItemMetadata(i, replacements[i].Id);
+                }
+
+                option.ItemSelected += index => pick = option.GetItemMetadata((int)index).AsString();
+                box.AddChild(option);
+            }, width: 640);
+    }
+
+    private void Unarchive()
+    {
+        if (Selected is { Archived: true } item)
+        {
+            Run(LibraryCommands.Archive(_library, item, false), $"«{item.Name}» снова предлагается в списках.");
+        }
     }
 
     private void ValidateAll()

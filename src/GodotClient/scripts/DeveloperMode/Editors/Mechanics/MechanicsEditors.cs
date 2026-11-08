@@ -114,6 +114,8 @@ public partial class DamageTypeEditor : SmallBoardEditor
         inspector.ReadOnly("Основа", family is null ? "самостоятельное семейство" : $"подтип «{family.Name}»");
         inspector.ColorField(IdPrefix + "color", "Цвет", type.Color, v => Refuse(_model.SetColor(v)));
         inspector.LineText(IdPrefix + "icon", "Значок (до 4 символов)", type.Icon, v => Refuse(_model.SetIcon(v)));
+        inspector.Check(IdPrefix + "element", "Категория: элемент", type.Classification.Contains(DamageTypeData.Element), on => _model.SetElement(on),
+            "Пользовательский элемент: группируется и помечается в списках. Отношения элементов не задаются — расчёт как у семейства.");
         inspector.Button(IdPrefix + "more", _more ? "Подробнее ▴" : "Подробнее ▾", () => { _more = !_more; Stamp++; }, ButtonKind.Flat, "ID, семейство, стратегия расчёта, теги");
         if (!_more)
         {

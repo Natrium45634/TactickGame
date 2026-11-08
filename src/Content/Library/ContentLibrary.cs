@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Content.Kinds;
 using HexTactics.Content.Model;
 using HexTactics.Content.Registry;
@@ -50,6 +51,18 @@ public sealed class ContentLibrary
     /// <summary>Incremented on every change of the library (for UI refresh).</summary>
     public int Version { get; private set; }
 
+    /// <summary>
+    /// Raised after every change of the library (save, delete, restore, rename, archive, reload, import) — open editors
+    /// refresh their selectors from it (spec part 6 §2.2 p.6, §10.3 «реактивность UI») without losing unsaved edits.
+    /// </summary>
+    public event Action? Changed;
+
+    private void Bump()
+    {
+        Version++;
+        Changed?.Invoke();
+    }
+
     /// <summary>Files that could not be loaded at the last (re)load.</summary>
     public IReadOnlyList<ContentLoadProblem> Problems => _problems;
 
@@ -81,7 +94,7 @@ public sealed class ContentLibrary
             }
         }
 
-        Version++;
+        Bump();
     }
 
     /// <summary>All objects of a kind, built-in first, then by name.</summary>
@@ -171,6 +184,10 @@ public sealed class ContentLibrary
             {
                 var kindTitle = Registry.Find(r.Kind)?.Singular ?? r.Kind;
                 issues.Error("references", $"ссылка на отсутствующий объект: {kindTitle} «{r.Id}»");
+            }
+            else if (target.Archived && !item.Archived)
+            {
+                issues.Warning("references", $"{target.Kind.Singular} «{target.Name}» в архиве — ссылка работает, но для новых выборов он скрыт");
             }
         }
 
@@ -287,7 +304,7 @@ public sealed class ContentLibrary
         _items[(saved.Kind.Id, saved.Id)] = saved;
         item.Revision = saved.Revision;
         item.Modified = saved.Modified;
-        Version++;
+        Bump();
         return new ContentOperationResult(true, issues, saved);
     }
 
@@ -296,6 +313,69 @@ public sealed class ContentLibrary
     {
         var copy = source.CopyAs(NewId(source.Kind.Id), ContentOrigin.User, name ?? $"{source.Name} (копия)");
         copy.Revision = 0;
+        return Save(copy);
+    }
+
+    /// <summary>
+    /// Points every object that refers to <paramref name="target"/> to <paramref name="replacementId"/> of the same kind
+    /// (spec part 6 §2.4 «замена ссылок на выбранный совместимый тип»). All or nothing: when one save fails, the objects
+    /// already changed get their previous version back. Built-in objects never refer to user objects, so only user
+    /// objects are changed.
+    /// </summary>
+    public ContentOperationResult ReplaceReferences(ContentRef target, string replacementId)
+    {
+        if (Find(target.Kind, replacementId) is null || replacementId == target.Id)
+        {
+            return ContentOperationResult.Fail($"замена «{replacementId}» не найдена");
+        }
+
+        var users = UsedBy(target);
+        if (users.Any(u => u.IsBuiltIn))
+        {
+            return ContentOperationResult.Fail("на объект ссылается встроенный объект — заменить ссылки нельзя");
+        }
+
+        var map = new Dictionary<ContentRef, string> { [target] = replacementId };
+        var done = new List<ContentItem>();
+        foreach (var user in users)
+        {
+            var copy = user.Clone();
+            copy.Data.RemapReferences(map);
+            var result = Save(copy);
+            if (!result.Ok)
+            {
+                foreach (var previous in done)
+                {
+                    Save(previous);
+                }
+
+                return new ContentOperationResult(false, result.Issues, user);
+            }
+
+            done.Add(user.Clone());
+        }
+
+        return new ContentOperationResult(true, Array.Empty<ContentIssue>(), Find(target));
+    }
+
+    /// <summary>
+    /// Archives (or brings back) a user object (spec part 6 §2.4): references keep working, selectors stop offering it
+    /// for new choices. Built-in objects are not archived.
+    /// </summary>
+    public ContentOperationResult SetArchived(string kind, string id, bool archived)
+    {
+        if (Find(kind, id) is not { } item)
+        {
+            return ContentOperationResult.Fail("объект не найден");
+        }
+
+        if (item.IsBuiltIn)
+        {
+            return ContentOperationResult.Fail("встроенный объект нельзя архивировать");
+        }
+
+        var copy = item.Clone();
+        copy.Archived = archived;
         return Save(copy);
     }
 
@@ -353,7 +433,7 @@ public sealed class ContentLibrary
         }
 
         _items.Remove((kind, id));
-        Version++;
+        Bump();
         return (new ContentOperationResult(true, Array.Empty<ContentIssue>(), item), new DeletedContent(item.Kind, item.Id, trash));
     }
 
@@ -376,7 +456,7 @@ public sealed class ContentLibrary
 
         var path = User.PathOf(deleted.Kind.Folder, deleted.Id);
         Add(path, System.IO.File.ReadAllText(path), ContentOrigin.User, deleted.Kind);
-        Version++;
+        Bump();
         var item = Find(deleted.Kind.Id, deleted.Id);
         return item is null ? ContentOperationResult.Fail("объект не восстановился") : new ContentOperationResult(true, Array.Empty<ContentIssue>(), item);
     }
@@ -493,6 +573,6 @@ public sealed class ContentLibrary
             item.Issues = Validate(item);
         }
 
-        Version++;
+        Bump();
     }
 }

@@ -150,7 +150,7 @@ public sealed class EffectTypeRegistry
 
     private static FieldSchema ResistanceOfField() => Param("resistanceOf", "Сопротивление к", FieldKind.Reference, "global") with
     {
-        RefKind = "damage_type", SpecialValue = "global", SpecialLabel = "всем сопротивляемым типам",
+        RefKind = "damage_type", SpecialValue = "global", SpecialLabel = "всем сопротивляемым типам", RefFilter = ReferenceFilter.ResistanceAffected,
         VisibleWhen = o => Is(o, "stat", Stats.Resistance),
     };
 

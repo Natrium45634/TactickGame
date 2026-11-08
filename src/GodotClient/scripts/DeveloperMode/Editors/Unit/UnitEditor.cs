@@ -596,7 +596,7 @@ public partial class UnitEditor : DefinitionEditorShell
     {
         var shield = _model.Unit.Shields[index];
         var types = new List<ChoiceOption> { new(ShieldData.AnyType, "любой урон") };
-        types.AddRange(Library.Items(ContentTypeRegistry.DamageType).Where(t => t.Data is DamageTypeData { Legacy: false }).Select(t => new ChoiceOption(t.Id, t.Name)));
+        types.AddRange(ReferenceOptions(ContentTypeRegistry.DamageType, HexTactics.Content.Schema.ReferenceFilter.Any, shield.DamageType, allowCreate: false));
         inspector.LineText($"{IdPrefix}shield.{index}.name", "Название", shield.Name, v => ApplyShield(index, "name", v));
         inspector.LineText($"{IdPrefix}shield.{index}.capacity", "Прочность, HP", Inspector.Num(shield.Capacity), v => ApplyShield(index, "capacity", v), "Больше 0, не больше 100 000. В бою начинается полным.");
         inspector.Choice($"{IdPrefix}shield.{index}.damageTypeId", "Принимает", types, shield.DamageType, v => ApplyShield(index, "damageTypeId", v), "Семейство принимает и свои подтипы; чистый урон щит тоже принимает.");
@@ -689,7 +689,9 @@ public partial class UnitEditor : DefinitionEditorShell
             return null;
         }
 
-        var own = row.Value == 0 && !row.Own ? "значения нет" : UnitEditorModel.Explain(row.Value);
+        var own = row.Value == 0 && !row.Own
+            ? (row.Depth > 0 && total != 0 ? "своего нет — унаследовано" : "значения нет")
+            : UnitEditorModel.Explain(row.Value);
         if (row.Source is { } source)
         {
             own = $"{source}: {own}";
@@ -736,8 +738,11 @@ public partial class UnitEditor : DefinitionEditorShell
 
             case "resistance":
                 {
-                    // expect:resistance:<type id or global>:<effective value> — global + family + subtype of this unit
-                    actual = (a[1] == UnitData.GlobalResistance ? _model.ResistanceRows()[0].Value : _model.EffectiveResistance(a[1])).ToString("0.##", CultureInfo.InvariantCulture);
+                    // expect:resistance:<type id, type name or global>:<effective value> — global + family + subtype of this unit
+                    var key = a[1] == UnitData.GlobalResistance || Library.Find(ContentTypeRegistry.DamageType, a[1]) is not null
+                        ? a[1]
+                        : Library.Items(ContentTypeRegistry.DamageType).FirstOrDefault(t => t.Name == a[1])?.Id ?? a[1];
+                    actual = (key == UnitData.GlobalResistance ? _model.ResistanceRows()[0].Value : _model.EffectiveResistance(key)).ToString("0.##", CultureInfo.InvariantCulture);
                     ok = actual == a[2];
                     return true;
                 }

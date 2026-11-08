@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using HexTactics.Content.Model;
 using HexTactics.Content.Schema;
@@ -26,6 +27,16 @@ public sealed class DamageTypeData : IContentData
 
     public string Icon { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Classification of the type (spec part 6 §2.2, §10.2 <c>classification</c>): e.g. <c>element</c> for a user element.
+    /// It groups and labels the type in selectors and catalogs; it never changes the calculation (that is the strategy).
+    /// </summary>
+    public List<string> Classification { get; } = new();
+
+    public const string Element = "element";
+
+    public static string ClassificationLabel(string value) => value == Element ? "элемент" : value;
+
     /// <summary>Kept for old content, not offered for new effects (spec part 5 §9.5: the legacy neutral types).</summary>
     public bool Legacy { get; set; }
 
@@ -50,6 +61,7 @@ public sealed class DamageTypeData : IContentData
             ["tags"] = tags,
             ["color"] = Color,
             ["icon"] = Icon,
+            ["classification"] = new JsonArray(Classification.Select(c => (JsonNode)c).ToArray()),
         };
         if (Legacy)
         {
@@ -70,6 +82,7 @@ public sealed class DamageTypeData : IContentData
             Legacy = JsonFields.Flag(obj, "legacy", false, issues, string.Empty),
         };
         data.Tags.AddRange(JsonFields.TextList(obj, "tags", issues, string.Empty));
+        data.Classification.AddRange(JsonFields.TextList(obj, "classification", issues, string.Empty));
         return data;
     }
 
@@ -107,14 +120,20 @@ public sealed class DamageTypeData : IContentData
         {
             context.Issues.Error("tags", "не больше 16 тегов");
         }
+
+        if (Classification.Count > 8 || Classification.Any(c => c.Length is 0 or > 32))
+        {
+            context.Issues.Error("classification", "классификация — до 8 меток по 1–32 символа");
+        }
     }
 
-    public string Summary() => (Family.Length == 0 ? "семейство" : "подтип") + (Strategy == TrueLike ? " · обходит R" : string.Empty) + (Legacy ? " · старый контент" : string.Empty);
+    public string Summary() => (Family.Length == 0 ? "семейство" : "подтип") + (Classification.Count > 0 ? " · " + string.Join(", ", Classification.Select(ClassificationLabel)) : string.Empty) + (Strategy == TrueLike ? " · обходит R" : string.Empty) + (Legacy ? " · старый контент" : string.Empty);
 
     public IContentData Clone()
     {
         var copy = new DamageTypeData { Family = Family, Strategy = Strategy, Color = Color, Icon = Icon, Legacy = Legacy };
         copy.Tags.AddRange(Tags);
+        copy.Classification.AddRange(Classification);
         return copy;
     }
 }

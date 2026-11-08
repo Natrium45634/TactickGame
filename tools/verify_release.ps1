@@ -540,6 +540,31 @@ $script:CleanImportScenarioV25 = $script:CleanImportScenarioV20 + ';' + (@(
     'expect:shield:0:Щит:50', 'ui:unit.back', 'ui:dev.cat.defense_rule', 'expect:rows:3', 'ui:dev.back', 'expect:screen:menu'
 ) -join ';')
 
+# v0.26.0+ (spec part 6 §2; acceptance §12.1 P6-01…P6-05, P6-07): «Огонь» is created right from the damage type selector of the
+# skill «Тройной удар» (on top of the skill editor, which keeps its unsaved state) and is at once offered in the rule, tile and
+# unit editors (the unit with «Маг в латах» inherits magical 60 % for it); renamed to «Пламя» the links hold; deleting it lists
+# its users and offers replacement or archive — archived it still works for the skill and is brought back.
+$script:RegressionScenarioV26 = $script:RegressionScenarioV25 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.open', 'expect:editor:skill', 'field:skill.e0.damageType=__create__',
+    'expect:dialog:Новый тип урона', 'ui:dialog.base.magical', 'expect:editor:damage_type', 'field:dtype.name=Огонь', 'field:dtype.element=true',
+    'expect:dtype:family:core.damage.magical', 'ui:dtype.save', 'expect:errors:0', 'ui:dtype.back', 'expect:editor:skill', 'expect:preview:0:огонь',
+    'expect:dirty:yes', 'ui:skill.save', 'expect:dirty:no', 'ui:skill.back',
+    'ui:dev.cat.unit', 'row:name=Латник', 'ui:dev.open', 'expect:editor:unit', 'field:unit.res.search=Огонь', 'expect:res-has:Огонь:yes',
+    'expect:resistance:Огонь:60', 'ui:unit.back',
+    'ui:dev.cat.defense_rule', 'ui:dev.create', 'field:rule.damageTypeId=Огонь · элемент (свой)', 'expect:rule-summary:урона «Огонь»', 'ui:rule.back',
+    'ui:dialog.discard', 'ui:dev.cat.tile', 'row:name=Жгучая поверхность', 'ui:dev.open', 'field:tile.e0.damageType=Огонь · элемент (свой)',
+    'expect:tile-preview:1:тип урона — огонь', 'ui:tile.back', 'ui:dialog.discard',
+    'ui:dev.cat.damage_type', 'row:name=Огонь', 'ui:dev.rename', 'field:dialog.input=Пламя', 'ui:dialog.ok', 'ui:dev.cat.skill', 'row:name=Тройной удар',
+    'ui:dev.open', 'expect:preview:0:пламя', 'ui:skill.back', 'ui:dev.cat.damage_type', 'row:name=Пламя', 'ui:dev.delete', 'expect:dialog:Удалить «Пламя»',
+    'ui:dialog.archive', 'expect:message:в архиве', 'ui:dev.cat.skill', 'row:name=Тройной удар', 'ui:dev.open', 'expect:preview:0:пламя', 'ui:skill.back',
+    'ui:dev.cat.damage_type', 'row:name=Пламя', 'ui:dev.unarchive', 'expect:message:снова предлагается', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV26 = (@(
+    'ui:menu.dev', 'ui:dev.cat.damage_type', 'row:name=Пламя', 'ui:dev.open', 'expect:editor:damage_type', 'expect:dtype:family:core.damage.magical',
+    'expect:dtype-preview:Используют: 1', 'ui:dtype.back', 'ui:dev.back'
+) -join ';') + ';' + ($script:PersistenceScenarioV25 -replace 'expect:preview:0:режущий', 'expect:preview:0:пламя')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -600,7 +625,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
+            $scenario = if ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
+                        elseif ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
                         elseif ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
                         elseif ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
                         elseif ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
@@ -622,7 +648,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }
+            if ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }
+            elseif ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }
             elseif ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }
             elseif ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }
             elseif ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }

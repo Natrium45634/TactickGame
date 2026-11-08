@@ -32,6 +32,24 @@ public enum FieldKind
 
 public sealed record FieldOption(string Value, string Label);
 
+/// <summary>
+/// Which objects of the referenced kind a field accepts (spec part 6 §2.3 «типизированные фильтры совместимости»): e.g. a
+/// resistance key takes only resistance-affected types, a family field only families.
+/// </summary>
+public enum ReferenceFilter
+{
+    Any = 0,
+
+    /// <summary>Damage type families only (physical, magical, true, custom families).</summary>
+    Family = 1,
+
+    /// <summary>Damage subtypes only (piercing, a custom «Огонь» …).</summary>
+    Subtype = 2,
+
+    /// <summary>Damage types numeric resistance applies to (not true-like).</summary>
+    ResistanceAffected = 3,
+}
+
 /// <summary>Standard sections of a property panel (spec part 4 §3.1).</summary>
 public static class FieldSections
 {
@@ -88,6 +106,9 @@ public sealed partial record FieldSchema
     public int? MaxLength { get; init; }
 
     public IReadOnlyList<FieldOption> Options { get; init; } = Array.Empty<FieldOption>();
+
+    /// <summary>Which referenced objects are offered (spec part 6 §2.3).</summary>
+    public ReferenceFilter RefFilter { get; init; }
 
     /// <summary>Kind of the referenced objects for <see cref="FieldKind.Reference"/> / <see cref="FieldKind.ReferenceList"/>.</summary>
     public string? RefKind { get; init; }
