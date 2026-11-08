@@ -33,6 +33,9 @@ public sealed record SimulationSettings
     /// <summary>Technical limits of combat reactions (spec part 5 §5.5).</summary>
     public CombatLimits CombatLimits { get; init; } = new();
 
+    /// <summary>Stages that may change a damage event before D0 (spec part 5 §13.4, reserved for elements); empty by default.</summary>
+    public IReadOnlyList<IDamageStage> PreDamageStages { get; init; } = System.Array.Empty<IDamageStage>();
+
     /// <summary>Damage types by id (spec part 5 §2): the content catalog; the built-in one if no content is loaded.</summary>
     public IReadOnlyDictionary<string, HexTactics.Core.Combat.DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
 

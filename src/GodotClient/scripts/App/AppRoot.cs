@@ -237,6 +237,25 @@ public partial class AppRoot : Node
     {
         var parts = step.Split(':', 2);
         var arg = parts.Length > 1 ? parts[1] : string.Empty;
+
+        // After an editor opens or closes (also a nested one), its old panels leave the tree only at the end of the frame; a
+        // click in the same place must not reach them. Pointer steps wait a few frames for the new screen (v0.25.0).
+        if (parts[0] is "ui" or "field" or "row")
+        {
+            var openEditor = _developer?.ActiveEditor;
+            if (!ReferenceEquals(openEditor, _settledEditor))
+            {
+                _settledEditor = openEditor;
+                _settleFrames = 4;
+            }
+
+            if (_settleFrames > 0)
+            {
+                _settleFrames--;
+                return AutomationRunner.Repeat;
+            }
+        }
+
         switch (parts[0])
         {
             case "ui":
@@ -331,6 +350,8 @@ public partial class AppRoot : Node
 
     private string? _scrolledFor;
     private string? _revealedFor;
+    private object? _settledEditor;
+    private int _settleFrames;
     private int _revealFrames;
 
     private static ScrollContainer? FindScroll(Node node)

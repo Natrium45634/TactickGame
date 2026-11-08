@@ -499,6 +499,47 @@ $script:RegressionScenarioV241 = $script:RegressionScenarioV24 + ';' + (@(
     'ui:rule.back', 'wait:10', 'ui:dev.back', 'wait:10', 'expect:screen:menu'
 ) -join ';')
 
+# v0.25.0+ (spec part 5 §7.5, §11.4 p.34, §11.5 p.36–43; plan v0.22): the UX trial of five different units made in the unit
+# editor alone (counts in docs/UX_TRIALS.md) — a tank, a piercing skirmisher weak to magic, a mage with the «Маг в латах» set and
+# an area attack, a fire guard with the «Сложная реакция» template made on top of the unit, a ghost with true-damage immunity
+# and a shield; they fight in a test match (the skirmisher and the mage fall, the guard and the tank lose nothing); the package
+# «Защита» (two units, their set and rules) is exported for the clean installation run.
+$script:RegressionScenarioV25 = $script:RegressionScenarioV241 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.create', 'field:unit.name=UX-1 Танк', 'field:unit.maxHealth=160', 'ui:unit.sec.res',
+    'field:unit.res.core.damage.physical=50', 'ui:unit.save', 'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=UX-2 Застрельщик', 'field:unit.attackDamageType=core.damage.piercing', 'field:unit.attackRange=3',
+    'field:unit.res.core.damage.magical=-50', 'field:unit.side=enemy', 'ui:unit.save', 'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=UX-3 Маг', 'field:unit.attackDamageType=core.damage.magical', 'field:unit.attackAreaRadius=1',
+    'field:unit.profile.pick=Маг в латах (свой)', 'ui:unit.profile.add', 'field:unit.side=enemy', 'ui:unit.save', 'expect:errors:0',
+    'expect:resistance:core.damage.magical:60', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=UX-4 Огненный страж', 'field:unit.res.core.damage.fire_example=300',
+    'field:unit.rule.pick=шаблон: Сложная реакция', 'ui:unit.rule.add', 'expect:editor:defense_rule', 'field:rule.damageTypeId=core.damage.fire_example',
+    'expect:rule-summary:При попадании урона «Огонь (пример)» и сопротивлении ≥ 300 %', 'ui:rule.save', 'expect:errors:0', 'ui:rule.back',
+    'expect:editor:unit', 'expect:rules:1', 'ui:unit.save', 'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=UX-5 Призрак', 'ui:unit.res.core.damage.true.rules', 'ui:unit.rule.add', 'expect:editor:defense_rule',
+    'ui:rule.save', 'ui:rule.back', 'expect:rules:1', 'ui:unit.shield.add', 'field:unit.shield.0.capacity=30', 'field:unit.side=enemy', 'ui:unit.save',
+    'expect:errors:0', 'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@UX-1 Танк', 'spawn:cell:2,5@UX-4 Огненный страж',
+    'spawn:enemy:3,2@UX-2 Застрельщик', 'spawn:enemy:2,2@UX-3 Маг', 'spawn:enemy:4,2@UX-5 Призрак', 'expect:units:5', 'select:1', 'drag:3,5>3,2',
+    'select:2', 'drag:2,5>2,2', 'advance:300', 'expect:alive:3:no', 'expect:alive:4:no', 'expect:hp:5:100', 'expect:hp:1:160', 'expect:hp:2:100',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'row:name=Латник', 'ui:dev.export', 'field:export.pick.Танк v24=true',
+    'field:dialog.input=Защита', 'ui:export.hxp', 'expect:message:Экспорт: пакет, объектов 5', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV25 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=UX-4 Огненный страж', 'ui:dev.open', 'expect:rules:1', 'expect:resistance:core.damage.fire_example:300',
+    'ui:unit.back', 'row:name=UX-5 Призрак', 'ui:dev.open', 'expect:rules:1', 'expect:shield:0:Щит:30', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + ($script:PersistenceScenarioV24 -replace 'ui:dev.cat.defense_rule;expect:rows:4', 'ui:dev.cat.defense_rule;expect:rows:6')
+
+# v0.25.0+ third run: the clean installation also imports «Защита» — sets and rules arrive with the units, the sandbox hits the
+# imported unit with the same numbers (spec part 5 §11.5 p.41).
+$script:CleanImportScenarioV25 = $script:CleanImportScenarioV20 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.import', 'field:dialog.input={PACKAGE2}', 'ui:import.preview', 'expect:import:5 объект(ов): новых 5',
+    'ui:import.install', 'expect:message:Импорт: установлено 5', 'row:name=Латник', 'ui:dev.open', 'expect:profiles:Маг в латах',
+    'expect:resistance:core.damage.slashing:50', 'ui:unit.sandbox', 'field:unit.sandbox.type=Режущий', 'field:unit.sandbox.amount=40',
+    'ui:unit.sandbox.run', 'expect:sandbox:HP цели: 100 → 80', 'ui:unit.back', 'row:name=Танк v24', 'ui:dev.open', 'expect:rules:2',
+    'expect:shield:0:Щит:50', 'ui:unit.back', 'ui:dev.cat.defense_rule', 'expect:rows:3', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -559,7 +600,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
+            $scenario = if ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
+                        elseif ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
                         elseif ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
                         elseif ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
                         elseif ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
@@ -580,7 +622,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }
+            if ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }
+            elseif ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }
             elseif ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }
             elseif ([version]$Version -ge [version]'0.22.0') { $persistence = $script:PersistenceScenarioV22 }
             elseif ([version]$Version -ge [version]'0.21.0') { $persistence = $script:PersistenceScenarioV21 }
@@ -611,7 +654,12 @@ if ($Run -and $errors.Count -eq 0) {
             # The package path goes inside the scenario text: Windows accepts forward slashes, so it stays free of escapes.
             $packageArg = if ($Launcher) { 'Z:' + $package } else { $package }
             $cleanArg = if ($Launcher) { 'Z:' + ($cleanRoot -replace '/', '\') } else { $cleanRoot }
-            $runs += @{ Name = 'clean-import'; Script = $script:CleanImportScenarioV20.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
+            $clean = $script:CleanImportScenarioV20
+            if ([version]$Version -ge [version]'0.25.0') {
+                $package2 = Join-Path (Join-Path $userRoot 'exports') 'Защита.hxp'
+                $clean = $script:CleanImportScenarioV25.Replace('{PACKAGE2}', $(if ($Launcher) { 'Z:' + $package2 } else { $package2 }))
+            }
+            $runs += @{ Name = 'clean-import'; Script = $clean.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
         }
         foreach ($pass in $runs) {
             $log = Join-Path $tmp "$($pass.Name).log"

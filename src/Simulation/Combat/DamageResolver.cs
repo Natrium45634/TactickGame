@@ -7,6 +7,20 @@ using HexTactics.Core.Units;
 namespace HexTactics.Simulation;
 
 /// <summary>Technical limits of combat reactions (spec part 5 §5.5); documented in ARCHITECTURE.md.</summary>
+/// <summary>
+/// A named stage that may change a damage event before D0 is frozen (spec part 5 §13.4: the reserved point of the future
+/// element system — element interactions run here, before resistance, without a new formula in every map, unit or skill).
+/// No stage is registered in this edition; <see cref="SimulationSettings.PreDamageStages"/> is empty by default.
+/// </summary>
+public interface IDamageStage
+{
+    /// <summary>Shown in traces and logs.</summary>
+    string Name { get; }
+
+    /// <summary>The event to resolve instead (the same instance when nothing changes). Must not touch health directly.</summary>
+    DamageEvent Apply(DamageEvent e, GameState state);
+}
+
 /// <summary>What happened to one defense rule on one hit (the trace of the developer sandbox).</summary>
 public enum RuleOutcome
 {
@@ -213,6 +227,12 @@ public sealed class DamageResolver
         }
 
         _hitSerial++;
+
+        // 1a. Registered stages before D0 (spec part 5 §13.4; none in this edition).
+        foreach (var stage in _settings.PreDamageStages)
+        {
+            e = stage.Apply(e, _state);
+        }
 
         // 2. D0: the attacker's side is already in the event; frozen, never negative or NaN.
         var d0 = double.IsFinite(e.Amount) ? Math.Max(0, e.Amount) : 0;

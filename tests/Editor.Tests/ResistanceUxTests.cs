@@ -146,4 +146,22 @@ public class ResistanceUxTests
         Assert.Equal(40, unit.EffectiveResistance(DamageTypes.Magical));
         Assert.NotNull(unit.CopyResistancesFrom("unit_nobody"));
     }
+
+    [Fact]
+    public void P39_a_set_on_two_units_a_local_change_of_one_changes_neither_the_other_nor_the_set()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var a = NewUnit(library, "Первый");
+        var b = NewUnit(library, "Второй");
+        Assert.Null(a.AddProfile("core.profile.armored"));
+        Assert.Null(b.AddProfile("core.profile.armored"));
+        Assert.True(a.Save().Ok);
+        Assert.True(b.Save().Ok);
+        Assert.Null(a.SetResistance(DamageTypes.Physical, "10"));
+        Assert.True(a.Save().Ok);
+        var second = new UnitEditorModel(library, library.Find(b.Item.Ref)!.Clone());
+        Assert.Equal((10.0, 50.0), (a.EffectiveResistance(DamageTypes.Slashing), second.EffectiveResistance(DamageTypes.Slashing)));
+        Assert.Equal(50, ((ResistanceProfileData)library.Find(ContentTypeRegistry.ResistanceProfile, "core.profile.armored")!.Data).Values[DamageTypes.Physical]);
+    }
 }
