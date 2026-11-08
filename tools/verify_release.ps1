@@ -685,6 +685,23 @@ $script:PersistenceScenarioV30 = (@(
     'ui:dev.cat.map', 'row:name=Арена засады', 'ui:dev.open', 'expect:map-ruleset:core.ruleset.standard', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV29.Replace('ui:dev.cat.combat_ruleset;expect:rows:3;', 'ui:dev.cat.combat_ruleset;expect:rows:4;') # «Засада» is the fourth ruleset
 
+# Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
+# scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
+function Split-Scenario([string]$Text, [int]$Limit = 32000) {
+    $bounds = @(Get-Variable -Scope Script -Name 'RegressionScenarioV*' -ValueOnly |
+        Where-Object { $_ -is [string] -and $Text.StartsWith($_ + ';') } | ForEach-Object { $_.Length } | Sort-Object -Unique)
+    $chunks = @()
+    $start = 0
+    while ($Text.Length - $start -gt $Limit) {
+        $cut = $bounds | Where-Object { $_ -gt $start -and ($_ - $start) -le $Limit } | Select-Object -Last 1
+        if (-not $cut) { throw "A part of the regression scenario is longer than $Limit characters and has no version boundary to split at." }
+        $chunks += $Text.Substring($start, $cut - $start)
+        $start = $cut + 1
+    }
+    $chunks += $Text.Substring($start)
+    return $chunks
+}
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -799,7 +816,13 @@ if ($Run -and $errors.Count -eq 0) {
         # (names, dialog titles) arrive garbled. Native Windows passes UTF-16 and needs nothing.
         if ($Launcher) { $env:LC_ALL = 'C.UTF-8'; $env:LANG = 'C.UTF-8' }
 
-        $runs = @(@{ Name = 'smoke'; Script = $scenario; Root = $userArg })
+        # Windows limits a whole command line to 32 767 characters. A longer regression scenario runs as consecutive launches
+        # on the same user folder, cut where an earlier version's scenario ends (each of them ends on the start menu).
+        $runs = @()
+        $parts = @(Split-Scenario $scenario)
+        for ($i = 0; $i -lt $parts.Count; $i++) {
+            $runs += @{ Name = $(if ($i -eq 0) { 'smoke' } else { "smoke-$($i + 1)" }); Script = $parts[$i]; Root = $userArg }
+        }
         if ($persistence) { $runs += @{ Name = 'restart'; Script = $persistence; Root = $userArg } }
         if ($regression -and [version]$Version -ge [version]'0.20.0') {
             # A clean installation imports the package the first run exported (spec part 4 §12.3 p.26).
