@@ -479,7 +479,7 @@ $script:RegressionScenarioV24 = $script:RegressionScenarioV23 + ';' + (@(
     'ui:game.debugdefense', 'expect:info:1:ОТЛАДКА ЗАЩИТЫ:yes', 'expect:info:1:физический +50 %:yes', 'expect:info:1:Щит 50/50:yes',
     'ui:game.debugdefense', 'expect:info:1:ОТЛАДКА:no', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
     'ui:dev.cat.defense_rule', 'row:name=Огненная регенерация и круговое отражение (пример)', 'ui:dev.open', 'expect:rule-summary:сопротивлении ≥ 300 %',
-    'ui:rule.back', 'ui:dev.back', 'ui:menu.play', 'expect:screen:play', 'expect:control:game.debugdefense:no', 'expect:control:game.menu:yes',
+    'ui:rule.back', 'wait:10', 'ui:dev.back', 'wait:10', 'ui:menu.play', 'expect:screen:play', 'expect:control:game.debugdefense:no', 'expect:control:game.menu:yes',
     'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
 ) -join ';')
 
@@ -487,6 +487,17 @@ $script:PersistenceScenarioV24 = (@(
     'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Танк v24', 'ui:dev.open', 'expect:editor:unit', 'expect:section:main', 'expect:rules:2',
     'expect:shield:0:Щит:50', 'expect:resistance:core.damage.slashing:50', 'expect:unit-field:attackPower:12', 'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + ($script:PersistenceScenarioV23 -replace 'ui:dev.cat.defense_rule;expect:rows:2', 'ui:dev.cat.defense_rule;expect:rows:4')
+
+# v0.24.1 (fix found by the v0.24.0 check at 1600×900): long category descriptions and object names never push the top-bar
+# buttons out of the window — every «Механики» category and the editor of the built-in rule with its long name keep «← Меню»,
+# «← Каталог», «Сохранить» inside the window.
+$script:RegressionScenarioV241 = $script:RegressionScenarioV24 + ';' + (@(
+    'ui:menu.dev', 'expect:on-screen:dev.back:yes', 'ui:dev.cat.defense_rule', 'expect:on-screen:dev.back:yes', 'expect:on-screen:dev.redo:yes',
+    'ui:dev.cat.resistance_profile', 'expect:on-screen:dev.back:yes', 'ui:dev.cat.damage_type', 'expect:on-screen:dev.back:yes',
+    'ui:dev.cat.mechanics', 'expect:on-screen:dev.back:yes', 'ui:dev.cat.defense_rule',
+    'row:name=Огненная регенерация и круговое отражение (пример)', 'ui:dev.open', 'expect:on-screen:rule.back:yes', 'expect:on-screen:rule.save:yes',
+    'ui:rule.back', 'wait:10', 'ui:dev.back', 'wait:10', 'expect:screen:menu'
+) -join ';')
 
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
@@ -548,7 +559,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
+            $scenario = if ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
+                        elseif ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
                         elseif ([version]$Version -ge [version]'0.23.0') { $script:RegressionScenarioV23 }
                         elseif ([version]$Version -ge [version]'0.22.0') { $script:RegressionScenarioV22 }
                         elseif ([version]$Version -ge [version]'0.21.0') { $script:RegressionScenarioV21 }

@@ -434,6 +434,27 @@ public partial class AppRoot : Node
                 actual = _developer?.Category ?? "none";
                 ok = actual == a[1];
                 break;
+            case "on-screen":
+                {
+                    // expect:on-screen:<automation id>:yes|no — the control is visible and lies wholly inside the window
+                    var c = AutomationIds.Find(a[1]);
+                    var view = GetViewport().GetVisibleRect();
+                    if (c is null)
+                    {
+                        actual = "no";
+                    }
+                    else
+                    {
+                        var rect = c.GetGlobalRect();
+                        var t = c.GetCanvasTransform();
+                        var screen = new Rect2(t * rect.Position, t.BasisXform(rect.Size));
+                        actual = view.Encloses(screen) ? "yes" : $"no ({screen.Position.X:0},{screen.Position.Y:0} {screen.Size.X:0}×{screen.Size.Y:0} in {view.Size.X:0}×{view.Size.Y:0})";
+                    }
+
+                    ok = actual == a[2];
+                    break;
+                }
+
             case "control":
                 // expect:control:<automation id>:yes|no — the control exists and is visible
                 actual = AutomationIds.Find(a[1]) is null ? "no" : "yes";

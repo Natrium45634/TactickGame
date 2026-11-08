@@ -233,6 +233,8 @@ public partial class DeveloperMode : Node
         row.AddChild(UiKit.Label("HexTactics · Разработчик", 18));
         _status = UiKit.Label(string.Empty, 13, dim: true);
         _status.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _status.ClipText = true; // never pushes «← Меню» out of the window (v0.24.1)
+        _status.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         _status.VerticalAlignment = VerticalAlignment.Center;
         row.AddChild(_status);
         _undo = UiKit.Button("↶ Отменить", Undo, ButtonKind.Normal, "dev.undo", "Отменить последнее действие (Ctrl+Z)");
@@ -295,6 +297,8 @@ public partial class DeveloperMode : Node
         var column = UiKit.Column(8);
         panel.AddChild(column);
         _listTitle = UiKit.Label(string.Empty, 16);
+        _listTitle.AutowrapMode = TextServer.AutowrapMode.WordSmart; // long category descriptions wrap instead of widening the catalog (v0.24.1)
+        _listTitle.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         column.AddChild(_listTitle);
 
         var tools = UiKit.Row(6);

@@ -343,6 +343,7 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
 
         var item = Model.Item;
         _title.Text = $"{KindTitle}: {item.Name}" + (item.IsBuiltIn ? " 🔒" : string.Empty);
+        _title.TooltipText = _title.Text;
         var errors = Model.Validate().Count(i => i.IsError);
         (_status.Text, var color) = errors > 0
             ? ($"Ошибка ({errors}) · {(Model.IsDirty ? "есть изменения" : "сохранено")}", UiKit.Error)
@@ -386,11 +387,19 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
         _root.AddChild(_top);
         var bar = UiKit.Row(8);
         _top.AddChild(bar);
+        // Long names never widen the bar past the window (the buttons on the right stay reachable at any size, v0.24.1).
         _title = UiKit.Label(string.Empty, 17);
+        _title.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _title.SizeFlagsStretchRatio = 2;
+        _title.ClipText = true;
+        _title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        _title.MouseFilter = Control.MouseFilterEnum.Pass;
         bar.AddChild(_title);
         _status = UiKit.Label(string.Empty, 13);
         _status.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _status.VerticalAlignment = VerticalAlignment.Center;
+        _status.ClipText = true;
+        _status.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         bar.AddChild(_status);
         bar.AddChild(UiKit.Button("Сохранить", () => Save(), ButtonKind.Primary, IdPrefix + "save", "Проверить и сохранить (Ctrl+S)"));
         _undo = UiKit.Button("↶", Undo, ButtonKind.Normal, IdPrefix + "undo");
