@@ -134,8 +134,9 @@ public sealed class EffectResolver
     /// Typed damage of an effect: one event through the damage resolver (resistances etc.); death is processed after the
     /// tick. <paramref name="effect"/> gives the damage type and the penetration.
     /// </summary>
-    public DamageResult DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageOrigin origin, string damageTypeId, double penetration = 0, bool periodic = false) =>
-        Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic), tick);
+    public DamageResult DealDamage(UnitState target, UnitState? source, double amount, long tick, DamageOrigin origin, string damageTypeId, double penetration = 0, bool periodic = false,
+        double armorPenetration = 0, double armorPenetrationPercent = 0) =>
+        Damage.Resolve(Damage.Create(source?.Id, target.Id, damageTypeId, amount, origin, penetration, periodic, armorPenetration, armorPenetrationPercent), tick);
 
     /// <summary>Shared health rule: the single healing path of the damage resolver (never above the maximum).</summary>
     public void Heal(UnitState target, UnitState? source, double amount, long tick, DamageKind kind) =>
@@ -179,7 +180,9 @@ internal sealed class DamageEffectHandler : IEffectHandler
             invocation.Tick,
             invocation.Origin == EffectSource.Tile ? DamageOrigin.Surface : DamageOrigin.Skill,
             e.Text("damageType", DamageTypes.Untyped),
-            e.Number("penetration", 0));
+            e.Number("penetration", 0),
+            armorPenetration: e.Number("armorPenetration", 0),
+            armorPenetrationPercent: e.Number("armorPenetrationPercent", 0));
     }
 }
 
@@ -212,12 +215,14 @@ internal sealed class ModifierEffectHandler : IEffectHandler
     {
         var e = invocation.Effect;
         var stat = e.Text("stat", Stats.MoveSpeed);
-        var resistance = stat == Stats.Resistance;
-        var percent = !resistance && e.Text("mode", "percent") == "percent";
-        var key = resistance ? e.Text("resistanceOf", ResistanceSet.Global) : ResistanceSet.Global;
+        var layered = stat is Stats.Resistance or Stats.Armor; // points on a layer (global / family / type), never percent
+        var percent = !layered && e.Text("mode", "percent") == "percent";
+        var key = stat == Stats.Resistance ? e.Text("resistanceOf", ResistanceSet.Global)
+                : stat == Stats.Armor ? e.Text("armorOf", ArmorSet.Global)
+                : ResistanceSet.Global;
         resolver.AddStatus(invocation, new StatusEffect
         {
-            Key = resistance ? $"{invocation.SourceKey}|{Type}|{stat}|{key}" : $"{invocation.SourceKey}|{Type}|{stat}",
+            Key = layered ? $"{invocation.SourceKey}|{Type}|{stat}|{key}" : $"{invocation.SourceKey}|{Type}|{stat}",
             Kind = StatusKind.Modifier,
             Stat = stat,
             ResistanceKey = key,

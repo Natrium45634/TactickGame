@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "id": "core.unit.operative",
   "kind": "unit",
   "name": "Оперативник",
@@ -35,6 +35,9 @@
     "attackAreaRadius": 0,
     "attackAreaSplit": false,
     "resistances": {},
+    "armor": {},
+    "attackArmorPenetration": 0,
+    "attackArmorPenetrationPercent": 0,
     "defenseRules": [],
     "shields": [],
     "resistanceProfiles": []

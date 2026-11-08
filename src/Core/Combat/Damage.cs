@@ -164,6 +164,12 @@ public sealed record DamageEvent
     /// <summary>Percentage points that lower a positive resistance of the target (spec part 5 §3.1).</summary>
     public double Penetration { get; init; }
 
+    /// <summary>Defense points subtracted from the target's A (spec part 6 §3.2 «ArmorPenetrationFlat»); never lowers R.</summary>
+    public double ArmorPenetration { get; init; }
+
+    /// <summary>Percent (0…100) of the remaining A ignored after the flat penetration (spec part 6 §3.2).</summary>
+    public double ArmorPenetrationPercent { get; init; }
+
     public DamageOrigin Origin { get; init; }
 
     /// <summary>A slice of continuous damage (surface, periodic status).</summary>
@@ -200,6 +206,18 @@ public sealed record DamageResult
     public double? Resistance { get; init; }
 
     public double AfterResistance { get; init; }
+
+    /// <summary>A_raw (all layers and temporary changes, may be negative); null for true-like types (A not used).</summary>
+    public double? ArmorRaw { get; init; }
+
+    /// <summary>A_eff after max(0, ·) and the armor penetration; null for true-like types.</summary>
+    public double? Armor { get; init; }
+
+    /// <summary>The K used for this type (spec part 6 §3.2).</summary>
+    public double DefenseK { get; init; } = CombatRules.DefaultDefenseK;
+
+    /// <summary>Stage 7 (spec part 6 §8): the damage after K / (K + A_eff), before the flat reduction.</summary>
+    public double AfterArmor { get; init; }
 
     public double HpLoss { get; init; }
 

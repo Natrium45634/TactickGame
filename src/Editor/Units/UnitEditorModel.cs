@@ -20,10 +20,14 @@ public sealed record SkillChoice(string Id, string Name, string Icon, string Sum
 /// One row of the «Сопротивления» table (spec part 5 §7.2): the global row, a family, or a subtype under its family.
 /// <see cref="Bypass"/> rows (true-like types) have no number — they ignore numeric resistance.
 /// </summary>
-public sealed record ResistanceRow(string Key, string Label, double Value, int Depth, bool Bypass, string? Source = null, bool Own = false)
+public sealed record ResistanceRow(string Key, string Label, double Value, int Depth, bool Bypass, string? Source = null, bool Own = false,
+    double Armor = 0, string? ArmorSource = null, bool ArmorOwn = false)
 {
     /// <summary>The value comes from a set (not the object's own) — «наследовано».</summary>
     public bool Inherited => Source is not null && !Own;
+
+    /// <summary>The defense A of the row comes from a set (spec part 6 §3.2, §9.4).</summary>
+    public bool ArmorInherited => ArmorSource is not null && !ArmorOwn;
 }
 
 /// <summary>A row of the compact resistance table (spec part 5 §7.2): a family row knows whether it has subtypes and is open.</summary>
@@ -317,8 +321,11 @@ public sealed class UnitEditorModel : DefinitionEditorModel
     /// <summary>«физический +70 %, дробящий −120 %» — the values the unit has (sets and own), in table order (section header).</summary>
     private string ResistanceStrengths()
     {
-        var parts = ResistanceRows().Where(r => r.Value != 0)
+        var rows = ResistanceRows();
+        var parts = rows.Where(r => r.Value != 0)
             .Select(r => $"{(r.Key == UnitData.GlobalResistance ? "все типы" : r.Label.ToLowerInvariant())} {r.Value.ToString("+0.##;−0.##", CultureInfo.InvariantCulture)} %")
+            .Concat(rows.Where(r => r.Armor != 0)
+                .Select(r => $"A {(r.Key == UnitData.GlobalResistance ? "все типы" : r.Label.ToLowerInvariant())} {r.Armor.ToString("0.##", CultureInfo.InvariantCulture)}"))
             .ToList();
 
         return parts.Count <= 3 ? string.Join(", ", parts) : string.Join(", ", parts.Take(3)) + $" и ещё {parts.Count - 3}";
@@ -356,7 +363,7 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             var hasChildren = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key);
             var builtInGroup = r.Depth == 0 && (r.Key == UnitData.GlobalResistance || r.Key.StartsWith("core.", StringComparison.Ordinal));
             var subtreeSearch = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key && Matches(x));
-            var subtreeValue = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key && x.Value != 0);
+            var subtreeValue = r.Depth == 0 && all.Any(x => x.Depth == 1 && familyOf.GetValueOrDefault(x.Key) == r.Key && (x.Value != 0 || x.Armor != 0));
             bool visible;
             if (showAll)
             {
@@ -369,7 +376,7 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             }
             else
             {
-                visible = r.Value != 0 || r.Own || (r.Depth == 0 ? builtInGroup || subtreeValue : expanded.Contains(family));
+                visible = r.Value != 0 || r.Own || r.Armor != 0 || r.ArmorOwn || (r.Depth == 0 ? builtInGroup || subtreeValue : expanded.Contains(family));
             }
 
             if (visible)
@@ -405,6 +412,12 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             foreach (var (key, value) in other.Resistances)
             {
                 u.Resistances[key] = value;
+            }
+
+            u.Armor.Clear(); // spec part 6 §9.2: copying the defense of one unit to another takes R and A together
+            foreach (var (key, value) in other.Armor)
+            {
+                u.Armor[key] = value;
             }
         });
         return null;
@@ -492,12 +505,57 @@ public sealed class UnitEditorModel : DefinitionEditorModel
     /// <summary>The unit's base resistances: its sets in order, then its own values (spec part 5 §6.4).</summary>
     public IReadOnlyDictionary<string, ResistanceValue> Layered => ResistanceLayers.Effective(Unit, Library);
 
+    /// <summary>The unit's base defense A: its sets in order, then its own values (spec part 6 §3.2) — the same layering as R.</summary>
+    public IReadOnlyDictionary<string, ResistanceValue> LayeredArmor => ResistanceLayers.Effective(Unit, Library, armor: true);
+
     /// <summary>
     /// The rows of the resistance table: «все сопротивляемые типы», then every family with its subtypes (physical, magical,
     /// custom families; legacy types only if this unit has a value for them), true-like types last as rows without a number.
     /// Every row says whether its value is the unit's own or comes from a set.
     /// </summary>
-    public IReadOnlyList<ResistanceRow> ResistanceRows() => Mechanics.ResistanceTable.Rows(Library, Layered);
+    public IReadOnlyList<ResistanceRow> ResistanceRows() => Mechanics.ResistanceTable.Rows(Library, Layered, LayeredArmor);
+
+    /// <summary>
+    /// Sets the unit's own defense A from input (0…1 000 000 points, spec part 6 §3.2). 0 removes the own value unless a set
+    /// gives this key a value — then 0 is kept as an explicit override.
+    /// </summary>
+    public ContentIssue? SetArmor(string key, object? input)
+    {
+        if (Mechanics.ResistanceTable.ParseArmor(Library, key, input, $"armor.{key}", out var value) is { } issue)
+        {
+            return issue;
+        }
+
+        var inherited = Unit.ResistanceProfiles.Any(p => ResistanceLayers.Of(Library, p, armor: true).ContainsKey(key));
+        Apply($"Защита A «{Mechanics.ResistanceTable.KeyName(Library, key)}»: {ExplainArmor(value)}", (d, _) =>
+        {
+            var u = (UnitData)d;
+            if (value == 0 && !inherited)
+            {
+                u.Armor.Remove(key);
+            }
+            else
+            {
+                u.Armor[key] = value;
+            }
+        });
+        return null;
+    }
+
+    /// <summary>Drops the unit's own defense A: the set's value (or 0) applies again.</summary>
+    public void ResetArmor(string key) =>
+        Apply($"Сбросить свою защиту A «{Mechanics.ResistanceTable.KeyName(Library, key)}»", (d, _) => ((UnitData)d).Armor.Remove(key));
+
+    /// <summary>A_raw against a type with every layer of this unit (global + family + subtype), spec part 6 §3.2.</summary>
+    public double EffectiveArmor(string typeId) => Mechanics.ResistanceTable.ArmorTotal(Library, LayeredArmor, typeId);
+
+    /// <summary>«A 100 = ×0,5 урона после сопротивления (K = 100)»: what a defense value means with the standard K.</summary>
+    public static string ExplainArmor(double a, double k = HexTactics.Core.Combat.CombatRules.DefaultDefenseK)
+    {
+        var n = a.ToString("0.##", CultureInfo.InvariantCulture);
+        var m = HexTactics.Core.Combat.ArmorMath.Multiplier(a, k);
+        return $"A {n} = ×{m.ToString("0.###", CultureInfo.InvariantCulture)} урона после сопротивления (K = {k.ToString("0.##", CultureInfo.InvariantCulture)})";
+    }
 
     /// <summary>
     /// Sets the unit's own value from input (−500…+500 %, decimal comma or dot). 0 removes the own value unless a set gives
@@ -586,6 +644,14 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             if (value.Value != 0)
             {
                 data.Values[key] = value.Value;
+            }
+        }
+
+        foreach (var (key, value) in LayeredArmor)
+        {
+            if (value.Value != 0)
+            {
+                data.Armor[key] = value.Value;
             }
         }
 

@@ -43,6 +43,21 @@ public sealed class UnitData : IContentData
     public SortedDictionary<string, double> Resistances { get; } = new(System.StringComparer.Ordinal);
 
     /// <summary>
+    /// Defense A in defense points, 0…1 000 000 (spec part 6 §3.2): key <c>global</c> or a damage type id (a family or a
+    /// subtype); the formula multiplies the damage after R by K / (K + A). Missing keys are 0. Only in the developer mode.
+    /// </summary>
+    public SortedDictionary<string, double> Armor { get; } = new(System.StringComparer.Ordinal);
+
+    public const double MinArmor = 0;
+    public const double MaxArmor = 1_000_000;
+
+    /// <summary>Armor penetration of the normal attack in defense points (spec part 6 §3.4 p.4).</summary>
+    public double AttackArmorPenetration { get; set; }
+
+    /// <summary>Percent 0…100 of the remaining defense A the normal attack ignores.</summary>
+    public double AttackArmorPenetrationPercent { get; set; }
+
+    /// <summary>
     /// Resistance sets applied to the unit by reference, in order (spec part 5 §6.4 <c>resistanceProfileRefs</c>); a later set
     /// replaces an earlier one per key, <see cref="Resistances"/> are the unit's own values over them.
     /// </summary>
@@ -119,6 +134,18 @@ public sealed class UnitData : IContentData
         },
         new()
         {
+            Key = "attackArmorPenetration", Label = "Пробитие защиты A", Kind = FieldKind.Number, Default = 0.0, Min = 0, Max = 1_000_000, Unit = "очк.",
+            Advanced = true, Hint = "Обычный удар вычитает столько очков из защиты A цели (не ниже 0); сопротивление R не меняет.",
+            Get = o => ((UnitData)o).AttackArmorPenetration, Set = (o, v) => ((UnitData)o).AttackArmorPenetration = (double)v!,
+        },
+        new()
+        {
+            Key = "attackArmorPenetrationPercent", Label = "Пробитие защиты A, %", Kind = FieldKind.Number, Default = 0.0, Min = 0, Max = 100, Unit = "%",
+            Advanced = true, Hint = "Доля оставшейся защиты A цели, которую обычный удар не учитывает.",
+            Get = o => ((UnitData)o).AttackArmorPenetrationPercent, Set = (o, v) => ((UnitData)o).AttackArmorPenetrationPercent = (double)v!,
+        },
+        new()
+        {
             Key = "skills", Label = "Навыки", Kind = FieldKind.ReferenceList, RefKind = "skill", Section = FieldSections.Effects,
             Hint = "Ссылки на сохранённые навыки (без копирования их определений).",
             Get = o => ((UnitData)o).Skills,
@@ -168,6 +195,9 @@ public sealed class UnitData : IContentData
             ["attackAreaRadius"] = AttackAreaRadius,
             ["attackAreaSplit"] = AttackAreaSplit,
             ["resistances"] = ResistancesJson(),
+            ["armor"] = ValuesJson(Armor),
+            ["attackArmorPenetration"] = AttackArmorPenetration,
+            ["attackArmorPenetrationPercent"] = AttackArmorPenetrationPercent,
             ["resistanceProfiles"] = Strings(ResistanceProfiles),
             ["defenseRules"] = Strings(DefenseRules),
             ["shields"] = ShieldsJson(),
@@ -213,6 +243,9 @@ public sealed class UnitData : IContentData
             issues.Error("resistances", "ожидается объект «тип урона → процент»");
         }
 
+        ReadValues(obj, "armor", data.Armor, issues, "защита A — число очков");
+        data.AttackArmorPenetration = JsonFields.Number(obj, "attackArmorPenetration", 0, issues, string.Empty);
+        data.AttackArmorPenetrationPercent = JsonFields.Number(obj, "attackArmorPenetrationPercent", 0, issues, string.Empty);
         data.ResistanceProfiles.AddRange(JsonFields.TextList(obj, "resistanceProfiles", issues, string.Empty));
         data.DefenseRules.AddRange(JsonFields.TextList(obj, "defenseRules", issues, string.Empty));
         if (JsonFields.Array(obj, "shields", issues, string.Empty) is { } shields)
@@ -231,6 +264,56 @@ public sealed class UnitData : IContentData
         }
 
         return data;
+    }
+
+    /// <summary>Reads a «layer key → number» object (resistances, defense A); a non-number value is an error.</summary>
+    internal static void ReadValues(JsonObject obj, string key, IDictionary<string, double> into, IssueList issues, string message)
+    {
+        if (obj[key] is JsonObject values)
+        {
+            foreach (var (k, node) in values)
+            {
+                if (node is JsonValue v && v.TryGetValue<double>(out var x))
+                {
+                    into[k] = x;
+                }
+                else
+                {
+                    issues.Error($"{key}.{k}", message);
+                }
+            }
+        }
+        else if (obj[key] is not null)
+        {
+            issues.Error(key, "ожидается объект «тип урона → число»");
+        }
+    }
+
+    internal static JsonObject ValuesJson(IEnumerable<KeyValuePair<string, double>> values)
+    {
+        var obj = new JsonObject();
+        foreach (var (key, value) in values)
+        {
+            obj[key] = value;
+        }
+
+        return obj;
+    }
+
+    /// <summary>Errors of a defense A table: finite, 0…1 000 000, a valid layer key (spec part 6 §3.2).</summary>
+    internal static void ValidateArmor(IReadOnlyDictionary<string, double> armor, IssueList issues, string path)
+    {
+        foreach (var (key, value) in armor)
+        {
+            if (!double.IsFinite(value) || value < MinArmor || value > MaxArmor)
+            {
+                issues.Error($"{path}.{key}", $"защита A «{key}»: от 0 до 1 000 000 очков, сейчас {value.ToString("0.##", CultureInfo.InvariantCulture)}");
+            }
+            else if (key != GlobalResistance && !ContentIds.IsValid(key))
+            {
+                issues.Error($"{path}.{key}", $"неверный ключ защиты «{key}»");
+            }
+        }
     }
 
     private static JsonArray Strings(IEnumerable<string> values)
@@ -279,7 +362,7 @@ public sealed class UnitData : IContentData
         }
 
         var types = new HashSet<string>(System.StringComparer.Ordinal) { AttackDamageType };
-        foreach (var key in Resistances.Keys)
+        foreach (var key in Resistances.Keys.Concat(Armor.Keys))
         {
             if (key != GlobalResistance && types.Add(key))
             {
@@ -321,15 +404,8 @@ public sealed class UnitData : IContentData
             AttackDamageType = attack;
         }
 
-        foreach (var key in new List<string>(Resistances.Keys))
-        {
-            if (newIds.TryGetValue(new ContentRef("damage_type", key), out var renamed))
-            {
-                var value = Resistances[key];
-                Resistances.Remove(key);
-                Resistances[renamed] = value;
-            }
-        }
+        RemapKeys(Resistances, newIds);
+        RemapKeys(Armor, newIds);
 
         for (var i = 0; i < ResistanceProfiles.Count; i++)
         {
@@ -352,6 +428,20 @@ public sealed class UnitData : IContentData
             if (newIds.TryGetValue(new ContentRef("damage_type", shield.DamageType), out var type))
             {
                 shield.DamageType = type;
+            }
+        }
+    }
+
+    /// <summary>Moves the values of a «damage type → number» table to the new ids of their types.</summary>
+    internal static void RemapKeys(IDictionary<string, double> values, IReadOnlyDictionary<ContentRef, string> newIds)
+    {
+        foreach (var key in new List<string>(values.Keys))
+        {
+            if (newIds.TryGetValue(new ContentRef("damage_type", key), out var renamed))
+            {
+                var value = values[key];
+                values.Remove(key);
+                values[renamed] = value;
             }
         }
     }
@@ -393,6 +483,7 @@ public sealed class UnitData : IContentData
             }
         }
 
+        ValidateArmor(Armor, context.Issues, "armor");
         if (ResistanceProfiles.Count > MaxResistanceProfiles)
         {
             context.Issues.Error("resistanceProfiles", $"не больше {MaxResistanceProfiles} наборов сопротивлений");
@@ -447,7 +538,13 @@ public sealed class UnitData : IContentData
             MaxHealth = MaxHealth, MoveSpeed = MoveSpeed, AttackRate = AttackRate, AttackPower = AttackPower,
             AttackRange = AttackRange, Side = Side, Color = Color, Scale = Scale,
             AttackDamageType = AttackDamageType, AttackAreaRadius = AttackAreaRadius, AttackAreaSplit = AttackAreaSplit,
+            AttackArmorPenetration = AttackArmorPenetration, AttackArmorPenetrationPercent = AttackArmorPenetrationPercent,
         };
+        foreach (var (key, value) in Armor)
+        {
+            copy.Armor[key] = value;
+        }
+
         copy.Skills.AddRange(Skills);
         foreach (var (key, value) in Resistances)
         {

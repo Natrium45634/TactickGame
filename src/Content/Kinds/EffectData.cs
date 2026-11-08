@@ -32,6 +32,7 @@ public sealed class EffectData
     {
         ["damageType"] = "damage_type",
         ["resistanceOf"] = "damage_type",
+        ["armorOf"] = "damage_type",
     };
 
     /// <summary>Value of <c>resistanceOf</c> meaning «every resistance-affected type» (not a library object).</summary>

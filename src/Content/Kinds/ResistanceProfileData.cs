@@ -22,16 +22,13 @@ public sealed class ResistanceProfileData : IContentData
     /// <summary>Own values, percentage points −500…+500.</summary>
     public SortedDictionary<string, double> Values { get; } = new(StringComparer.Ordinal);
 
-    public JsonObject ToJson()
-    {
-        var values = new JsonObject();
-        foreach (var (key, value) in Values)
-        {
-            values[key] = value;
-        }
+    /// <summary>Own defense A values in points, 0…1 000 000 (spec part 6 §3.2, §10.1 <c>DefenseProfile</c>); same layering.</summary>
+    public SortedDictionary<string, double> Armor { get; } = new(StringComparer.Ordinal);
 
-        return new JsonObject { ["parent"] = Parent, ["values"] = values };
-    }
+    /// <summary>The R table or the A table of the set.</summary>
+    public SortedDictionary<string, double> Table(bool armor) => armor ? Armor : Values;
+
+    public JsonObject ToJson() => new() { ["parent"] = Parent, ["values"] = UnitData.ValuesJson(Values), ["armor"] = UnitData.ValuesJson(Armor) };
 
     public static ResistanceProfileData Read(JsonObject obj, IssueList issues)
     {
@@ -55,6 +52,7 @@ public sealed class ResistanceProfileData : IContentData
             issues.Error("values", "ожидается объект «тип урона → процент»");
         }
 
+        UnitData.ReadValues(obj, "armor", data.Armor, issues, "защита A — число очков");
         return data;
     }
 
@@ -65,7 +63,7 @@ public sealed class ResistanceProfileData : IContentData
             yield return new ContentRef(ContentTypeRegistry.ResistanceProfile, Parent);
         }
 
-        foreach (var key in Values.Keys)
+        foreach (var key in Values.Keys.Union(Armor.Keys, StringComparer.Ordinal))
         {
             if (key != UnitData.GlobalResistance)
             {
@@ -81,15 +79,8 @@ public sealed class ResistanceProfileData : IContentData
             Parent = parent;
         }
 
-        foreach (var key in Values.Keys.ToList())
-        {
-            if (newIds.TryGetValue(new ContentRef(ContentTypeRegistry.DamageType, key), out var renamed))
-            {
-                var value = Values[key];
-                Values.Remove(key);
-                Values[renamed] = value;
-            }
-        }
+        UnitData.RemapKeys(Values, newIds);
+        UnitData.RemapKeys(Armor, newIds);
     }
 
     public void Validate(ValidationContext context)
@@ -99,10 +90,12 @@ public sealed class ResistanceProfileData : IContentData
             context.Issues.Error("parent", $"неверная ссылка на набор «{Parent}»");
         }
 
-        if (Values.Count > 64)
+        if (Values.Count > 64 || Armor.Count > 64)
         {
-            context.Issues.Error("values", "не больше 64 значений в наборе");
+            context.Issues.Error(Values.Count > 64 ? "values" : "armor", "не больше 64 значений в таблице набора");
         }
+
+        UnitData.ValidateArmor(Armor, context.Issues, "armor");
 
         foreach (var (key, value) in Values)
         {
@@ -117,7 +110,9 @@ public sealed class ResistanceProfileData : IContentData
         }
     }
 
-    public string Summary() => Values.Count == 0 ? "пустой набор" : $"значений: {Values.Count}" + (Parent.Length > 0 ? " · на основе другого набора" : string.Empty);
+    public string Summary() => Values.Count + Armor.Count == 0 ? "пустой набор"
+        : string.Join(", ", new[] { Values.Count > 0 ? $"R: {Values.Count}" : null, Armor.Count > 0 ? $"A: {Armor.Count}" : null }.Where(x => x is not null))
+          + (Parent.Length > 0 ? " · на основе другого набора" : string.Empty);
 
     public IContentData Clone()
     {
@@ -125,6 +120,11 @@ public sealed class ResistanceProfileData : IContentData
         foreach (var (key, value) in Values)
         {
             copy.Values[key] = value;
+        }
+
+        foreach (var (key, value) in Armor)
+        {
+            copy.Armor[key] = value;
         }
 
         return copy;
@@ -144,7 +144,7 @@ public static class ResistanceLayers
     public const int MaxDepth = 8;
 
     /// <summary>The effective values of a set with its parents (missing or cyclic parents end the chain).</summary>
-    public static IReadOnlyDictionary<string, double> Of(ContentLibrary library, string profileId)
+    public static IReadOnlyDictionary<string, double> Of(ContentLibrary library, string profileId, bool armor = false)
     {
         var chain = new List<ResistanceProfileData>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -158,7 +158,7 @@ public static class ResistanceLayers
         var result = new Dictionary<string, double>(StringComparer.Ordinal);
         for (var i = chain.Count - 1; i >= 0; i--)
         {
-            foreach (var (key, value) in chain[i].Values)
+            foreach (var (key, value) in chain[i].Table(armor))
             {
                 result[key] = value;
             }
@@ -168,21 +168,22 @@ public static class ResistanceLayers
     }
 
     /// <summary>Every key that has a value for this unit, with its source.</summary>
-    public static SortedDictionary<string, ResistanceValue> Effective(UnitData unit, ContentLibrary? library)
+    /// <remarks><paramref name="armor"/>: the defense A tables (spec part 6 §3.2) instead of the resistances — the same layering.</remarks>
+    public static SortedDictionary<string, ResistanceValue> Effective(UnitData unit, ContentLibrary? library, bool armor = false)
     {
         var result = new SortedDictionary<string, ResistanceValue>(StringComparer.Ordinal);
         if (library is not null)
         {
             foreach (var profile in unit.ResistanceProfiles)
             {
-                foreach (var (key, value) in Of(library, profile))
+                foreach (var (key, value) in Of(library, profile, armor))
                 {
                     result[key] = new ResistanceValue(value, profile, false);
                 }
             }
         }
 
-        foreach (var (key, value) in unit.Resistances)
+        foreach (var (key, value) in armor ? unit.Armor : unit.Resistances)
         {
             result[key] = new ResistanceValue(value, null, true);
         }
@@ -191,6 +192,6 @@ public static class ResistanceLayers
     }
 
     /// <summary>The base values for the combat formula (zeros dropped).</summary>
-    public static Dictionary<string, double> Values(UnitData unit, ContentLibrary? library) =>
-        Effective(unit, library).Where(x => x.Value.Value != 0).ToDictionary(x => x.Key, x => x.Value.Value, StringComparer.Ordinal);
+    public static Dictionary<string, double> Values(UnitData unit, ContentLibrary? library, bool armor = false) =>
+        Effective(unit, library, armor).Where(x => x.Value.Value != 0).ToDictionary(x => x.Key, x => x.Value.Value, StringComparer.Ordinal);
 }

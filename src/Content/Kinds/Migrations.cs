@@ -15,6 +15,21 @@ public static class Migrations
     /// <summary>Legacy «direct HP effect» of old tile surfaces (bypasses resistances: the same HP per second for every target).</summary>
     public const string Direct = "core.damage.direct";
 
+    /// <summary>
+    /// Resistance set 1 → 2 (spec part 6 §3.2, §9.1 «Профили защиты и сопротивлений»): the set gets an empty defense A table.
+    /// </summary>
+    public static JsonObject? ResistanceProfile(int from, JsonObject data, IssueList issues)
+    {
+        if (from != 1)
+        {
+            return null;
+        }
+
+        var copy = (JsonObject)data.DeepClone();
+        copy["armor"] ??= new JsonObject();
+        return copy;
+    }
+
     /// <summary>Skill 1 → 2: damage and damaging periodic effects without a damage type get the legacy neutral type.</summary>
     public static JsonObject? Skill(int from, JsonObject data, IssueList issues)
     {
@@ -56,6 +71,7 @@ public static class Migrations
     /// Unit 1 → 2: the normal attack hits with the legacy neutral type; no resistances, no area (no hidden bonuses).
     /// Unit 2 → 3 (spec part 5 §9.5): no defense rules and no shields — nothing is invented for old units.
     /// Unit 3 → 4: no resistance sets; the unit's resistances become its own values (same numbers).
+    /// Unit 4 → 5 (spec part 6 §3.5, §10.3): defense A = 0 and no armor penetration — K / (K + 0) = 1, old hits stay the same.
     /// </summary>
     public static JsonObject? Unit(int from, JsonObject data, IssueList issues)
     {
@@ -71,6 +87,11 @@ public static class Migrations
                 return copy;
             case 3:
                 copy["resistanceProfiles"] ??= new JsonArray(); // spec part 5 §6.4: own values stay, no set is applied
+                return copy;
+            case 4:
+                copy["armor"] ??= new JsonObject(); // spec part 6 §3.5: no hidden armor for old units
+                copy["attackArmorPenetration"] ??= 0.0;
+                copy["attackArmorPenetrationPercent"] ??= 0.0;
                 return copy;
             default:
                 return null;

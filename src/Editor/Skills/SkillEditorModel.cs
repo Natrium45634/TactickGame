@@ -366,6 +366,17 @@ public static class EffectPreview
             text += " · сила делится между целями";
         }
 
+        if (effect.Type == "damage")
+        {
+            var spec = effect.ToSpec(library.Registry.Effects);
+            var flat = spec.Number("armorPenetration", 0);
+            var percent = spec.Number("armorPenetrationPercent", 0);
+            if (flat > 0 || percent > 0)
+            {
+                text += " · пробитие A " + string.Join(" и ", new[] { flat > 0 ? $"{N(flat)} очк." : null, percent > 0 ? $"{N(percent)} %" : null }.Where(x => x is not null));
+            }
+        }
+
         return text;
     }
 
@@ -414,6 +425,7 @@ public static class EffectPreview
     /// <summary>«30 %», «1» or, for a resistance, «20 п.п.» (resistance changes are always in percentage points).</summary>
     internal static string StatSize(EffectSpec s) =>
         s.Text("stat", Stats.MoveSpeed) == Stats.Resistance ? N(s.Number("delta")) + " п.п."
+        : s.Text("stat", Stats.MoveSpeed) == Stats.Armor ? N(s.Number("delta")) + " очк."
         : s.Text("mode", "percent") == "percent" ? N(s.Number("percent") * 100) + " %" : N(s.Number("delta"));
 
     internal static string StatWord(string stat) => stat switch
@@ -421,6 +433,7 @@ public static class EffectPreview
         Stats.AttackPower => "силы атаки",
         Stats.AttackRate => "скорости атак",
         Stats.Resistance => "сопротивления",
+        Stats.Armor => "защиты A",
         Stats.HealingReceived => "получаемого лечения",
         _ => "скорости движения",
     };

@@ -44,6 +44,12 @@ public static class Stats
     /// </summary>
     public const string Resistance = "resistance";
 
+    /// <summary>
+    /// Defense A in points (spec part 6 §3.2 «A_temporary»); <see cref="StatusEffect.ResistanceKey"/> names the layer, as for
+    /// <see cref="Resistance"/>. A debuff may make the raw total negative; the damage formula treats it as zero.
+    /// </summary>
+    public const string Armor = "armor";
+
     /// <summary>Incoming healing multiplier (spec part 5 §4.6): a debuff of −100 % blocks healing.</summary>
     public const string HealingReceived = "healingReceived";
 
@@ -82,7 +88,7 @@ public sealed class StatusEffect
     /// <summary>Damage type of a damaging periodic status (spec part 5 §4.6: DoT goes through the damage resolver).</summary>
     public string DamageTypeId { get; init; } = HexTactics.Core.Combat.DamageTypes.Untyped;
 
-    /// <summary>Resistance layer changed by a <see cref="Stats.Resistance"/> modifier: <c>global</c>, a family or a type id.</summary>
+    /// <summary>Layer changed by a <see cref="Stats.Resistance"/> or <see cref="Stats.Armor"/> modifier: <c>global</c>, a family or a type id.</summary>
     public string ResistanceKey { get; init; } = HexTactics.Core.Combat.ResistanceSet.Global;
 
     public required double Duration { get; init; }

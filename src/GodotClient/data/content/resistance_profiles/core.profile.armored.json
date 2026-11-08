@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.profile.armored",
   "kind": "resistance_profile",
   "name": "Бронированный",
@@ -20,6 +20,7 @@
     "parent": "",
     "values": {
       "core.damage.physical": 50
-    }
+    },
+    "armor": {}
   }
 }

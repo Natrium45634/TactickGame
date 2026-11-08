@@ -41,6 +41,14 @@ public sealed record UnitStats
     /// <summary>Base numeric resistances (spec part 5 §3); temporary changes come from statuses.</summary>
     public ResistanceSet Resistances { get; init; } = ResistanceSet.Empty;
 
+    /// <summary>Base defense A by layers (spec part 6 §3.2); zero for content made before part 6 (old numbers stay).</summary>
+    public ArmorSet Armor { get; init; } = ArmorSet.Empty;
+
+    /// <summary>Armor penetration of the normal attack: points (flat) and percent of the remaining A (spec part 6 §3.4 p.4).</summary>
+    public double AttackArmorPenetration { get; init; }
+
+    public double AttackArmorPenetrationPercent { get; init; }
+
     /// <summary>Defense rules of the unit definition in the order of the definition (spec part 5 §4, §6.4).</summary>
     public IReadOnlyList<DefenseRule> DefenseRules { get; init; } = System.Array.Empty<DefenseRule>();
 

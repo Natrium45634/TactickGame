@@ -47,6 +47,12 @@ public sealed record GameContent(
     /// <summary>Damage types of the library by id (spec part 5 §2) for <c>SimulationSettings.DamageTypes</c>.</summary>
     public IReadOnlyDictionary<string, DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
 
+    /// <summary>The combat rules of the map (spec part 6 §9.5) for <c>SimulationSettings.CombatRules</c>.</summary>
+    public CombatRules CombatRules { get; init; } = CombatRules.Default;
+
+    /// <summary>Id of the ruleset the rules come from.</summary>
+    public string CombatRulesetId { get; init; } = CombatRulesetData.Legacy;
+
     /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
     public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
 }
@@ -292,6 +298,9 @@ public static class RuntimeFactory
             AttackAreaRadius = unit.AttackAreaRadius,
             AttackAreaSplit = unit.AttackAreaSplit,
             Resistances = new ResistanceSet(ResistanceLayers.Values(unit, library)),
+            Armor = new ArmorSet(ResistanceLayers.Values(unit, library, armor: true)),
+            AttackArmorPenetration = unit.AttackArmorPenetration,
+            AttackArmorPenetrationPercent = unit.AttackArmorPenetrationPercent,
             DefenseRules = rules,
             Shields = shields,
         };
@@ -426,7 +435,38 @@ public static class RuntimeFactory
             roster.Add((GameContent.OperativeNames[i], template.ToProfile()));
         }
 
-        return new GameContent(map, skills, defaultUnit, tiles, issues.Items) { Units = units, Squad = roster, TileEffects = tileEffects, DamageTypes = damageTypes };
+        var rulesetId = mapItem.Data is MapData md ? md.EffectiveRuleset : CombatRulesetData.Legacy;
+        if (library.Find(ContentTypeRegistry.CombatRuleset, rulesetId) is null)
+        {
+            issues.Warning(mapItem.Id, $"правила боя «{rulesetId}» не найдены — используются совместимые");
+            rulesetId = CombatRulesetData.Legacy;
+        }
+
+        return new GameContent(map, skills, defaultUnit, tiles, issues.Items)
+        {
+            Units = units, Squad = roster, TileEffects = tileEffects, DamageTypes = damageTypes,
+            CombatRules = BuildCombatRules(library, rulesetId), CombatRulesetId = rulesetId,
+        };
+    }
+
+    /// <summary>
+    /// Combat rules of a <c>combat_ruleset</c> (spec part 6 §3.2): K and K per family. A missing or broken ruleset gives the
+    /// defaults (K = 100), which leave units without defense A unchanged.
+    /// </summary>
+    public static CombatRules BuildCombatRules(ContentLibrary library, string rulesetId, ContentItem? draft = null)
+    {
+        var item = draft is not null && draft.Id == rulesetId ? draft : library.Find(ContentTypeRegistry.CombatRuleset, rulesetId);
+        if (item?.Data is not CombatRulesetData data || (item.HasErrors && !ReferenceEquals(item, draft)))
+        {
+            return CombatRules.Default;
+        }
+
+        return new CombatRules
+        {
+            DefenseK = Math.Clamp(data.DefenseK, CombatRules.MinDefenseK, CombatRules.MaxDefenseK),
+            DefenseKByFamily = data.DefenseKByFamily.Where(x => double.IsFinite(x.Value) && x.Value > 0)
+                .ToDictionary(x => x.Key, x => Math.Clamp(x.Value, CombatRules.MinDefenseK, CombatRules.MaxDefenseK), StringComparer.Ordinal),
+        };
     }
 
     private static UnitTemplate SkillFirst(UnitTemplate template, string skillId) =>

@@ -162,7 +162,8 @@ internal sealed class AttackSystem : ISimulationSystem
         var amount = stats.AttackAreaSplit && targets.Count > 0 ? stats.AttackPower / targets.Count : stats.AttackPower;
         foreach (var t in targets)
         {
-            _damage.Resolve(_damage.Create(unit.Id, t.Id, stats.AttackDamageTypeId, amount, DamageOrigin.NormalAttack), tick);
+            _damage.Resolve(_damage.Create(unit.Id, t.Id, stats.AttackDamageTypeId, amount, DamageOrigin.NormalAttack,
+                armorPenetration: stats.AttackArmorPenetration, armorPenetrationPercent: stats.AttackArmorPenetrationPercent), tick);
         }
     }
 

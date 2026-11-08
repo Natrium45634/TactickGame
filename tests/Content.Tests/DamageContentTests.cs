@@ -45,7 +45,7 @@ public class DamageContentTests
         Assert.Equal(Migrations.Direct, ((TileData)library.Find(ContentTypeRegistry.Tile, "tile_old")!.Data).Effects[0].Get("damageType"));
         Assert.Equal(4, library.Find(ContentTypeRegistry.Skill, "skill_old")!.Revision);
 
-        foreach (var (folder, id, old, schema) in new[] { ("skills", "skill_old", OldSkill, 2), ("units", "unit_old", OldUnit, 4), ("tiles", "tile_old", OldTile, 2) })
+        foreach (var (folder, id, old, schema) in new[] { ("skills", "skill_old", OldSkill, 2), ("units", "unit_old", OldUnit, 5), ("tiles", "tile_old", OldTile, 2) })
         {
             Assert.Contains($"\"schemaVersion\": {schema}", File.ReadAllText(Path.Combine(dir.Path, "content", folder, id + ".json")), System.StringComparison.Ordinal);
             var backup = Directory.GetFiles(Path.Combine(dir.Path, "backups"), id + ".json", SearchOption.AllDirectories).Single();

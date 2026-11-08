@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using HexTactics.Content.Model;
+using HexTactics.Content.Registry;
 using HexTactics.Core.Hex;
 
 namespace HexTactics.Content.Kinds;
@@ -85,6 +86,15 @@ public sealed class MapData : IContentData
     /// <summary>Optional test points for the route check (none = no route check).</summary>
     public List<MapPointData> TestPoints { get; } = new();
 
+    /// <summary>
+    /// Combat rules of the map (spec part 6 §9.5, §10.3): a <c>combat_ruleset</c> id; empty — the compatible
+    /// <see cref="CombatRulesetData.Legacy"/>, so maps made before part 6 keep their results. New maps get the standard set.
+    /// </summary>
+    public string CombatRuleset { get; set; } = string.Empty;
+
+    /// <summary>The ruleset the map plays with.</summary>
+    public string EffectiveRuleset => CombatRuleset.Length == 0 ? CombatRulesetData.Legacy : CombatRuleset;
+
     public MapTileData? TileAt(int col, int row) => Tiles.Find(t => t.Col == col && t.Row == row);
 
     public MapPointData? PointAt(int col, int row) => TestPoints.Find(p => p.Col == col && p.Row == row);
@@ -152,6 +162,11 @@ public sealed class MapData : IContentData
             result["testPoints"] = points;
         }
 
+        if (CombatRuleset.Length > 0)
+        {
+            result["combatRuleset"] = CombatRuleset;
+        }
+
         return result;
     }
 
@@ -163,6 +178,7 @@ public sealed class MapData : IContentData
             Columns = JsonFields.Integer(obj, "columns", 12, issues, string.Empty),
             Rows = JsonFields.Integer(obj, "rows", 10, issues, string.Empty),
             BaseName = JsonFields.Text(obj, "baseName", "База игрока", issues, string.Empty),
+            CombatRuleset = JsonFields.Text(obj, "combatRuleset", string.Empty, issues, string.Empty),
         };
         if (JsonFields.Array(obj, "zones", issues, string.Empty) is { } zones)
         {
@@ -238,6 +254,11 @@ public sealed class MapData : IContentData
                 t.Tile = id;
             }
         }
+
+        if (newIds.TryGetValue(new ContentRef(ContentTypeRegistry.CombatRuleset, CombatRuleset), out var ruleset))
+        {
+            CombatRuleset = ruleset;
+        }
     }
 
     public IEnumerable<ContentRef> References()
@@ -249,6 +270,11 @@ public sealed class MapData : IContentData
             {
                 yield return new ContentRef("tile", t.Tile);
             }
+        }
+
+        if (CombatRuleset.Length > 0)
+        {
+            yield return new ContentRef(ContentTypeRegistry.CombatRuleset, CombatRuleset);
         }
     }
 
@@ -329,7 +355,7 @@ public sealed class MapData : IContentData
 
     public IContentData Clone()
     {
-        var copy = new MapData { Layout = Layout, Columns = Columns, Rows = Rows, BaseName = BaseName };
+        var copy = new MapData { Layout = Layout, Columns = Columns, Rows = Rows, BaseName = BaseName, CombatRuleset = CombatRuleset };
         foreach (var z in Zones)
         {
             copy.Zones.Add(z.Clone());

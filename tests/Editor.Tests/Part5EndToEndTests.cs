@@ -158,7 +158,7 @@ public class Part5EndToEndTests
     }
 
     [Fact]
-    public void P44_a_part_3_unit_of_schema_1_reaches_schema_4_with_its_old_numbers()
+    public void P44_a_part_3_unit_of_schema_1_reaches_the_current_schema_with_its_old_numbers()
     {
         using var dir = new TempDirectory();
         Directory.CreateDirectory(Path.Combine(dir.Path, "content", "units"));
@@ -169,8 +169,10 @@ public class Part5EndToEndTests
         var data = (UnitData)item.Data;
         Assert.Equal((Migrations.Untyped, 0, 0, 0), (data.AttackDamageType, data.ResistanceProfiles.Count, data.DefenseRules.Count, data.Shields.Count));
         Assert.Empty(data.Resistances);
+        Assert.Empty(data.Armor); // spec part 6 §3.5: A = 0 after the migration, no hidden armor
+        Assert.Equal((0.0, 0.0), (data.AttackArmorPenetration, data.AttackArmorPenetrationPercent));
         Assert.Equal(3, item.Revision);
-        Assert.Contains("\"schemaVersion\": 4", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v17.json")), StringComparison.Ordinal);
+        Assert.Contains("\"schemaVersion\": 5", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v17.json")), StringComparison.Ordinal);
         Assert.Equal(v17, File.ReadAllText(Directory.GetFiles(Path.Combine(dir.Path, "backups"), "unit_v17.json", SearchOption.AllDirectories).Single()));
         var hit = HitSandbox.Run(library, new SandboxSetup { TargetUnitId = item.Id, DamageTypeId = DamageTypes.Slashing, Amount = 20 });
         Assert.Equal(20, hit.With.Result.HpLoss, 9); // an unprotected old unit takes the old numbers

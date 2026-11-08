@@ -115,7 +115,8 @@ public sealed class DamageResolver
         : DamageTypes.BuiltIn[DamageTypes.Untyped];
 
     /// <summary>A new primary event (its own root action).</summary>
-    public DamageEvent Create(UnitId? source, UnitId target, string damageTypeId, double amount, DamageOrigin origin, double penetration = 0, bool periodic = false)
+    public DamageEvent Create(UnitId? source, UnitId target, string damageTypeId, double amount, DamageOrigin origin, double penetration = 0, bool periodic = false,
+        double armorPenetration = 0, double armorPenetrationPercent = 0)
     {
         var id = ++_nextEventId;
         return new DamageEvent
@@ -127,9 +128,27 @@ public sealed class DamageResolver
             DamageTypeId = damageTypeId,
             Amount = amount,
             Penetration = penetration,
+            ArmorPenetration = armorPenetration,
+            ArmorPenetrationPercent = armorPenetrationPercent,
             Origin = origin,
             Periodic = periodic,
         };
+    }
+
+    /// <summary>
+    /// The defense A of <paramref name="target"/> against a type (spec part 6 §3.2): raw total of the layers and temporary
+    /// changes, and the effective value after max(0, ·) and the armor penetration; null for true-like types.
+    /// </summary>
+    public (double Raw, double Effective)? EffectiveArmor(UnitState target, string damageTypeId, double penetrationFlat = 0, double penetrationPercent = 0)
+    {
+        var type = TypeOf(damageTypeId);
+        if (type.Strategy != DamageStrategy.ResistanceAffected)
+        {
+            return null;
+        }
+
+        var raw = ArmorMath.Raw(target.Stats.Armor, target.Statuses, type);
+        return (raw, ArmorMath.Effective(raw, penetrationFlat, penetrationPercent));
     }
 
     /// <summary>The numeric resistance R of <paramref name="target"/> against a type after penetration; null for true-like types.</summary>
@@ -303,8 +322,16 @@ public sealed class DamageResolver
             }
         }
 
-        // 5. Resistance (resistance-affected types), flat reduction (not for true-like), cap.
-        var after = immune ? 0 : r is { } value ? budget * ResistanceMath.Multiplier(value) : budget;
+        // 5. Resistance R (resistance-affected types), once.
+        var afterResistance = immune ? 0 : r is { } value ? budget * ResistanceMath.Multiplier(value) : budget;
+
+        // 5a. Defense A with its own penetration: × K / (K + A_eff) (spec part 6 §3.2, §8 stage 7); true-like types bypass it.
+        var armor = EffectiveArmor(target, e.DamageTypeId, e.ArmorPenetration, e.ArmorPenetrationPercent);
+        var k = _settings.CombatRules.KFor(type);
+        var after = afterResistance * (armor is { } av ? ArmorMath.Multiplier(av.Effective, k) : 1);
+        var afterArmor = after;
+
+        // 5b. Flat reduction (not for true-like), cap.
         if (!immune)
         {
             foreach (var rule in rules)
@@ -425,7 +452,11 @@ public sealed class DamageResolver
             Converted = converted,
             Healed = healed,
             Resistance = r,
-            AfterResistance = immune ? 0 : r is { } rv ? budget * ResistanceMath.Multiplier(rv) : budget,
+            AfterResistance = afterResistance,
+            ArmorRaw = armor?.Raw,
+            Armor = armor?.Effective,
+            DefenseK = k,
+            AfterArmor = afterArmor,
             ShieldLoss = shieldLoss,
             HpLoss = hpLoss,
             Killed = !target.IsAlive,

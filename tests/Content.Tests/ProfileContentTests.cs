@@ -51,7 +51,7 @@ public class ProfileContentTests
         var unit = library.Find(ContentTypeRegistry.Unit, "unit_v22")!;
         Assert.Empty(((UnitData)unit.Data).ResistanceProfiles);
         Assert.Equal(40, RuntimeFactory.BuildUnit(unit, library).Stats.Resistances[DamageTypes.Slashing]);
-        Assert.Contains("\"schemaVersion\": 4", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v22.json")), StringComparison.Ordinal);
+        Assert.Contains("\"schemaVersion\": 5", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v22.json")), StringComparison.Ordinal);
         Assert.Equal(v22, File.ReadAllText(Directory.GetFiles(Path.Combine(dir.Path, "backups"), "unit_v22.json", SearchOption.AllDirectories).Single()));
     }
 

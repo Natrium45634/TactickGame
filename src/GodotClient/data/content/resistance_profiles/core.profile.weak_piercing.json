@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "id": "core.profile.weak_piercing",
   "kind": "resistance_profile",
   "name": "Слаб к колющему",
@@ -20,6 +20,7 @@
     "parent": "",
     "values": {
       "core.damage.piercing": -50
-    }
+    },
+    "armor": {}
   }
 }

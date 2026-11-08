@@ -71,6 +71,7 @@ public sealed class ContentTypeRegistry
     public const string DamageType = "damage_type";
     public const string DefenseRule = "defense_rule";
     public const string ResistanceProfile = "resistance_profile";
+    public const string CombatRuleset = "combat_ruleset";
 
     /// <summary>The «Механики» group of the catalog.</summary>
     public const string MechanicsGroup = "mechanics";
@@ -129,14 +130,15 @@ public sealed class ContentTypeRegistry
         {
             Id = Map, Title = "Карты", Singular = "карта", Folder = "maps", Order = 10,
             Description = "Поля из гексов: размер, типы местности, базы и зоны.",
-            Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData(), OptionalDataKeys = new[] { "testPoints" },
+            Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData { CombatRuleset = CombatRulesetData.Standard },
+            OptionalDataKeys = new[] { "testPoints", "combatRuleset" },
         });
         registry.Register(new ContentKind
         {
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 4, Migrate = Migrations.Unit,
+            SchemaVersion = 5, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -169,9 +171,17 @@ public sealed class ContentTypeRegistry
         });
         registry.Register(new ContentKind
         {
-            Id = ResistanceProfile, Title = "Наборы сопротивлений", Singular = "набор сопротивлений", Folder = "resistance_profiles", Order = 70,
-            Description = "Готовые таблицы сопротивлений («Бронированный», «Слаб к колющему»): применяются к юнитам ссылкой, значения юнита их перекрывают.",
+            Id = ResistanceProfile, Title = "Профили защиты и сопротивлений", Singular = "профиль защиты и сопротивлений", Folder = "resistance_profiles", Order = 70,
+            Description = "Готовые таблицы сопротивлений R и защиты A («Бронированный», «Слаб к колющему»): применяются к юнитам ссылкой, значения юнита их перекрывают.",
             Read = (o, i) => ResistanceProfileData.Read(o, i), CreateDefault = () => new ResistanceProfileData(),
+            SchemaVersion = 2, Migrate = Migrations.ResistanceProfile,
+            Group = MechanicsGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = CombatRuleset, Title = "Правила боя", Singular = "правила боя", Folder = "combat_rulesets", Order = 80,
+            Description = "Общие константы боя проекта: K защиты A (урон × K / (K + A)) и K по семействам; назначаются карте.",
+            Read = (o, i) => CombatRulesetData.Read(o, i), CreateDefault = () => new CombatRulesetData(), Fields = CombatRulesetData.Fields,
             Group = MechanicsGroup,
         });
         return registry;

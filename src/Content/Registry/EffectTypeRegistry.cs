@@ -123,6 +123,7 @@ public sealed class EffectTypeRegistry
         new FieldOption(Stats.AttackPower, "сила атаки (Attack Power)"),
         new FieldOption(Stats.AttackRate, "скорость атак"),
         new FieldOption(Stats.Resistance, "сопротивление (процентные пункты)"),
+        new FieldOption(Stats.Armor, "защита A (очки)"),
         new FieldOption(Stats.HealingReceived, "получаемое лечение (дебафф 100 % — запрет лечения)"),
     };
 
@@ -147,6 +148,26 @@ public sealed class EffectTypeRegistry
         Min = 0, Max = 500, Unit = "п.п.", Advanced = true,
         Hint = "Снижает только положительное сопротивление цели на столько процентных пунктов; иммунитет не пробивает.",
     };
+
+    private static FieldSchema ArmorPenetrationField() => Param("armorPenetration", "Пробитие защиты A", FieldKind.Number, 0.0) with
+    {
+        Min = 0, Max = 1_000_000, Unit = "очк.", Advanced = true,
+        Hint = "Вычитается из защиты A цели (не ниже 0); сопротивление R не меняет.",
+    };
+
+    private static FieldSchema ArmorPenetrationPercentField() => Param("armorPenetrationPercent", "Пробитие защиты A, %", FieldKind.Number, 0.0) with
+    {
+        Min = 0, Max = 100, Unit = "%", Advanced = true,
+        Hint = "Доля оставшейся защиты A, которую удар не учитывает (после пробития в очках).",
+    };
+
+    private static FieldSchema ArmorOfField() => Param("armorOf", "Защита A против", FieldKind.Reference, "global") with
+    {
+        RefKind = "damage_type", SpecialValue = "global", SpecialLabel = "всех сопротивляемых типов", RefFilter = ReferenceFilter.ResistanceAffected,
+        VisibleWhen = o => Is(o, "stat", Stats.Armor),
+    };
+
+    private static bool Layered(object o) => Is(o, "stat", Stats.Resistance) || Is(o, "stat", Stats.Armor);
 
     private static FieldSchema ResistanceOfField() => Param("resistanceOf", "Сопротивление к", FieldKind.Reference, "global") with
     {
@@ -242,6 +263,8 @@ public sealed class EffectTypeRegistry
                 Targets("enemies"),
                 AreaField(),
                 PenetrationField(),
+                ArmorPenetrationField(),
+                ArmorPenetrationPercentField(),
             })
         {
             TileFields = new[]
@@ -284,13 +307,14 @@ public sealed class EffectTypeRegistry
         })
         {
             var stat = Param("stat", "Характеристика", FieldKind.Choice, Stats.MoveSpeed) with { Options = StatOptions };
-            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") }, VisibleWhen = o => !Is(o, "stat", Stats.Resistance) };
-            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => !Is(o, "stat", Stats.Resistance) && Is(o, "mode", "percent") };
-            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Is(o, "stat", Stats.Resistance) || Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с, урон; для сопротивления — процентные пункты (итог R ограничен −500…+500)." };
+            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") }, VisibleWhen = o => !Layered(o) };
+            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => !Layered(o) && Is(o, "mode", "percent") };
+            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Layered(o) || Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с, урон; для сопротивления — процентные пункты (итог R ограничен −500…+500); для защиты A — очки (итог A в расчёте не ниже 0)." };
             var resistanceOf = ResistanceOfField();
+            var armorOf = ArmorOfField();
             registry.Register(new EffectTypeDescriptor(type, label, text, EffectContext.Skill | EffectContext.Tile, new[]
             {
-                stat, resistanceOf, mode, percent, delta,
+                stat, resistanceOf, armorOf, mode, percent, delta,
                 Duration(5),
                 Stacking(),
                 Hits(),
@@ -298,7 +322,7 @@ public sealed class EffectTypeRegistry
                 Targets(targets),
             })
             {
-                TileFields = new[] { Trigger(stay: false), stat, resistanceOf, mode, percent, delta, Duration(5), Stacking(), Sides() },
+                TileFields = new[] { Trigger(stay: false), stat, resistanceOf, armorOf, mode, percent, delta, Duration(5), Stacking(), Sides() },
             });
         }
 

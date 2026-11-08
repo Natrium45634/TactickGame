@@ -224,31 +224,61 @@ public sealed class ResistanceProfileEditorModel : DefinitionEditorModel
     public ResistanceProfileData Profile => (ResistanceProfileData)Item.Data;
 
     /// <summary>The parent's values (inherited) under the set's own values.</summary>
-    public IReadOnlyDictionary<string, ResistanceValue> Layered
+    public IReadOnlyDictionary<string, ResistanceValue> Layered => LayeredOf(armor: false);
+
+    /// <summary>The parent's defense A under the set's own A (spec part 6 §3.2): the same layering as R.</summary>
+    public IReadOnlyDictionary<string, ResistanceValue> LayeredArmor => LayeredOf(armor: true);
+
+    private IReadOnlyDictionary<string, ResistanceValue> LayeredOf(bool armor)
     {
-        get
+        var result = new SortedDictionary<string, ResistanceValue>(StringComparer.Ordinal);
+        if (Profile.Parent.Length > 0)
         {
-            var result = new SortedDictionary<string, ResistanceValue>(StringComparer.Ordinal);
-            if (Profile.Parent.Length > 0)
+            foreach (var (key, value) in ResistanceLayers.Of(Library, Profile.Parent, armor))
             {
-                foreach (var (key, value) in ResistanceLayers.Of(Library, Profile.Parent))
-                {
-                    result[key] = new ResistanceValue(value, Profile.Parent, false);
-                }
+                result[key] = new ResistanceValue(value, Profile.Parent, false);
             }
-
-            foreach (var (key, value) in Profile.Values)
-            {
-                result[key] = new ResistanceValue(value, null, true);
-            }
-
-            return result;
         }
+
+        foreach (var (key, value) in Profile.Table(armor))
+        {
+            result[key] = new ResistanceValue(value, null, true);
+        }
+
+        return result;
     }
 
-    public IReadOnlyList<ResistanceRow> Rows() => ResistanceTable.Rows(Library, Layered);
+    public IReadOnlyList<ResistanceRow> Rows() => ResistanceTable.Rows(Library, Layered, LayeredArmor);
 
     public double Total(string typeId) => ResistanceTable.Total(Library, Layered, typeId);
+
+    /// <summary>A_raw of the set against a type (global + family + subtype, spec part 6 §3.2).</summary>
+    public double ArmorTotal(string typeId) => ResistanceTable.ArmorTotal(Library, LayeredArmor, typeId);
+
+    public ContentIssue? SetArmor(string key, object? input)
+    {
+        if (ResistanceTable.ParseArmor(Library, key, input, $"armor.{key}", out var value) is { } issue)
+        {
+            return issue;
+        }
+
+        var inherited = Profile.Parent.Length > 0 && ResistanceLayers.Of(Library, Profile.Parent, armor: true).ContainsKey(key);
+        Apply($"Защита A «{ResistanceTable.KeyName(Library, key)}»: {UnitEditorModel.ExplainArmor(value)}", (d, _) =>
+        {
+            var p = (ResistanceProfileData)d;
+            if (value == 0 && !inherited)
+            {
+                p.Armor.Remove(key);
+            }
+            else
+            {
+                p.Armor[key] = value;
+            }
+        });
+        return null;
+    }
+
+    public void ResetArmor(string key) => Apply($"Сбросить защиту A «{ResistanceTable.KeyName(Library, key)}»", (d, _) => ((ResistanceProfileData)d).Armor.Remove(key));
 
     public ContentIssue? SetValue(string key, object? input)
     {
@@ -339,10 +369,103 @@ public sealed class ResistanceProfileEditorModel : DefinitionEditorModel
             (r > 0 ? strong : r < 0 ? weak : null)?.Add(text);
         }
 
-        lines.Add(strong.Count == 0 && weak.Count == 0 ? "Набор ничего не меняет." : $"Сильные стороны: {(strong.Count == 0 ? "нет" : string.Join(", ", strong))}; слабости: {(weak.Count == 0 ? "нет" : string.Join(", ", weak))}.");
+        var armor = Rows().Where(r => r.Armor != 0).Select(r => $"{(r.Key == UnitData.GlobalResistance ? "все типы" : r.Label.ToLowerInvariant())} {r.Armor.ToString("0.##", CultureInfo.InvariantCulture)}").ToList();
+        lines.Add(strong.Count == 0 && weak.Count == 0
+            ? armor.Count == 0 ? "Набор ничего не меняет." : "Сопротивлений нет."
+            : $"Сильные стороны: {(strong.Count == 0 ? "нет" : string.Join(", ", strong))}; слабости: {(weak.Count == 0 ? "нет" : string.Join(", ", weak))}.");
+        if (armor.Count > 0)
+        {
+            lines.Add($"Защита A: {string.Join(", ", armor)} — после сопротивления урон × K / (K + A), при K = 100 и A = 100 вдвое меньше.");
+        }
+
         lines.Add("Набор — только данные: юнит применяет его ссылкой, свои значения юнита его перекрывают; изменения действуют на всех после сохранения.");
         var users = Users();
         lines.Add(users.Count == 0 ? "Пока не применён." : $"Применяют: {string.Join(", ", users.Select(u => $"{u.Kind.Singular} «{u.Name}»"))}.");
+        return lines;
+    }
+}
+
+/// <summary>
+/// The combat ruleset constructor (spec part 6 §3.2, §9.5): K of the defense formula and optional K per family, with a
+/// table of what A means for the damage and the maps that play with the set.
+/// </summary>
+public sealed class CombatRulesetEditorModel : DefinitionEditorModel
+{
+    /// <summary>Defense values shown in the preview table.</summary>
+    public static readonly double[] PreviewArmor = { 0, 25, 50, 100, 200, 400 };
+
+    public CombatRulesetEditorModel(ContentLibrary library, ContentItem item)
+        : base(library, item)
+    {
+        if (item.Data is not CombatRulesetData)
+        {
+            throw new ArgumentException("Not a combat ruleset.", nameof(item));
+        }
+    }
+
+    public CombatRulesetData Ruleset => (CombatRulesetData)Item.Data;
+
+    /// <summary>The rules this set gives the damage pipeline (unsaved edits included).</summary>
+    public HexTactics.Core.Combat.CombatRules Rules => HexTactics.Content.Runtime.RuntimeFactory.BuildCombatRules(Library, Item.Id, Item);
+
+    /// <summary>Damage families that can get an own K: resistance-affected families without one yet.</summary>
+    public IReadOnlyList<FieldOption> FamilyChoices() => Library.Items(ContentTypeRegistry.DamageType)
+        .Where(t => t.Data is DamageTypeData { Family.Length: 0, Strategy: DamageTypeData.ResistanceAffected, Legacy: false } && !t.Archived && !Ruleset.DefenseKByFamily.ContainsKey(t.Id))
+        .Select(t => new FieldOption(t.Id, t.Name))
+        .ToList();
+
+    public ContentIssue? SetDefenseK(object? input) => TrySetField(CombatRulesetData.Fields.Single(f => f.Key == "defenseK"), input);
+
+    /// <summary>Gives a family its own K (from input), replacing the common one for its types.</summary>
+    public ContentIssue? SetFamilyK(string familyId, object? input)
+    {
+        if (Library.Find(ContentTypeRegistry.DamageType, familyId)?.Data is not DamageTypeData { Family.Length: 0 } family)
+        {
+            return ContentIssue.Error($"defenseKByFamily.{familyId}", $"«{familyId}» — не семейство типов урона");
+        }
+
+        if (family.Strategy != DamageTypeData.ResistanceAffected)
+        {
+            return ContentIssue.Error($"defenseKByFamily.{familyId}", "это семейство обходит защиту A — свой K не действовал бы");
+        }
+
+        var text = input switch { double d => d.ToString(CultureInfo.InvariantCulture), string s => s, _ => string.Empty };
+        if (!double.TryParse(text.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var k) || !double.IsFinite(k) ||
+            k < HexTactics.Core.Combat.CombatRules.MinDefenseK || k > HexTactics.Core.Combat.CombatRules.MaxDefenseK)
+        {
+            return ContentIssue.Error($"defenseKByFamily.{familyId}", $"K: больше 0 и не больше 1 000 000, а не «{input}» — значение не изменено");
+        }
+
+        var name = Library.Find(ContentTypeRegistry.DamageType, familyId)!.Name;
+        Apply($"K для «{name}» = {k.ToString("0.##", CultureInfo.InvariantCulture)}", (d, _) => ((CombatRulesetData)d).DefenseKByFamily[familyId] = k);
+        return null;
+    }
+
+    public void RemoveFamilyK(string familyId) =>
+        Apply($"Общий K для «{Library.Find(ContentTypeRegistry.DamageType, familyId)?.Name ?? familyId}»", (d, _) => ((CombatRulesetData)d).DefenseKByFamily.Remove(familyId));
+
+    /// <summary>Maps that play with this set.</summary>
+    public IReadOnlyList<ContentItem> Users() => Library.UsedBy(Item.Ref);
+
+    public IReadOnlyList<string> Preview()
+    {
+        string N(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+        var k = Ruleset.DefenseK;
+        var lines = new List<string>
+        {
+            $"Урон после сопротивления × K / (K + A), K = {N(k)}.",
+            "При K = " + N(k) + ": " + string.Join(", ", PreviewArmor.Select(a => $"A {N(a)} → ×{N(HexTactics.Core.Combat.ArmorMath.Multiplier(a, k))}")) + ".",
+        };
+        foreach (var (family, fk) in Ruleset.DefenseKByFamily)
+        {
+            lines.Add($"{Library.Find(ContentTypeRegistry.DamageType, family)?.Name ?? family}: свой K = {N(fk)} (A 100 → ×{N(HexTactics.Core.Combat.ArmorMath.Multiplier(100, fk))}).");
+        }
+
+        lines.Add("Чистый урон защиту A не учитывает. У юнитов без защиты A (старый контент) урон не меняется при любом K.");
+        var users = Users();
+        lines.Add(users.Count == 0
+            ? Item.Id == CombatRulesetData.Legacy ? "Используют все карты без своих правил боя (созданные до ТЗ ч.6)." : "Пока не назначены ни одной карте."
+            : $"Используют: {string.Join(", ", users.Select(u => $"{u.Kind.Singular} «{u.Name}»"))}.");
         return lines;
     }
 }

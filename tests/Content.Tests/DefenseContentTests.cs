@@ -143,7 +143,7 @@ public class DefenseContentTests
         Assert.Empty(old.DefenseRules);
         Assert.Empty(old.Shields);
         Assert.Equal(50, old.Resistances["core.damage.physical"]);
-        Assert.Contains("\"schemaVersion\": 4", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v21.json")), StringComparison.Ordinal);
+        Assert.Contains("\"schemaVersion\": 5", File.ReadAllText(Path.Combine(dir.Path, "content", "units", "unit_v21.json")), StringComparison.Ordinal);
         Assert.Equal(v21, File.ReadAllText(Directory.GetFiles(Path.Combine(dir.Path, "backups"), "unit_v21.json", SearchOption.AllDirectories).Single()));
 
         var unit = library.Create(ContentTypeRegistry.Unit, "Страж");
