@@ -30,7 +30,7 @@ public class CritRulesEditorTests
         Assert.Null(rules.SetValue("superCritMultiplier", "3"));
         Assert.Contains(rules.Preview(), l => l.StartsWith("Внезапность: спереди 0 %, передний правый фланг 40 %", StringComparison.Ordinal));
         Assert.Contains("C 125 %: обычный 0 %, крит 75 %, сверхкрит 25 %", CombatRulesetEditorModel.CritTable());
-        Assert.Contains(CombatRulesetEditorModel.CritTable(), l => l.StartsWith("C 250 %: обычный 0 %, крит 0 %, сверхкрит 100 % (избыток", StringComparison.Ordinal));
+        Assert.Contains(CombatRulesetEditorModel.CritTable(), l => l.StartsWith("C 250 %: обычный 0 %, крит 0 %, сверхкрит 100 % (лишние 50 п.п. пока не дают эффекта", StringComparison.Ordinal));
         Assert.True(rules.Save().Ok);
         Assert.True(rules.Undo()); // the last value back, saved state is kept on disk
     }
@@ -54,5 +54,19 @@ public class CritRulesEditorTests
         var legacy = HitSandbox.Describe(HitSandbox.Run(library, setup with { RulesetId = CombatRulesetData.Legacy }));
         Assert.DoesNotContain("Внезапность", legacy, StringComparison.Ordinal);
         Assert.Contains("сила удара D0 = 20", legacy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void P6_41_the_unit_preview_shows_its_crit_tiers_and_the_excess_over_200()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var unit = new UnitEditorModel(library, library.Create(ContentTypeRegistry.Unit, "Убийца"));
+        Assert.DoesNotContain(CombatPreviewText.Describe(unit.Unit, library), l => l.StartsWith("Крит", StringComparison.Ordinal)); // 0: no line
+        Assert.Null(unit.TrySetField(UnitData.Fields.Single(f => f.Key == "critChance"), "125"));
+        Assert.Contains("Крит (если правила боя включают криты): шанс 125 п.п. → крит 75 %, сверхкрит 25 %.", CombatPreviewText.Describe(unit.Unit, library));
+        unit.Unit.Passives.Add(new PassiveData { Id = "p1", Name = "Глаз", Operation = PassiveOperations.CritChanceDelta, Value = 125 });
+        Assert.Contains("Крит (если правила боя включают криты): шанс 250 п.п. → крит 0 %, сверхкрит 100 %; лишние 50 п.п. пока не дают эффекта: максимум — сверхкрит.",
+            CombatPreviewText.Describe(unit.Unit, library));
     }
 }

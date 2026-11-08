@@ -214,6 +214,13 @@ public static class PassiveEffects
     }
 
     /// <summary>«Per matching ally» bonuses of the unit (spec part 6 §5.5) for <see cref="UnitStats.CountModifiers"/>.</summary>
+    /// <summary>
+    /// The unit's own critical chance in percentage points with its species, traits and passives (spec part 6 §7.1); the base of
+    /// the combat rules is added in battle. Shared by the runtime and the editor preview.
+    /// </summary>
+    public static double CritChance(UnitData unit, ContentLibrary? library) =>
+        unit.CritChance + Active(unit, library).Where(x => x.Passive.Operation == PassiveOperations.CritChanceDelta).Sum(x => x.Passive.Value);
+
     public static IReadOnlyList<CountModifier> CountModifiers(UnitData unit, ContentLibrary? library) => Active(unit, library)
         .Where(x => x.Passive.Operation == PassiveOperations.CountMatchingUnits)
         .Select(x => new CountModifier(x.Passive.Stat, x.Passive.Value, x.Passive.CountSpecies.Length == 0 ? null : x.Passive.CountSpecies, x.Passive.CountSamePack, x.Source)

@@ -513,7 +513,7 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
         string P(double p) => (p * 100).ToString("0.##", CultureInfo.InvariantCulture) + " %";
         var super = HexTactics.Core.Combat.CritMath.SuperChance(c);
         var crit = HexTactics.Core.Combat.CritMath.CritOnlyChance(c);
-        return $"C {c.ToString("0", CultureInfo.InvariantCulture)} %: обычный {P(1 - crit - super)}, крит {P(crit)}, сверхкрит {P(super)}" + (c > 200 ? " (избыток сверх 200 % сохраняется, но не усиливает)" : string.Empty);
+        return $"C {c.ToString("0", CultureInfo.InvariantCulture)} %: обычный {P(1 - crit - super)}, крит {P(crit)}, сверхкрит {P(super)}" + (c > 200 ? $" (лишние {(c - 200).ToString("0.##", CultureInfo.InvariantCulture)} п.п. пока не дают эффекта: максимум — сверхкрит)" : string.Empty);
     }).ToList();
 
     public void RemoveFamilyK(string familyId) =>

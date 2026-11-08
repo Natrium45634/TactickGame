@@ -905,6 +905,15 @@ public static class CombatPreviewText
                 + (unit.AttackAreaRadius > 0 ? $"; область {unit.AttackAreaRadius} гекс. вокруг цели, {(unit.AttackAreaSplit ? "сила делится между целями" : "полная сила каждой цели")}." : "."),
             string.Create(CultureInfo.InvariantCulture, $"Здоровье {N(health)} HP · движение {N(speed)} гекс/с (переход одного гекса за {N(1 / Math.Max(0.01, speed))} с)."),
         };
+        // Spec part 6 §7.1, P6-41: the tiers of the unit's own chance (the base of the combat rules adds to it in battle).
+        var crit = PassiveEffects.CritChance(unit, library);
+        if (crit > 0)
+        {
+            string P(double p) => N(p * 100) + " %";
+            lines.Add($"Крит (если правила боя включают криты): шанс {N(crit)} п.п. → крит {P(HexTactics.Core.Combat.CritMath.CritOnlyChance(crit))}, сверхкрит {P(HexTactics.Core.Combat.CritMath.SuperChance(crit))}"
+                + (crit > 200 ? $"; лишние {N(crit - 200)} п.п. пока не дают эффекта: максимум — сверхкрит." : "."));
+        }
+
         foreach (var id in unit.Skills)
         {
             if (library.Find(ContentTypeRegistry.Skill, id) is not { Data: SkillData skill } item)

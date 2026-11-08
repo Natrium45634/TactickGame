@@ -302,7 +302,7 @@ public static class RuntimeFactory
             Armor = new ArmorSet(PassiveEffects.Armor(unit, library)),
             DamageModifiers = PassiveEffects.DamageModifiers(unit, library),
             CountModifiers = PassiveEffects.CountModifiers(unit, library),
-            CritChance = unit.CritChance + PassiveEffects.Active(unit, library).Where(x => x.Passive.Operation == PassiveOperations.CritChanceDelta).Sum(x => x.Passive.Value),
+            CritChance = PassiveEffects.CritChance(unit, library),
             CritImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.CritImmunity),
             SurpriseImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.SurpriseImmunity),
             Species = PassiveEffects.SpeciesChain(library, unit.Species).Select(i => i.Id).ToArray(),

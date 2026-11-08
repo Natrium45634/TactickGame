@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.29.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.30.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
@@ -446,6 +446,15 @@ tests/*  ──► соответствующие сборки
   тика) пересчитывает `UnitState.PackPercent` при изменении `GameState.RosterVersion`. Клиент: группы каталога (`Groups` в
   `DeveloperMode`), общий список эффектов `DefinitionEditorShell.BuildEffectList`, редакторы `SpeciesEditor`, `TraitEditor`,
   `UnitStatEditor`, «Особенности» юнита.
+- **Внезапность и крит (с v0.30.0, ТЗ ч.6 §6–§7, D-160–D-163).** Core `Combat/Chance.cs`: `SurpriseMath.Sector` (сторона
+  по геометрии гексов от логического взгляда цели), `CritMath` (две ступени, множители из `CombatRules`), `DeterministicRoll`
+  (бросок без состояния по `seed|purpose|key`). `DamageResolver.ResolveOne`, стадия **1b** — после исходящих модификаторов
+  (1a) и до 1c/D0: только первичный удар обычной атаки или навыка с живым источником; результат — `DamageResult.Surprise*`,
+  `Crit*`. Ключ броска задаёт источник: `AttackSystem` (`atk:…`), эффект урона навыка (`skill:{ActionId}:{HitIndex|s}:{цель|all}`
+  через `EffectInvocation`). Правила — `CombatRulesetData` схемы 2 → `RuntimeFactory.BuildCombatRules`; шанс юнита —
+  `PassiveEffects.CritChance`; невосприимчивость — операции `crit_immunity`, `surprise_immunity` → `UnitStats`. Редактор:
+  `CombatRulesetEditorModel` (зеркальные фланги, проверки, `CritTable`), песочница — `SandboxSetup.Sector/ForceSurprise/
+  ForceCrit` (атакующий ставится на выбранную сторону цели).
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -568,7 +577,10 @@ tests/*  ──► соответствующие сборки
 stat|type|key|value|countspecies|samepack|self|radius|max|below|group|inherit|remove` (у тега — `trait.effect.…`); тег — `trait.category|
 icon|group|policy|priority|stack|maxstacks|species.pick|species.toggle|other.pick|require|exclude`; характеристика — `stat.unit|base|
 min|max|decimals`; юнит — `unit.species`, `unit.trait.pick|add`, `unit.trait.<i>.remove`, `unit.pack`, `unit.stat.<id>`; проверки
-`expect:species-lineage:<линия>`, `expect:species-preview:<текст>`, `expect:trait-preview:<текст>`, `expect:stat-base:<число>`. В бою: `advance:N` — ровно N
+`expect:species-lineage:<линия>`, `expect:species-preview:<текст>`, `expect:trait-preview:<текст>`, `expect:stat-base:<число>`. С v0.30.0:
+правила боя — `rules.surprise`, `rules.asymmetric`, `rules.surprise.<0–5>` (без «Разные левый и правый» — `1` и `2` задают пары
+флангов), `rules.surprise.multiplier`, `rules.crit`, `rules.crit.base|multiplier|super`; юнит — `unit.critChance`; песочница —
+`<префикс>sandbox.side` (0–5) и `<префикс>sandbox.outcome` (`roll|normal|surprise|crit|super|surprise_super`). В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -616,10 +628,11 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0,
 `$RegressionScenarioV27` = V26 + правила боя, защита A юнита, песочница, бой в тестах юнита и карты для v0.27.0,
 `$RegressionScenarioV28` = V27 + пассивы «Гидроманта», откуда взялось, песочница с атакующим, бой для v0.28.0,
-`$RegressionScenarioV29` = V28 + дерево видов, теги, стая, бонус вожака в тестовом запуске для v0.29.0+ (`$CleanImportScenarioV25` —
+`$RegressionScenarioV29` = V28 + дерево видов, теги, стая, бонус вожака в тестовом запуске для v0.29.0,
+`$RegressionScenarioV30` = V29 + «Засада», «Убийца», песочница с заданным исходом, бой на совместимых и стандартных правилах для v0.30.0+ (`$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
