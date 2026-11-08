@@ -441,7 +441,11 @@ public sealed class UnitEditorModel : DefinitionEditorModel
         foreach (var stat in PassiveEffects.StatChoices(Library).Select(s => s.Value))
         {
             var b = PassiveEffects.Stat(Unit, Library, stat);
-            if (b.Sources.Count > 0 || (!PassiveOperations.EngineStats.Contains(stat) && Unit.CustomStats.ContainsKey(stat)))
+            if (b.Sources.Count == 0 && !PassiveOperations.EngineStats.Contains(stat) && Unit.CustomStats.ContainsKey(stat))
+            {
+                lines.Add($"{b.Label}: {N(b.Final)} (своя база юнита)");
+            }
+            else if (b.Sources.Count > 0)
             {
                 lines.Add($"{b.Label}: {N(b.Base)} → {N(b.Final)} ({string.Join("; ", b.Sources.Select(x => $"{x.Change} · {x.Source}"))})");
             }

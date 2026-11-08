@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.28.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.29.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя, пассивы). Формат контента —
+зависимости, защита A и правила боя, пассивы, виды, теги и стая). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -439,6 +439,13 @@ tests/*  ──► соответствующие сборки
   D0 (`ModifierMath.DamageMultiplier`: проценты группы складываются, группы перемножаются, не ниже 0), стадия 5c — входящие
   модификаторы цели после плоского снижения и до предела. Песочница — `SandboxSetup.AttackerUnitId`,
   `HitSandbox.Run(…, attackerDraft)`.
+- **Виды, теги, стая, характеристики (с v0.29.0, ТЗ ч.6 §5, D-157–D-159).** Данные: `SpeciesData`, `TraitData`, `UnitStatData`
+  (`Content/Kinds/OriginData.cs`), у юнита `Species/Traits/PackId/CustomStats`. `PassiveEffects.Active` собирает эффекты: вид
+  (от корня, по ключу эффекта), теги (`ActiveTraits`: повтор, группы, допустимые виды), личные пассивы — с подписью
+  источника. `RuntimeFactory.BuildUnit` кладёт в `UnitStats` линию вида, стаю и `CountModifiers`; `PackSystem` (первая система
+  тика) пересчитывает `UnitState.PackPercent` при изменении `GameState.RosterVersion`. Клиент: группы каталога (`Groups` в
+  `DeveloperMode`), общий список эффектов `DefinitionEditorShell.BuildEffectList`, редакторы `SpeciesEditor`, `TraitEditor`,
+  `UnitStatEditor`, «Особенности» юнита.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -556,7 +563,12 @@ tests/*  ──► соответствующие сборки
 `expect:map-ruleset:<id|название>`. С v0.28.0: секция `unit.sec.features`; пассивы — `unit.passive.template`, `unit.passive.add`,
 `unit.passive.<id>.card|name|stat|type|key|value|rule|below|group|remove`; песочница — `<префикс>sandbox.attacker`
 (`__self__` — «этот юнит бьёт пустую цель»); проверки `expect:passives:<N>`, `expect:passive:<название>:<текст>`,
-`expect:stat:<характеристика>:<итог>`, `expect:breakdown:<текст>`. В бою: `advance:N` — ровно N
+`expect:stat:<характеристика>:<итог>`, `expect:breakdown:<текст>`. С v0.29.0: группы каталога `dev.cat.mechanics`, `dev.cat.origin`
+(первый экран — `mech.<вид>`); вид — `species.parent|icon`, эффекты `species.effect.template|add`, `species.effect.<ключ>.card|name|
+stat|type|key|value|countspecies|samepack|self|radius|max|below|group|inherit|remove` (у тега — `trait.effect.…`); тег — `trait.category|
+icon|group|policy|priority|stack|maxstacks|species.pick|species.toggle|other.pick|require|exclude`; характеристика — `stat.unit|base|
+min|max|decimals`; юнит — `unit.species`, `unit.trait.pick|add`, `unit.trait.<i>.remove`, `unit.pack`, `unit.stat.<id>`; проверки
+`expect:species-lineage:<линия>`, `expect:species-preview:<текст>`, `expect:trait-preview:<текст>`, `expect:stat-base:<число>`. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -603,10 +615,11 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV25` = V241 + UX-испытание пяти юнитов, их бой, экспорт «Защиты» для v0.25.0,
 `$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0,
 `$RegressionScenarioV27` = V26 + правила боя, защита A юнита, песочница, бой в тестах юнита и карты для v0.27.0,
-`$RegressionScenarioV28` = V27 + пассивы «Гидроманта», откуда взялось, песочница с атакующим, бой для v0.28.0+ (`$CleanImportScenarioV25` —
+`$RegressionScenarioV28` = V27 + пассивы «Гидроманта», откуда взялось, песочница с атакующим, бой для v0.28.0,
+`$RegressionScenarioV29` = V28 + дерево видов, теги, стая, бонус вожака в тестовом запуске для v0.29.0+ (`$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

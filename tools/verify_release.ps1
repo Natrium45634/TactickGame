@@ -623,6 +623,39 @@ $script:PersistenceScenarioV28 = (@(
     'expect:passive:Водная мощь:+50 % исходящего урона: магический', 'expect:stat:attackPower:22', 'ui:unit.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV27
 
+# v0.29.0+ (spec part 6 §5; acceptance §12.3 P6-23…P6-29, P6-32): «Происхождение и теги» — the tree Зверь → Волк → Лунный волк
+# (+5 % Agility), the traits «Вожак» (+3 % attack per other living wolf of the pack) and «Матёрый» (+5 % Agility); units of the pack
+# «north» and a stranger of «south»; Agility 100 → 110 with its sources; in a test run the leader's attack is 100 alone and 112
+# with four wolves of its pack — the stranger does not count.
+$script:RegressionScenarioV29 = $script:RegressionScenarioV28 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.origin', 'expect:category:origin', 'ui:mech.species', 'expect:category:species', 'expect:rows:0',
+    'ui:dev.create', 'expect:editor:species', 'field:species.name=Зверь', 'ui:species.save', 'expect:errors:0', 'ui:species.back',
+    'ui:dev.create', 'field:species.name=Волк', 'field:species.parent=Зверь', 'ui:species.save', 'ui:species.back',
+    'ui:dev.create', 'field:species.name=Лунный волк', 'field:species.parent=Волк', 'field:species.effect.template=stat_add_percent', 'ui:species.effect.add',
+    'field:species.effect.p1.stat=core.stat.agility', 'field:species.effect.p1.value=5', 'expect:species-lineage:Лунный волк → Волк → Зверь',
+    'expect:species-preview:ловкость +5 %', 'ui:species.save', 'expect:errors:0', 'ui:species.back', 'expect:rows:3',
+    'ui:dev.cat.trait', 'ui:dev.create', 'expect:editor:trait', 'field:trait.name=Вожак', 'field:trait.effect.template=count_matching_units',
+    'ui:trait.effect.add', 'field:trait.effect.p1.countspecies=Волк и потомки', 'expect:trait-preview:за каждого живого союзника вида «Волк» и потомков, той же стаи',
+    'ui:trait.save', 'expect:errors:0', 'ui:trait.back',
+    'ui:dev.create', 'field:trait.name=Матёрый', 'field:trait.effect.template=stat_add_percent', 'ui:trait.effect.add', 'field:trait.effect.p1.stat=core.stat.agility',
+    'field:trait.effect.p1.value=5', 'ui:trait.save', 'expect:errors:0', 'ui:trait.back',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Вожак стаи', 'field:unit.attackPower=100', 'field:unit.species=Волк → Зверь',
+    'field:unit.trait.pick=Вожак', 'ui:unit.trait.add', 'field:unit.pack=north', 'expect:breakdown:за каждого подходящего союзника (стая «north»)', 'ui:unit.save',
+    'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=Волк стаи', 'field:unit.species=Лунный волк → Волк → Зверь', 'field:unit.trait.pick=Матёрый', 'ui:unit.trait.add',
+    'field:unit.pack=north', 'expect:stat:core.stat.agility:110', 'expect:breakdown:Ловкость: 100 → 110', 'ui:unit.save', 'expect:errors:0', 'ui:unit.back',
+    'ui:dev.create', 'field:unit.name=Чужой волк', 'field:unit.species=Волк → Зверь', 'field:unit.pack=south', 'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Вожак стаи', 'select:1', 'expect:info:1:атака 100:yes',
+    'spawn:cell:2,5@Волк стаи', 'spawn:cell:4,5@Волк стаи', 'spawn:cell:3,6@Волк стаи', 'spawn:cell:2,6@Волк стаи', 'spawn:cell:4,6@Чужой волк',
+    'expect:units:6', 'select:1', 'expect:info:1:атака 112:yes', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV29 = (@(
+    'ui:menu.dev', 'ui:dev.cat.species', 'expect:rows:3', 'row:name=Лунный волк', 'ui:dev.open', 'expect:species-lineage:Лунный волк → Волк → Зверь',
+    'ui:species.back', 'ui:dev.cat.trait', 'expect:rows:2', 'ui:dev.cat.unit', 'row:name=Волк стаи', 'ui:dev.open', 'expect:stat:core.stat.agility:110',
+    'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV28
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -683,7 +716,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
+            $scenario = if ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
+                        elseif ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
                         elseif ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
                         elseif ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
                         elseif ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
@@ -708,7 +742,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
+            if ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
+            elseif ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
             elseif ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
             elseif ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }
             elseif ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }

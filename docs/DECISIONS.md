@@ -1038,6 +1038,31 @@ A не получила отдельного вида профилей: `resista
 каждый источник; группы урона с итоговым множителем). Песочница получила выбор атакующего; в редакторе юнита — «этот юнит
 бьёт пустую цель» для проверки его исходящих пассивов без сохранения. **Статус:** принято.
 
+## D-157. Происхождение: виды и теги (ч.6 §5.1–5.3, §5.6, §9.1)
+Вид (`species`) — узел дерева: один `parent`, эффекты списком `PassiveData` (тех же операций, что пассивы). `PassiveEffects`
+собирает эффекты от корня к виду юнита по ключу эффекта (`id`): одноимённый эффект потомка заменяет эффект предка
+(`replace`), отключает его (`disable`) или действует вместе (`stack`); поэтому предок никогда не применяется дважды.
+Тег (`trait`) — общая особенность: категория, эффекты, `allowedSpecies` (с потомками), `requiredTraits`, `excludedTraits`,
+`exclusiveGroup` + `conflictPolicy` (`error` — ошибка проверки юнита; `replace` — действует последний; `highest_priority` —
+старший), `stackPolicy` (`unique` — один раз; `stack` — до `maxStacks`). Порядок источников: вид → теги → личные пассивы.
+Проверки: цикл и глубина дерева, теги юнита (допустимый вид, обязательные/несовместимые, конфликт группы). Группа
+каталога `origin` («Происхождение и теги») показывается как «Механики» — общий код групп. **Статус:** принято.
+
+## D-158. Реестр характеристик (ч.6 §5.7)
+Исполняемые характеристики (сила атаки, здоровье, скорость, темп атак) остаются полями юнита; новые числа — вид `unit_stat`
+(единица, база, диапазон, знаки). Встроенная «Ловкость» — база 100 (PROTOTYPE_DEFAULT). Юнит может иметь свою базу
+(`stats`). Пассивы и теги меняют любую характеристику реестра (база × (1 + %) + число, затем диапазон и округление).
+Ни одна механика этой редакции не читает характеристики реестра, поэтому они не меняют бой (P6-32): влияние появится только
+вместе с правилом, которое явно его задаёт. **Статус:** принято.
+
+## D-159. Стая и «за каждого союзника» (ч.6 §5.5)
+Операция `count_matching_units`: характеристика (только сила атаки, скорость движения, темп атак — их читает бой; здоровье
+не меняется динамически), процент за юнита, вид (с потомками, через линию вида юнита `UnitStats.Species`), та же стая
+(`packId` из определения юнита), себя, радиус, предел. `PackSystem` — первая система тика: пересчёт только при изменении
+`GameState.RosterVersion` (появление, гибель) или, если есть радиус, занятости клеток; также сразу при появлении юнита (и на
+паузе). Бонус хранится в `UnitState.PackPercent` и входит в `StatModifiers.Effective` вместе с процентами статусов —
+определение юнита не меняется. **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -1203,3 +1228,11 @@ A не получила отдельного вида профилей: `resista
   `ValueBreakdown`, `ValueSource`. Editor: `UnitEditorModel.AddPassive/SetPassive/RemovePassive/PassiveCards/Breakdown`,
   `UnitSections.Features`, `SandboxSetup.AttackerUnitId`, `HitSandbox.Run(…, attackerDraft)`. Клиент: секция «Особенности»,
   `SandboxPanel.SelfAttacker`. Регрессионный сценарий v0.28 = v0.27 + пассивы.
+- **v0.29.0: виды, теги, стая.** Core: `UnitStats.Species/PackId/CountModifiers/IsA`, `CountModifier`, `UnitState.PackPercent`,
+  `GameState.RosterVersion/SetPackPercent`, `StatModifiers.Effective(…, packPercent)`. Simulation: `PackSystem` (первая система),
+  `GameSimulation.RefreshPacks/CountMatching`. Content: виды `species`, `trait`, `unit_stat` (`SpeciesData`, `TraitData`,
+  `UnitStatData`), группа `ContentTypeRegistry.OriginGroup`, схема `unit` 7, `PassiveData.Inherit/Count*`, операция
+  `count_matching_units`, `PassiveEffects.SpeciesChain/IsA/ActiveTraits/StatChoices/CountModifiers`. Editor:
+  `DefinitionEditorModel.AddEffect/SetEffect/RemoveEffect/EffectCards`, `SpeciesEditorModel`, `TraitEditorModel`,
+  `UnitStatEditorModel`, `UnitEditorModel.SetSpecies/AddTrait/RemoveTrait/SetPackId/SetCustomStat/TraitChips`. Клиент: общие
+  группы каталога, `DefinitionEditorShell.BuildEffectList`, редакторы вида, тега, характеристики. Регрессионный сценарий v0.29.

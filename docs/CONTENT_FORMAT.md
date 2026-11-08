@@ -1,8 +1,8 @@
 # Формат игрового контента HexTactics
 
 Документ описывает объекты библиотеки контента (ТЗ ч.4 §8): как они хранятся, какие поля имеют и как проверяются.
-Актуален для **v0.28.0** (схемы: `map` 1, `unit` 6, `skill` 2, `tile` 2, `damage_type` 1, `defense_rule` 1,
-`resistance_profile` 2, `combat_ruleset` 1). История схем —
+Актуален для **v0.29.0** (схемы: `map` 1, `unit` 7, `skill` 2, `tile` 2, `damage_type` 1, `defense_rule` 1,
+`resistance_profile` 2, `combat_ruleset` 1, `species` 1, `trait` 1, `unit_stat` 1). История схем —
 `docs/MIGRATIONS.md`.
 
 ## 1. Где лежит контент
@@ -146,6 +146,45 @@ user://packs/                                      установленные п
   `resistance_delta_pp` (−500…500 п.п.), `defense_delta_flat` (очки) и `defense_delta_percent` (−100…1000 %) — `key`: `global`
   или тип, `grant_defense_rule` (`ruleId` — правило защиты). Записываются только поля своей операции. Неизвестная операция —
   ошибка, пассив не действует. Миграция 5 → 6: `passives: []`.
+- С v0.29.0 (схема 7): `species` — вид юнита (ID `species`, пусто — нет); `traits` — список тегов по порядку (повтор действует,
+  только если тег складывается); `packId` — стая (до 40 символов) для бонусов «за каждого союзника»; `stats` — своя база
+  характеристик реестра, например `{ "core.stat.agility": 120 }`. У эффектов (пассивов, видов, тегов) новая операция
+  `count_matching_units` (`stat` — `attackPower` · `moveSpeed` · `attackRate`; `value` — % за юнита; `countSpecies`,
+  `countSamePack`, `countSelf`, `countRadius`, `countMax`) и поле `inherit` (в виде: `replace` · `disable` · `stack`); `stat`
+  операций характеристик — и ID `unit_stat`. Миграция 6 → 7: пусто.
+
+### 3.11. Вид — `species` (`species/`, с v0.29.0)
+
+```json
+{ "parent": "user.species.wolf", "icon": "🐺",
+  "effects": [ { "id": "agility", "name": "Ловкость", "operation": "stat_add_percent", "stat": "core.stat.agility", "value": 5 } ] }
+```
+
+Один родитель или корень (пусто); цикл и глубина больше 16 — ошибка. Эффекты наследуются потомками один раз; эффект потомка
+с тем же `id` заменяет эффект предка (`inherit: "replace"`, по умолчанию), отключает его (`"disable"`) или действует вместе
+(`"stack"`).
+
+### 3.12. Тег — `trait` (`traits/`, с v0.29.0)
+
+```json
+{ "category": "feature", "icon": "", "color": "#C9A86A", "effects": [ … ],
+  "allowedSpecies": [], "requiredTraits": [], "excludedTraits": [],
+  "exclusiveGroup": "health", "conflictPolicy": "error", "priority": 0, "stackPolicy": "unique", "maxStacks": 1 }
+```
+
+`category`: `feature` · `state` · `class` · `faction` · `material`. Эффектов может не быть. `allowedSpecies` — только эти виды и
+их потомки; `requiredTraits` / `excludedTraits` — нужные и несовместимые теги. Теги одной `exclusiveGroup`: `error` — ошибка
+юнита, `replace` — действует последний, `highest_priority` — старший `priority`. `stackPolicy`: `unique` — один раз, `stack` —
+до `maxStacks` (1…16).
+
+### 3.13. Характеристика — `unit_stat` (`unit_stats/`, с v0.29.0)
+
+```json
+{ "unit": "очки", "baseValue": 100, "min": 0, "max": 10000, "decimals": 0 }
+```
+
+Число каждого юнита (своя база юнита — в его `stats`), меняется пассивами и тегами; на бой влияет только через механику,
+которая его читает (в этой редакции — ни одна). Встроенная `core.stat.agility` («Ловкость»).
 
 ### 3.4. Навык — `skill` (`skills/`)
 
