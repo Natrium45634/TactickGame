@@ -988,6 +988,30 @@ v0.34.0 — `ScenarioDefinition`, выбор сценария в «Играть�
 дополняет её (ч.7 §8.1), правило миграции существующих юнитов фиксируется в той версии. Приёмка — `docs/ACCEPTANCE_PART7.md`
 (M7-01…M7-60). **Статус:** принято.
 
+## D-151. Защита A — одна стадия расчёта (ч.6 §3, §8)
+`ArmorSet` (Core) хранит A по ключам `global` / семейство / тип, как `ResistanceSet`; `ArmorMath.Raw` складывает слои
+типа (у семейства — без слоя подтипа, один профиль не применяется дважды) и временные статусы `Stats.Armor` с ключом слоя;
+`Effective = max(0, max(0, raw) − flat) × (1 − clamp(%, 0, 100)/100)`; `Multiplier = K / (K + A_eff)`, при A_eff = 0 — ровно
+1. В `DamageResolver` стадия стоит сразу после R и до плоского снижения/предела (§8, стадия 7): конверсии по-прежнему берут
+долю D0 до R и A, щиты — остаток после. Чистые типы (`true_like`) обходят A и её пробитие, как R. `DamageResult` хранит
+`ArmorRaw`, `Armor`, `DefenseK`, `AfterArmor` — песочница показывает стадию отдельно от R. Нет промежуточного округления.
+Значения A — очки 0…1 000 000; ввод «25 %» отклоняется (проценты — сопротивление). **Статус:** принято.
+
+## D-152. Правила боя и K (ч.6 §3.2, §9.5, §10.3)
+Новый вид `combat_ruleset` (группа «Механики»): `defenseK` (PROTOTYPE_DEFAULT 100, 0,01…1 000 000) и `defenseKByFamily`
+(только семейства, учитывающие R). Встроенные `core.ruleset.standard` и `core.ruleset.legacy` (`legacy_combat_ruleset` ТЗ):
+сейчас у обоих K = 100; в v0.30.0 у совместимых останутся выключены внезапность и крит. Карта ссылается на правила полем
+`combatRuleset`; пустое — совместимые (так играют все карты до v0.27.0), новая карта из редактора получает стандартные.
+`RuntimeFactory.BuildGame` передаёт правила в `SimulationSettings.CombatRules`; отсутствующие правила — предупреждение и
+значения по умолчанию. Со сценариями части 7 (v0.34.0) главнее станет ссылка сценария (D-150). **Статус:** принято.
+
+## D-153. A в профилях и интерфейсе (ч.6 §3.2, §9.1, §9.4)
+A не получила отдельного вида профилей: `resistance_profile` хранит обе таблицы (`values` — R, `armor` — A) с одной основой
+и одним порядком наслоения, категория называется «Профили защиты и сопротивлений» (ID вида не меняется). В редакторах одна
+строка таблицы — пара полей «R, % | A» (`Inspector.PairText`), подсказка показывает источник и итог обоих. «Сохранить как
+набор» и «Копировать защиту» переносят R и A вместе. A на чистом типе — предупреждение «значение не действует», свой K для
+подтипа или обходящего семейства — ошибка. **Статус:** принято.
+
 ## Миграции
 - v0.3.0: конструктор `InputStateMachine(GameSimulation, HexLayout, InteractionSettings?)` — добавлен `HexLayout`
   (жесты считаются в координатах плоскости). Внутренний API, внешних потребителей нет.
@@ -1137,3 +1161,13 @@ v0.34.0 — `ScenarioDefinition`, выбор сценария в «Играть�
   Editor: `ReferenceCatalog`, `LibraryCommands.Archive/ReplaceAndDelete/Replacements/DependencyReport`,
   `DamageTypeEditorModel.SetElement`; клиент: `Inspector.ChoiceOption(…, Group)`, `Inspector.References` — функция вариантов,
   `Inspector.CreateRequested`. Схемы данных не менялись. Регрессионный сценарий v0.26 = v0.25 + реестр и зависимости.
+- **v0.27.0: защита A.** Core: `ArmorSet`, `ArmorMath`, `CombatRules`; `UnitStats.Armor/AttackArmorPenetration/
+  AttackArmorPenetrationPercent`; `DamageEvent.ArmorPenetration/ArmorPenetrationPercent`; `DamageResult.ArmorRaw/Armor/
+  DefenseK/AfterArmor`; `Stats.Armor`. Simulation: `SimulationSettings.CombatRules`, `DamageResolver.EffectiveArmor`,
+  `Create(…, armorPenetration, armorPenetrationPercent)`, `EffectResolver.DealDamage(…)` с пробитием A. Content: схема `unit` 5,
+  `resistance_profile` 2, вид `combat_ruleset`, `MapData.CombatRuleset/EffectiveRuleset`, `GameContent.CombatRules`,
+  `RuntimeFactory.BuildCombatRules`, `ResistanceLayers.Of/Effective/Values(…, armor)`. Editor: `ResistanceRow.Armor/
+  ArmorSource/ArmorOwn`, `UnitEditorModel.SetArmor/ResetArmor/EffectiveArmor/ExplainArmor`, `ResistanceProfileEditorModel.
+  SetArmor/ResetArmor/ArmorTotal`, `CombatRulesetEditorModel`, `MapEditorModel.Rulesets/SetRuleset`, `SandboxSetup.
+  ArmorPenetration/ArmorPenetrationPercent/RulesetId`, `HitSandbox.Run(…, rulesetDraft)`. Регрессионный сценарий v0.27 =
+  v0.26 + защита A и правила боя.

@@ -91,6 +91,49 @@ public sealed class Inspector
         return edit;
     }
 
+    /// <summary>
+    /// Two numbers of one row side by side (spec part 6 §9.4: «одна строка позволяет настроить R, A»): a label line, then
+    /// «R, % [   ]  A [   ]». Each field commits on Enter or on leaving it, like <see cref="LineText"/>.
+    /// </summary>
+    public (LineEdit First, LineEdit Second) PairText(string id1, string label1, string value1, Action<string> commit1,
+        string id2, string label2, string value2, Action<string> commit2, string label, string? hint = null, string? tooltip2 = null)
+    {
+        LineEdit Edit(string id, string value, Action<string> commit, string tooltip)
+        {
+            var edit = AutomationIds.Register(new LineEdit { Text = value, TooltipText = tooltip, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(56, 0) }, id);
+            edit.SetMeta("hx_commit_on_submit", true);
+            var last = value;
+            void Commit(string text)
+            {
+                if (text != last)
+                {
+                    last = text;
+                    commit(text);
+                }
+            }
+
+            edit.TextSubmitted += Commit;
+            edit.FocusExited += () => Commit(edit.Text);
+            return edit;
+        }
+
+        _box.AddChild(UiKit.Label(label, 12, dim: true));
+        var row = UiKit.Row(6);
+        var first = Edit(id1, value1, commit1, hint ?? string.Empty);
+        var second = Edit(id2, value2, commit2, tooltip2 ?? hint ?? string.Empty);
+        row.AddChild(UiKit.Label(label1, 12, dim: true));
+        row.AddChild(first);
+        row.AddChild(UiKit.Label(label2, 12, dim: true));
+        row.AddChild(second);
+        _box.AddChild(row);
+        if (hint is not null)
+        {
+            Hint(hint);
+        }
+
+        return (first, second);
+    }
+
     public TextEdit LongText(string id, string label, string value, Action<string> commit, string? hint = null)
     {
         var edit = AutomationIds.Register(new TextEdit { Text = value, CustomMinimumSize = new Vector2(0, 64), WrapMode = TextEdit.LineWrappingMode.Boundary }, id);

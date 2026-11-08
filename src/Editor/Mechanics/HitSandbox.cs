@@ -32,6 +32,15 @@ public sealed record SandboxSetup
 
     public double Penetration { get; init; }
 
+    /// <summary>Armor penetration in defense points (spec part 6 §3.2); lowers only A.</summary>
+    public double ArmorPenetration { get; init; }
+
+    /// <summary>Armor penetration in percent of the remaining A (0…100).</summary>
+    public double ArmorPenetrationPercent { get; init; }
+
+    /// <summary>The combat ruleset whose K is used (spec part 6 §3.2); the standard one by default.</summary>
+    public string RulesetId { get; init; } = CombatRulesetData.Standard;
+
     /// <summary>Health of the target before the hit, % of its maximum.</summary>
     public double HealthPercent { get; init; } = 100;
 
@@ -70,9 +79,18 @@ public static class HitSandbox
     /// <param name="ruleDraft">A defense rule being edited: the hit is resolved with it on the target and once more without it.</param>
     /// <param name="unitDraft">A unit being edited: used as the target instead of its saved version.</param>
     /// <param name="typeDraft">A damage type being edited: replaces its saved definition (also a new, unsaved type).</param>
-    public static SandboxReport Run(ContentLibrary library, SandboxSetup setup, ContentItem? ruleDraft = null, ContentItem? unitDraft = null, ContentItem? typeDraft = null)
+    /// <param name="rulesetDraft">Combat rules being edited: their K is used instead of the saved ones.</param>
+    public static SandboxReport Run(ContentLibrary library, SandboxSetup setup, ContentItem? ruleDraft = null, ContentItem? unitDraft = null, ContentItem? typeDraft = null,
+        ContentItem? rulesetDraft = null)
     {
         var problems = new List<string>();
+        var rulesetId = rulesetDraft?.Id ?? setup.RulesetId;
+        if (rulesetDraft is null && library.Find(ContentTypeRegistry.CombatRuleset, rulesetId) is null)
+        {
+            problems.Add($"правила боя «{rulesetId}» не найдены — K = {N(CombatRules.DefaultDefenseK)}");
+        }
+
+        var rules = RuntimeFactory.BuildCombatRules(library, rulesetId, rulesetDraft);
         var types = new Dictionary<string, DamageTypeDefinition>(RuntimeFactory.BuildDamageTypes(library), StringComparer.Ordinal);
         if (typeDraft?.Data is DamageTypeData)
         {
@@ -107,12 +125,12 @@ public static class HitSandbox
         }
 
         var others = stats.DefenseRules.Where(r => edited is null || r.Id != edited.Id).ToList();
-        var with = Hit(library, setup, stats with { DefenseRules = edited is null ? others : others.Append(edited).ToList() }, types, names);
+        var with = Hit(library, setup, stats with { DefenseRules = edited is null ? others : others.Append(edited).ToList() }, types, names, rules);
         SandboxRun? without = null;
         var comparison = string.Empty;
         if (edited is not null)
         {
-            without = Hit(library, setup, stats with { DefenseRules = others }, types, names);
+            without = Hit(library, setup, stats with { DefenseRules = others }, types, names, rules);
             comparison = $"С правилом: {Short(with)}. Без правила: {Short(without)}.";
         }
 
@@ -137,7 +155,8 @@ public static class HitSandbox
         return string.Join(", ", parts);
     }
 
-    private static SandboxRun Hit(ContentLibrary library, SandboxSetup setup, UnitStats targetStats, IReadOnlyDictionary<string, DamageTypeDefinition> types, IReadOnlyDictionary<string, string> ruleNames)
+    private static SandboxRun Hit(ContentLibrary library, SandboxSetup setup, UnitStats targetStats, IReadOnlyDictionary<string, DamageTypeDefinition> types, IReadOnlyDictionary<string, string> ruleNames,
+        CombatRules rules)
     {
         var grid = new HexGrid(7, 7);
         foreach (var c in grid.Coords)
@@ -145,7 +164,7 @@ public static class HitSandbox
             grid.SetTile(c, TileType.Walkable, null, 0);
         }
 
-        var sim = new GameSimulation(new MapDefinition("sandbox", grid, Array.Empty<SpawnZoneDefinition>(), null), new SimulationSettings { DamageTypes = types });
+        var sim = new GameSimulation(new MapDefinition("sandbox", grid, Array.Empty<SpawnZoneDefinition>(), null), new SimulationSettings { DamageTypes = types, CombatRules = rules });
         var noSkills = Array.Empty<string>();
         UnitId Spawn(HexCoord cell, Side side, UnitStats stats, string name) =>
             sim.Spawn(SpawnRequest.AtCell(cell, side, HexDirection.North) with { Profile = new UnitProfile("sandbox." + name, name, stats, noSkills) }).Unit!.Value;
@@ -192,7 +211,8 @@ public static class HitSandbox
         var trace = new List<RuleCheck>();
         sim.Damage.Trace = trace;
         var typeId = types.ContainsKey(setup.DamageTypeId) ? setup.DamageTypeId : DamageTypes.Physical;
-        var result = sim.Damage.Resolve(sim.Damage.Create(attacker, target, typeId, setup.Amount, DamageOrigin.Skill, setup.Penetration), sim.Tick);
+        var result = sim.Damage.Resolve(sim.Damage.Create(attacker, target, typeId, setup.Amount, DamageOrigin.Skill, setup.Penetration,
+            armorPenetration: setup.ArmorPenetration, armorPenetrationPercent: setup.ArmorPenetrationPercent), sim.Tick);
         var reactions = sim.Damage.Results.Where(r => r.Event.Reactive).ToList();
         var others = labels.Select(x => (x.Value, othersBefore[x.Key], sim.State.FindUnit(x.Key)?.CurrentHealth ?? 0)).ToList();
 
@@ -214,11 +234,20 @@ public static class HitSandbox
 
         Stage(result.Resistance is { } r
             ? $"Сопротивление: R после пробития = {N(r)} % → {N(result.AfterResistance)}" + (r > 100 ? " (сверх 100 % — просто 0, без лечения)." : ".")
-            : $"Сопротивление не учитывается: тип обходит численные R → {N(result.AfterResistance)}.");
-        var taken = result.ShieldLoss + result.HpLoss;
-        if (!result.Immune && taken < result.AfterResistance - 1e-9 && t.IsAlive)
+            : $"Сопротивление не учитывается: тип обходит численные R и защиту A → {N(result.AfterResistance)}.");
+        if (result.Armor is { } armor && (result.ArmorRaw != 0 || setup.ArmorPenetration > 0 || setup.ArmorPenetrationPercent > 0))
         {
-            Stage($"Плоское снижение и предел: {N(result.AfterResistance)} → {N(taken)}.");
+            // Spec part 6 §3.2, §8 stage 7: the defense A is a separate stage after R; its penetration is shown on its own.
+            var raw = result.ArmorRaw ?? 0;
+            var pen = setup.ArmorPenetration > 0 || setup.ArmorPenetrationPercent > 0
+                ? $", после пробития A = {N(armor)}" : string.Empty;
+            Stage($"Защита: A = {N(raw)}{(raw < 0 ? " (меньше 0 — считается 0)" : string.Empty)}{pen}, K = {N(result.DefenseK)} → ×{N3(ArmorMath.Multiplier(armor, result.DefenseK))} → {N(result.AfterArmor)}.");
+        }
+
+        var taken = result.ShieldLoss + result.HpLoss;
+        if (!result.Immune && taken < result.AfterArmor - 1e-9 && t.IsAlive)
+        {
+            Stage($"Плоское снижение и предел: {N(result.AfterArmor)} → {N(taken)}.");
         }
 
         if (result.ShieldLoss > 0)
@@ -262,6 +291,8 @@ public static class HitSandbox
         types.TryGetValue(id, out var t) ? t.Name.ToLowerInvariant() : id;
 
     internal static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+
+    internal static string N3(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
 
     /// <summary>The whole report as text (the developer panel and tests).</summary>
     public static string Describe(SandboxReport report)

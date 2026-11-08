@@ -783,6 +783,13 @@ public partial class MapEditor : Node3D, IContentEditor
         _inspector.LineText("map.name", "Название", item.Name, v => _model.SetName(v));
         _inspector.LongText("map.description", "Описание", item.Description, v => _model.SetDescription(v));
         _inspector.LineText("map.basename", "Название базы игрока", map.BaseName, v => _model.SetBaseName(v));
+        _inspector.Choice("map.ruleset", "Правила боя", _model.Rulesets().Select(r => new ChoiceOption(r.Id, r.Name)).ToList(), map.EffectiveRuleset, v =>
+        {
+            if (_model.SetRuleset(v) is { } refusal)
+            {
+                Message("✗ " + refusal, IssueSeverity.Error);
+            }
+        }, "Общие константы боя (K защиты A); без выбора — совместимые правила старых карт.");
         _inspector.Section("Рабочая область");
         var row = _inspector.Row();
         var columns = AutomationIds.Register(new SpinBox { MinValue = 1, MaxValue = 32, Value = map.Columns, Prefix = "ширина", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "map.columns");
@@ -907,6 +914,11 @@ public partial class MapEditor : Node3D, IContentEditor
             case "tiles":
                 actual = _model.Map.Tiles.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];
+                break;
+            case "map-ruleset":
+                // expect:map-ruleset:<ruleset id or name> — the combat rules the map plays with
+                actual = _model.Map.EffectiveRuleset;
+                ok = actual == a[1] || _library.Find(ContentTypeRegistry.CombatRuleset, actual)?.Name == a[1];
                 break;
             case "tile":
                 {

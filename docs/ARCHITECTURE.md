@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.26.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.27.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости). Формат контента —
+зависимости, защита A и правила боя). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -423,6 +423,15 @@ tests/*  ──► соответствующие сборки
   через `RemapReferences`), `SetArchived`; команды отмены `LibraryCommands.Archive/ReplaceAndDelete`; диалог — 
   `DeveloperMode.AskDependents`. Неизвестные поля файла: `ContentSerializer` хранит их в `ContentItem.ExtraEnvelope/ExtraData`
   и дописывает при записи (известные поля вида — `typed.ToJson()` и `ContentKind.OptionalDataKeys`).
+- **Защита A и правила боя (с v0.27.0, ТЗ ч.6 §3, D-151–D-153).** `Core/Combat/Armor.cs`: `ArmorSet` (слои как у R),
+  `ArmorMath` (`Raw` со статусами `Stats.Armor`, `Effective` с пробитием в очках и %, `Multiplier = K/(K+A)`), `CombatRules`
+  (K и K семейства). `DamageResolver.ResolveOne`: R → **A** → плоское снижение → предел → щиты → HP; `EffectiveArmor`, поля
+  `DamageResult.ArmorRaw/Armor/DefenseK/AfterArmor`. Пробитие A приходит в `DamageEvent` из обычной атаки (`UnitStats`) и
+  эффекта урона (`armorPenetration*`). Данные: `UnitData.Armor` (схема 5), `ResistanceProfileData.Armor` (схема 2),
+  `ResistanceLayers.*(…, armor)`, вид `combat_ruleset` (`CombatRulesetData`), `MapData.CombatRuleset` →
+  `RuntimeFactory.BuildCombatRules` → `GameContent.CombatRules` → `SimulationSettings.CombatRules`. Редактор: строки
+  `ResistanceRow` с A, `Inspector.PairText` («R, % | A»), `CombatRulesetEditorModel`/`CombatRulesetEditor`, выбор правил в
+  `MapEditor`, песочница — `SandboxSetup.ArmorPenetration*/RulesetId`, `HitSandbox.Run(…, rulesetDraft)`.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -533,7 +542,11 @@ tests/*  ──► соответствующие сборки
 `menu-skill:N` — N-я кнопка навыка в меню ТД.
 С v0.19.0: редактор гексов — поля `tile.category|passable|waypoints|level|color|icon`, эффекты `tile.e<i>.<ключ>`,
 `tile.e<i>.remove`, `tile.addtype`, `tile.add`; проверки `expect:tile-field:<ключ>:<значение>`, `expect:effects:N`,
-`expect:tile-preview:N:<текст>`; в редакторе карт `expect:tile:c,r:` принимает и название типа. В бою: `advance:N` — ровно N
+`expect:tile-preview:N:<текст>`; в редакторе карт `expect:tile:c,r:` принимает и название типа. С v0.27.0: поля A юнита и профиля — `unit.armor.<ключ>`, `profile.armor.<ключ>` (и `.reset`);
+правила боя — `rules.k`, `rules.k.pick`, `rules.k.add`, `rules.k.<семейство>`, `rules.k.<семейство>.remove`; карта —
+`map.ruleset`; песочница — `<префикс>sandbox.armorpen|armorpenpct|ruleset`; проверки `expect:armor:<тип|global>:<A>`,
+`expect:profile-armor:<тип>:<A>`, `expect:ruleset-k:[<семейство>:]<K>`, `expect:ruleset-preview:<текст>`,
+`expect:map-ruleset:<id|название>`. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -578,10 +591,11 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV24` = V23 + секции юнита, таблица, карточки, правило поверх юнита, отладка теста для v0.24.0,
 `$RegressionScenarioV241` = V24 + кнопки панелей в пределах окна для v0.24.1,
 `$RegressionScenarioV25` = V241 + UX-испытание пяти юнитов, их бой, экспорт «Защиты» для v0.25.0,
-`$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0+ (`$CleanImportScenarioV25` —
+`$RegressionScenarioV26` = V25 + тип из селектора, его доступность в правиле, гексе и юните, переименование, архив для v0.26.0,
+`$RegressionScenarioV27` = V26 + правила боя, защита A юнита, песочница, бой в тестах юнита и карты для v0.27.0+ (`$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 

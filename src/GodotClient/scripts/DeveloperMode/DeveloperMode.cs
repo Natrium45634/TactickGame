@@ -131,6 +131,12 @@ public partial class DeveloperMode : Node
             editor.Configure(_library, item, draft);
             return editor;
         };
+        Editors["combat_ruleset"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.CombatRulesetEditor { Name = "CombatRulesetEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
         _browser = new LibraryBrowser(library);
         foreach (var problem in library.Problems)
         {
@@ -376,7 +382,7 @@ public partial class DeveloperMode : Node
     }
 
     /// <summary>
-    /// The first screen of «Механики» (spec part 5 §6.1): three large actions — damage types, defense rules, resistance sets —
+    /// The first screen of «Механики» (spec part 5 §6.1): large actions — damage types, defense rules, profiles, combat rules —
     /// built from the registry, so a section registered later appears here too.
     /// </summary>
     private Control BuildHub()

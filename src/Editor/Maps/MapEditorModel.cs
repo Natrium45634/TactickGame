@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Content.Kinds;
 using HexTactics.Content.Library;
 using HexTactics.Content.Model;
@@ -179,6 +180,24 @@ public sealed class MapEditorModel
     public void SetDescription(string text) => ApplyItem("Описание карты", i => i.Description = text);
 
     public void SetBaseName(string name) => Apply("Название базы", m => m.BaseName = name);
+
+    /// <summary>Combat rulesets the map can play with (spec part 6 §9.5): saved sets without errors, archived ones only if chosen.</summary>
+    public IReadOnlyList<(string Id, string Name)> Rulesets() => Library.Items(ContentTypeRegistry.CombatRuleset)
+        .Where(r => (!r.HasErrors && !r.Archived) || r.Id == Map.EffectiveRuleset)
+        .Select(r => (r.Id, r.Name + (r.IsBuiltIn ? string.Empty : " (свой)")))
+        .ToList();
+
+    /// <summary>Assigns the map's combat ruleset (the compatible one stays the meaning of an empty value).</summary>
+    public string? SetRuleset(string rulesetId)
+    {
+        if (Library.Find(ContentTypeRegistry.CombatRuleset, rulesetId) is not { } ruleset)
+        {
+            return $"правила боя «{rulesetId}» не найдены";
+        }
+
+        Apply($"Правила боя: «{ruleset.Name}»", m => m.CombatRuleset = rulesetId);
+        return null;
+    }
 
     public void SetZoneName(int zone, string name) => Apply($"Название зоны {zone}", m =>
     {

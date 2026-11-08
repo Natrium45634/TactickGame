@@ -565,6 +565,40 @@ $script:PersistenceScenarioV26 = (@(
     'expect:dtype-preview:Используют: 1', 'ui:dtype.back', 'ui:dev.back'
 ) -join ';') + ';' + ($script:PersistenceScenarioV25 -replace 'expect:preview:0:режущий', 'expect:preview:0:пламя')
 
+# v0.27.0+ (spec part 6 §3, §9.5; acceptance §12.2): «Правила боя» — a new set «Правила арены» (K 50, magical K 200, a wrong K
+# refused); the enemy «Броненосец» with defense A 100 for every type (A −5 refused), the sandbox shows the A stage with armor
+# penetration and the K of a chosen set; in the unit's test run (compatible rules, K 100) «Поджигатель» hits it for 20 instead of
+# 40; the map «Арена брони» plays with «Правила арены» (magical K 200: 26.667); the game card never shows A.
+$script:RegressionScenarioV27 = $script:RegressionScenarioV26 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.mechanics', 'ui:mech.combat_ruleset', 'expect:category:combat_ruleset', 'expect:rows:2',
+    'ui:dev.create', 'expect:editor:combat_ruleset', 'field:rules.name=Правила арены', 'field:rules.k=0', 'expect:ruleset-k:100',
+    'field:rules.k=50', 'expect:ruleset-k:50', 'expect:ruleset-preview:A 100 → ×0.333', 'field:rules.k.pick=core.damage.magical', 'ui:rules.k.add',
+    'field:rules.k.core.damage.magical=200', 'expect:ruleset-k:core.damage.magical:200', 'ui:rules.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:rules.back', 'expect:rows:3',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Броненосец', 'field:unit.side=enemy', 'field:unit.armor.global=100',
+    'field:unit.armor.core.damage.physical=-5', 'expect:editor-message:от 0 до 1 000 000', 'expect:armor:Колющий:100', 'expect:armor:global:100',
+    'expect:resistance:Колющий:0', 'ui:unit.sandbox', 'field:unit.sandbox.type=Режущий', 'field:unit.sandbox.amount=60', 'field:unit.sandbox.armorpen=50',
+    'ui:unit.sandbox.run', 'expect:sandbox:после пробития A = 50, K = 100', 'expect:sandbox:HP цели: 100 → 60',
+    'field:unit.sandbox.ruleset=Правила арены', 'ui:unit.sandbox.run', 'expect:sandbox:K = 50', 'expect:sandbox:HP цели: 100 → 70',
+    'ui:unit.save', 'expect:dirty:no', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Поджигатель', 'spawn:enemy:3,4@Броненосец', 'expect:units:2', 'select:1',
+    'drag:3,5>3,4', 'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:80', 'select:2', 'expect:info:2:брон:no', 'expect:info:2:%:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.map', 'row:name=Прототип 12×10', 'ui:dev.duplicate', 'row:name=Прототип 12×10 (копия)', 'ui:dev.rename', 'field:dialog.input=Арена брони',
+    'ui:dialog.ok', 'row:name=Арена брони', 'ui:dev.open', 'expect:editor:map', 'expect:map-ruleset:core.ruleset.legacy',
+    'field:map.ruleset=Правила арены (свой)', 'expect:map-ruleset:Правила арены', 'ui:map.save', 'expect:dirty:no',
+    'ui:map.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Поджигатель', 'spawn:enemy:3,4@Броненосец', 'select:1', 'drag:3,5>3,4',
+    'advance:58', 'expect:hp:2:100', 'advance:6', 'expect:hp:2:73.333~0.01', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back',
+    'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV27 = (@(
+    'ui:menu.dev', 'ui:dev.cat.combat_ruleset', 'expect:rows:3', 'row:name=Правила арены', 'ui:dev.open', 'expect:editor:combat_ruleset',
+    'expect:ruleset-k:50', 'expect:ruleset-k:core.damage.magical:200', 'ui:rules.back', 'ui:dev.cat.unit', 'row:name=Броненосец', 'ui:dev.open',
+    'expect:editor:unit', 'expect:armor:global:100', 'expect:armor:Колющий:100', 'ui:unit.back', 'ui:dev.cat.map', 'row:name=Арена брони', 'ui:dev.open',
+    'expect:editor:map', 'expect:map-ruleset:Правила арены', 'ui:map.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV26
+
 if (-not $Version) { $Version = Get-PropsVersion }
 Assert-Version $Version
 if (-not $ArchiveRoot) { $ArchiveRoot = $script:DefaultArchiveRoot }
@@ -625,7 +659,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
+            $scenario = if ([version]$Version -ge [version]'0.27.0') { $script:RegressionScenarioV27 }
+                        elseif ([version]$Version -ge [version]'0.26.0') { $script:RegressionScenarioV26 }
                         elseif ([version]$Version -ge [version]'0.25.0') { $script:RegressionScenarioV25 }
                         elseif ([version]$Version -ge [version]'0.24.1') { $script:RegressionScenarioV241 }
                         elseif ([version]$Version -ge [version]'0.24.0') { $script:RegressionScenarioV24 }
@@ -648,7 +683,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }
+            if ([version]$Version -ge [version]'0.27.0') { $persistence = $script:PersistenceScenarioV27 }
+            elseif ([version]$Version -ge [version]'0.26.0') { $persistence = $script:PersistenceScenarioV26 }
             elseif ([version]$Version -ge [version]'0.25.0') { $persistence = $script:PersistenceScenarioV25 }
             elseif ([version]$Version -ge [version]'0.24.0') { $persistence = $script:PersistenceScenarioV24 }
             elseif ([version]$Version -ge [version]'0.23.0') { $persistence = $script:PersistenceScenarioV23 }

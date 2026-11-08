@@ -99,6 +99,7 @@ public static class UiText
             "attackPower" => "атака",
             "attackRate" => "темп атак",
             "resistance" => "защита", // spec part 5 §7.4: no numbers or types of resistances in the game UI
+            "armor" => "броня",       // spec part 6 §12.5 P6-51: a temporary A is named, never shown as a number
             "healingReceived" => "лечение",
             _ => "скорость",
         };
@@ -114,10 +115,13 @@ public static class UiText
         string Name(string key) => key == HexTactics.Core.Combat.ResistanceSet.Global ? "все типы" : types.TryGetValue(key, out var t) ? t.Name.ToLowerInvariant() : key;
         var values = u.Stats.Resistances.Values.OrderBy(v => v.Key, System.StringComparer.Ordinal)
             .Select(v => $"{Name(v.Key)} {v.Value.ToString("+0.##;−0.##", System.Globalization.CultureInfo.InvariantCulture)} %").ToList();
+        var armor = u.Stats.Armor.Values.OrderBy(v => v.Key, System.StringComparer.Ordinal)
+            .Select(v => $"{Name(v.Key)} {v.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}").ToList();
         var rules = u.Stats.DefenseRules.Select(r => $"«{(r.Name.Length > 0 ? r.Name : r.Id)}» (приоритет {r.Priority})").ToList();
         var shields = u.Shields.Select(s => $"{s.Definition.Name} {Hp(s.Current)}/{Hp(s.Definition.Capacity)}").ToList();
         return "⚙ ОТЛАДКА ЗАЩИТЫ (только тест из редактора)\n" +
                $"сопротивления: {(values.Count == 0 ? "все 0 %" : string.Join(", ", values))}\n" +
+               $"защита A: {(armor.Count == 0 ? "нет" : string.Join(", ", armor))}\n" +
                $"правила: {(rules.Count == 0 ? "нет" : string.Join(", ", rules))} · щиты: {(shields.Count == 0 ? "нет" : string.Join(", ", shields))}" +
                (u.Stats.HealingReceived != 1 ? $" · лечение ×{u.Stats.HealingReceived.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}" : string.Empty);
     }

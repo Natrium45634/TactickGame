@@ -210,6 +210,21 @@ public sealed class ContentLibrary
                     issues.Warning($"data.values.{key}", $"«{bypass.Name}» обходит численные сопротивления — значение не действует");
                 }
             }
+
+            WarnBypassedArmor(profile.Armor.Keys, issues);
+        }
+
+        if (item.Data is CombatRulesetData ruleset)
+        {
+            foreach (var key in ruleset.DefenseKByFamily.Keys)
+            {
+                if (Find(ContentTypeRegistry.DamageType, key) is { Data: DamageTypeData d } kType && (d.Family.Length > 0 || d.Strategy != DamageTypeData.ResistanceAffected))
+                {
+                    issues.Error($"data.defenseKByFamily.{key}", d.Family.Length > 0
+                        ? $"«{kType.Name}» — подтип: свой K задаётся семейству"
+                        : $"«{kType.Name}» обходит защиту A — свой K не действовал бы");
+                }
+            }
         }
 
         if (item.Data is DamageTypeData type && type.Family.Length > 0 && Find(ContentTypeRegistry.DamageType, type.Family) is { Data: DamageTypeData family } familyItem)
@@ -227,6 +242,7 @@ public sealed class ContentLibrary
 
         if (item.Data is UnitData unit)
         {
+            WarnBypassedArmor(unit.Armor.Keys, issues);
             var layered = ResistanceLayers.Values(unit, this);
             foreach (var r in unit.Resistances.Keys)
             {
@@ -255,6 +271,18 @@ public sealed class ContentLibrary
         return issues.Items;
 
         static double Get(IReadOnlyDictionary<string, double> values, string key) => values.TryGetValue(key, out var v) ? v : 0;
+    }
+
+    /// <summary>A defense A on a type that bypasses it does nothing (spec part 6 §3.2): a warning, not an error.</summary>
+    private void WarnBypassedArmor(IEnumerable<string> keys, IssueList issues)
+    {
+        foreach (var key in keys)
+        {
+            if (key != UnitData.GlobalResistance && Find(ContentTypeRegistry.DamageType, key) is { Data: DamageTypeData { Strategy: DamageTypeData.TrueLike } } bypass)
+            {
+                issues.Warning($"data.armor.{key}", $"«{bypass.Name}» обходит защиту A — значение не действует");
+            }
+        }
     }
 
     /// <summary>

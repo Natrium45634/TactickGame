@@ -195,7 +195,7 @@ public partial class ResistanceProfileEditor : SmallBoardEditor
 
     protected override string IdPrefix => "profile.";
 
-    protected override string KindTitle => "Набор сопротивлений";
+    protected override string KindTitle => "Профиль защиты и сопротивлений";
 
     public ResistanceProfileEditorModel ProfileModel => _model;
 
@@ -236,30 +236,52 @@ public partial class ResistanceProfileEditor : SmallBoardEditor
             }
         }, "Свои значения набора перекрывают значения основы; циклы запрещены.");
 
-        inspector.Section("Значения, %");
-        inspector.Hint("−500…+500; итог для типа = все типы + семейство + подтип. Это данные, а не отдельная механика: юнит применяет набор ссылкой.");
+        inspector.Section("Значения: R, % и защита A");
+        inspector.Hint("R −500…+500 %, A — очки 0…1 000 000; итог для типа = все типы + семейство + подтип. Это данные, а не отдельная механика: юнит применяет профиль ссылкой.");
         foreach (var row in _model.Rows())
         {
             var label = (row.Depth > 0 ? "    " : string.Empty) + row.Label;
             if (row.Bypass)
             {
-                inspector.ReadOnly(label, "обходит численные сопротивления");
+                inspector.ReadOnly(label, "обходит численные R и защиту A");
                 continue;
             }
 
             var key = row.Key;
-            var hint = row.Source is null ? null : (row.Inherited ? "из основы" : "своё") + (row.Value != 0 ? " · " + UnitEditorModel.Explain(row.Value) : string.Empty);
-            inspector.LineText($"{IdPrefix}res.{key}", label + ", %", Inspector.Num(row.Value), v =>
+            var parts = new System.Collections.Generic.List<string>();
+            if (row.Source is not null)
+            {
+                parts.Add("R " + (row.Inherited ? "из основы" : "своё") + (row.Value != 0 ? " · " + UnitEditorModel.Explain(row.Value) : string.Empty));
+            }
+
+            if (row.ArmorSource is not null)
+            {
+                parts.Add("A " + (row.ArmorInherited ? "из основы" : "своя") + (row.Armor != 0 ? " · " + UnitEditorModel.ExplainArmor(row.Armor) : string.Empty));
+            }
+
+            inspector.PairText($"{IdPrefix}res.{key}", "R, %", Inspector.Num(row.Value), v =>
             {
                 if (_model.SetValue(key, v) is { } issue)
                 {
                     Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
                     Stamp++;
                 }
-            }, hint);
+            }, $"{IdPrefix}armor.{key}", "A", Inspector.Num(row.Armor), v =>
+            {
+                if (_model.SetArmor(key, v) is { } issue)
+                {
+                    Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+                    Stamp++;
+                }
+            }, label, parts.Count == 0 ? null : string.Join("; ", parts), "Защита A в очках: урон после R × K / (K + A). Не процент.");
             if (row.Own)
             {
-                inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Убрать своё значение", () => _model.Reset(key), ButtonKind.Flat);
+                inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Убрать своё R", () => _model.Reset(key), ButtonKind.Flat);
+            }
+
+            if (row.ArmorOwn)
+            {
+                inspector.Button($"{IdPrefix}armor.{key}.reset", "↺ Убрать свою A", () => _model.ResetArmor(key), ButtonKind.Flat);
             }
         }
     }
@@ -282,7 +304,129 @@ public partial class ResistanceProfileEditor : SmallBoardEditor
                 actual = _model.Total(a[1]).ToString("0.##", CultureInfo.InvariantCulture);
                 ok = actual == a[2];
                 return true;
+            case "profile-armor":
+                // expect:profile-armor:<type id>:<A_raw>
+                actual = _model.ArmorTotal(a[1]).ToString("0.##", CultureInfo.InvariantCulture);
+                ok = actual == a[2];
+                return true;
             case "profile-preview":
+                actual = string.Join(" | ", _model.Preview());
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
+            default:
+                actual = "unknown";
+                ok = false;
+                return false;
+        }
+    }
+}
+
+/// <summary>
+/// The combat rules constructor (spec part 6 §3.2, §9.5): K of the defense formula, optional K per family, a table of what A
+/// means and «Проверить на ударе» with these (unsaved) rules. Direction and critical hits join this editor in later versions.
+/// </summary>
+public partial class CombatRulesetEditor : SmallBoardEditor
+{
+    private CombatRulesetEditorModel _model = null!;
+    private SandboxPanel? _sandbox;
+    private string? _pickFamily;
+
+    public override string Kind => ContentTypeRegistry.CombatRuleset;
+
+    protected override string IdPrefix => "rules.";
+
+    protected override string KindTitle => "Правила боя";
+
+    public CombatRulesetEditorModel RulesetModel => _model;
+
+    public void Configure(ContentLibrary library, ContentItem item, ContentItem? draft = null)
+    {
+        _model = new CombatRulesetEditorModel(library, item);
+        if (draft is not null)
+        {
+            _model.LoadDraft(draft);
+        }
+
+        Attach(library, _model);
+    }
+
+    /// <summary>The centre shows how strong A = 100 is with this K (darker — stronger defense).</summary>
+    protected override void UpdateCanvas()
+    {
+        if (Fills is null)
+        {
+            return;
+        }
+
+        Fills.ClearAll();
+        var m = (float)HexTactics.Core.Combat.ArmorMath.Multiplier(100, _model.Ruleset.DefenseK);
+        Fills.SetFill(Center, new Color(0.35f + (0.5f * m), 0.45f + (0.4f * m), 0.75f, 0.8f));
+    }
+
+    private void Refuse(HexTactics.Content.Model.ContentIssue? issue)
+    {
+        if (issue is not null)
+        {
+            Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+            Stamp++;
+        }
+    }
+
+    protected override void BuildProperties(Inspector inspector)
+    {
+        var rules = _model.Ruleset;
+        inspector.Section("Защита A");
+        inspector.LineText(IdPrefix + "k", "K защиты", Inspector.Num(rules.DefenseK), v => Refuse(_model.SetDefenseK(v)),
+            "Урон после сопротивления × K / (K + A): при A = K урон вдвое меньше. Больше 0 и не больше 1 000 000.");
+        inspector.Section("Свой K у семейства");
+        inspector.Hint("Необязательно: типы этого семейства (и его подтипы) считаются со своим K, остальные — с общим.");
+        foreach (var (family, k) in rules.DefenseKByFamily)
+        {
+            var id = family;
+            var name = Library.Find(ContentTypeRegistry.DamageType, id)?.Name ?? id;
+            inspector.LineText($"{IdPrefix}k.{id}", $"K — {name}", Inspector.Num(k), v => Refuse(_model.SetFamilyK(id, v)));
+            inspector.Button($"{IdPrefix}k.{id}.remove", "✕ Общий K для семейства", () => _model.RemoveFamilyK(id), ButtonKind.Flat).Alignment = HorizontalAlignment.Left;
+        }
+
+        var families = _model.FamilyChoices();
+        if (families.Count > 0)
+        {
+            _pickFamily = families.Any(f => f.Value == _pickFamily) ? _pickFamily : families[0].Value;
+            inspector.Choice(IdPrefix + "k.pick", "Семейство", families.Select(f => new ChoiceOption(f.Value, f.Label)).ToList(), _pickFamily!, v => _pickFamily = v);
+            inspector.Button(IdPrefix + "k.add", "＋ Свой K для семейства", () =>
+            {
+                if (_pickFamily is not null)
+                {
+                    Refuse(_model.SetFamilyK(_pickFamily, rules.DefenseK));
+                }
+            });
+        }
+    }
+
+    protected override void BuildPreview(Inspector preview)
+    {
+        preview.Section("Как работают правила");
+        foreach (var line in _model.Preview())
+        {
+            preview.Text(line, size: 12);
+        }
+
+        _sandbox ??= new SandboxPanel(IdPrefix, new SandboxSetup { RulesetId = _model.Item.Id, EnemiesAround = 1 }, fixedRuleset: true);
+        _sandbox.Build(preview, Library, setup => HitSandbox.Run(Library, setup with { RulesetId = _model.Item.Id }, rulesetDraft: _model.Item), () => Stamp++);
+    }
+
+    protected override SandboxPanel? Sandbox => _sandbox;
+
+    protected override bool Expect(string[] a, out string actual, out bool ok)
+    {
+        switch (a[0])
+        {
+            case "ruleset-k":
+                // expect:ruleset-k:<K> or expect:ruleset-k:<family id>:<K>
+                actual = (a.Length > 2 ? (_model.Ruleset.DefenseKByFamily.TryGetValue(a[1], out var fk) ? fk : 0) : _model.Ruleset.DefenseK).ToString("0.##", CultureInfo.InvariantCulture);
+                ok = actual == a[^1];
+                return true;
+            case "ruleset-preview":
                 actual = string.Join(" | ", _model.Preview());
                 ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
                 return true;

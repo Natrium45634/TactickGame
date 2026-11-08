@@ -22,15 +22,19 @@ public sealed class SandboxPanel
     private SandboxReport? _report;
     private bool _open;
 
-    public SandboxPanel(string prefix, SandboxSetup initial, bool fixedTarget = false)
+    public SandboxPanel(string prefix, SandboxSetup initial, bool fixedTarget = false, bool fixedRuleset = false)
     {
         _prefix = prefix;
         _setup = initial;
         FixedTarget = fixedTarget;
+        FixedRuleset = fixedRuleset;
     }
 
     /// <summary>The target is the edited unit itself (the unit editor) — no target picker.</summary>
     public bool FixedTarget { get; }
+
+    /// <summary>The rules are the edited combat ruleset (its own editor) — no ruleset picker.</summary>
+    public bool FixedRuleset { get; }
 
     public SandboxReport? Report => _report;
 
@@ -88,7 +92,15 @@ public sealed class SandboxPanel
 
         panel.Choice(_prefix + "sandbox.type", "Тип урона", types, _setup.DamageTypeId, v => _setup = _setup with { DamageTypeId = v });
         panel.LineText(_prefix + "sandbox.amount", "Сила удара D0", Inspector.Num(_setup.Amount), v => _setup = _setup with { Amount = Parse(v, _setup.Amount, 0, 100000) });
-        panel.LineText(_prefix + "sandbox.penetration", "Пробитие, п.п.", Inspector.Num(_setup.Penetration), v => _setup = _setup with { Penetration = Parse(v, _setup.Penetration, 0, 1000) });
+        panel.LineText(_prefix + "sandbox.penetration", "Пробитие R, п.п.", Inspector.Num(_setup.Penetration), v => _setup = _setup with { Penetration = Parse(v, _setup.Penetration, 0, 1000) });
+        panel.PairText(_prefix + "sandbox.armorpen", "очки", Inspector.Num(_setup.ArmorPenetration), v => _setup = _setup with { ArmorPenetration = Parse(v, _setup.ArmorPenetration, 0, 1_000_000) },
+            _prefix + "sandbox.armorpenpct", "%", Inspector.Num(_setup.ArmorPenetrationPercent), v => _setup = _setup with { ArmorPenetrationPercent = Parse(v, _setup.ArmorPenetrationPercent, 0, 100) },
+            "Пробитие защиты A", "Сначала вычитаются очки, затем не учитывается доля оставшейся A; R не меняется.");
+        if (!FixedRuleset)
+        {
+            var rulesets = library.Items(ContentTypeRegistry.CombatRuleset).Where(r => !r.HasErrors).Select(r => new ChoiceOption(r.Id, r.Name)).ToList();
+            panel.Choice(_prefix + "sandbox.ruleset", "Правила боя (K)", rulesets, _setup.RulesetId, v => _setup = _setup with { RulesetId = v });
+        }
         panel.LineText(_prefix + "sandbox.health", "Здоровье цели, %", Inspector.Num(_setup.HealthPercent), v => _setup = _setup with { HealthPercent = Parse(v, _setup.HealthPercent, 1, 100) });
         panel.LineText(_prefix + "sandbox.enemies", "Врагов цели вокруг (0–6)", _setup.EnemiesAround.ToString(CultureInfo.InvariantCulture), v => _setup = _setup with { EnemiesAround = (int)Parse(v, _setup.EnemiesAround, 0, 6) },
             "Атакующий стоит рядом и считается одним из них.");

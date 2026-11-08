@@ -136,7 +136,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private const string SecMore = "more";
 
     private static readonly string[] MainKeys = { "maxHealth", "moveSpeed", "attackRate", "side" };
-    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit" };
+    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "attackArmorPenetration", "attackArmorPenetrationPercent" };
 
     private string _section = SecMain;
     private string _resSearch = string.Empty;
@@ -159,7 +159,7 @@ public partial class UnitEditor : DefinitionEditorShell
             BuildAttack(inspector);
         }
 
-        if (SectionHeader(inspector, SecRes, "Сопротивления", sections.Resistances))
+        if (SectionHeader(inspector, SecRes, "Сопротивления и защита", sections.Resistances))
         {
             BuildResistances(inspector);
         }
@@ -266,7 +266,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private void BuildResistances(Inspector inspector)
     {
         var unit = _model.Unit;
-        inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип, −500…+500 %; сверх 100 % урон просто 0 — лечения и отражения это не даёт.");
+        inspector.Hint("Только для разработчика: в игре числа не показываются. Итог = все типы + семейство + подтип. R — проценты −500…+500 (сверх 100 % урон просто 0, без лечения); A — очки защиты: после R урон × K / (K + A), K из правил боя карты.");
         BuildProfiles(inspector);
 
         var view = _model.ResistanceView(_resSearch, _resAll, _expanded);
@@ -311,14 +311,22 @@ public partial class UnitEditor : DefinitionEditorShell
                 continue;
             }
 
-            inspector.LineText($"{IdPrefix}res.{key}", label + ", %", Inspector.Num(row.Value), v =>
+            // One row: R (percent) and A (defense points) of the same layer (spec part 6 §3.1, §9.4).
+            inspector.PairText($"{IdPrefix}res.{key}", "R, %", Inspector.Num(row.Value), v =>
             {
                 if (_model.SetResistance(key, v) is { } issue)
                 {
                     Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
                     Stamp++;
                 }
-            }, Explain(row));
+            }, $"{IdPrefix}armor.{key}", "A", Inspector.Num(row.Armor), v =>
+            {
+                if (_model.SetArmor(key, v) is { } issue)
+                {
+                    Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error);
+                    Stamp++;
+                }
+            }, label, Explain(row), "Защита A в очках: урон после R × K / (K + A); при A = K — вдвое меньше. Не процент.");
             if (viewRow.HasChildren && !_resAll && _resSearch.Length == 0)
             {
                 inspector.Button($"{IdPrefix}res.{key}.expand", viewRow.Expanded ? "▾ скрыть подтипы" : "▸ подтипы", () =>
@@ -335,6 +343,11 @@ public partial class UnitEditor : DefinitionEditorShell
             if (row.Own && unit.ResistanceProfiles.Count > 0)
             {
                 inspector.Button($"{IdPrefix}res.{key}.reset", "↺ Вернуть значение набора", () => _model.ResetResistance(key), ButtonKind.Flat, "Убрать своё значение юнита — действует значение набора (или 0)").Alignment = HorizontalAlignment.Left;
+            }
+
+            if (row.ArmorOwn && unit.ResistanceProfiles.Count > 0)
+            {
+                inspector.Button($"{IdPrefix}armor.{key}.reset", "↺ Вернуть защиту A набора", () => _model.ResetArmor(key), ButtonKind.Flat, "Убрать свою защиту A юнита — действует значение набора (или 0)").Alignment = HorizontalAlignment.Left;
             }
         }
 
@@ -635,7 +648,7 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             _section = SecMore;
         }
-        else if (key is "res" or "profile" or "rule" or "shield")
+        else if (key is "res" or "armor" or "profile" or "rule" or "shield")
         {
             _section = SecRes;
             var parts = id.Split('.');
@@ -647,7 +660,7 @@ public partial class UnitEditor : DefinitionEditorShell
             {
                 _openCard = $"{IdPrefix}{key}.{parts[1]}";
             }
-            else if (key == "res" && parts.Length > 1 && parts[1] is not ("search" or "all"))
+            else if (key is "res" or "armor" && parts.Length > 1 && parts[1] is not ("search" or "all"))
             {
                 RevealResistance(string.Join('.', parts.Skip(1)).Replace(".reset", string.Empty, System.StringComparison.Ordinal).Replace(".expand", string.Empty, System.StringComparison.Ordinal).Replace(".rules", string.Empty, System.StringComparison.Ordinal));
             }
@@ -683,21 +696,35 @@ public partial class UnitEditor : DefinitionEditorShell
     /// <summary>The row's value in words; for a layered row also the total with «все типы» and the family.</summary>
     private string? Explain(ResistanceRow row)
     {
+        var parts = new List<string>();
         var total = row.Key == UnitData.GlobalResistance ? row.Value : _model.EffectiveResistance(row.Key);
-        if (row.Value == 0 && total == 0 && row.Source is null)
+        if (row.Value != 0 || total != 0 || row.Source is not null)
         {
-            return null;
+            var own = row.Value == 0 && !row.Own
+                ? (row.Depth > 0 && total != 0 ? "своего нет — унаследовано" : "значения нет")
+                : UnitEditorModel.Explain(row.Value);
+            if (row.Source is { } source)
+            {
+                own = $"{source}: {own}";
+            }
+
+            parts.Add(total == row.Value ? own : $"{own} · итог: {UnitEditorModel.Explain(total)}");
         }
 
-        var own = row.Value == 0 && !row.Own
-            ? (row.Depth > 0 && total != 0 ? "своего нет — унаследовано" : "значения нет")
-            : UnitEditorModel.Explain(row.Value);
-        if (row.Source is { } source)
+        // Defense A of the row (spec part 6 §3.2): own or from a set, and the layered total for a type.
+        var armorTotal = row.Key == UnitData.GlobalResistance ? row.Armor : _model.EffectiveArmor(row.Key);
+        if (row.Armor != 0 || armorTotal != 0 || row.ArmorSource is not null)
         {
-            own = $"{source}: {own}";
+            var a = row.Armor == 0 && !row.ArmorOwn ? (armorTotal != 0 ? "A своей нет — унаследовано" : "A нет") : UnitEditorModel.ExplainArmor(row.Armor);
+            if (row.ArmorSource is { } source)
+            {
+                a = $"{source}: {a}";
+            }
+
+            parts.Add(armorTotal == row.Armor ? a : $"{a} · итог: {UnitEditorModel.ExplainArmor(armorTotal)}");
         }
 
-        return total == row.Value ? own : $"{own} · итог: {UnitEditorModel.Explain(total)}";
+        return parts.Count == 0 ? null : string.Join("; ", parts);
     }
 
     protected override void BuildPreview(Inspector preview)
@@ -743,6 +770,17 @@ public partial class UnitEditor : DefinitionEditorShell
                         ? a[1]
                         : Library.Items(ContentTypeRegistry.DamageType).FirstOrDefault(t => t.Name == a[1])?.Id ?? a[1];
                     actual = (key == UnitData.GlobalResistance ? _model.ResistanceRows()[0].Value : _model.EffectiveResistance(key)).ToString("0.##", CultureInfo.InvariantCulture);
+                    ok = actual == a[2];
+                    return true;
+                }
+
+            case "armor":
+                {
+                    // expect:armor:<type id, type name or global>:<A_raw> — global + family + subtype of this unit (spec part 6 §3.2)
+                    var key = a[1] == UnitData.GlobalResistance || Library.Find(ContentTypeRegistry.DamageType, a[1]) is not null
+                        ? a[1]
+                        : Library.Items(ContentTypeRegistry.DamageType).FirstOrDefault(t => t.Name == a[1])?.Id ?? a[1];
+                    actual = (key == UnitData.GlobalResistance ? _model.ResistanceRows()[0].Armor : _model.EffectiveArmor(key)).ToString("0.##", CultureInfo.InvariantCulture);
                     ok = actual == a[2];
                     return true;
                 }
