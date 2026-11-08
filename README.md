@@ -4,8 +4,9 @@
 (Godot 4.7.2 .NET, C#). Техническое задание — [`docs/GAME_SPEC.md`](docs/GAME_SPEC.md) (часть 1, редакция 0.1) и
 [`docs/GAME_SPEC_PART2.md`](docs/GAME_SPEC_PART2.md) (часть 2, редакция 0.2), [`docs/GAME_SPEC_PART3.md`](docs/GAME_SPEC_PART3.md)
 (часть 3, редакция 0.3 — правила боя), [`docs/GAME_SPEC_PART4.md`](docs/GAME_SPEC_PART4.md) (часть 4, редакция 0.4 —
-режим «Разработчик» и пользовательский контент) и [`docs/GAME_SPEC_PART5.md`](docs/GAME_SPEC_PART5.md) (часть 5, редакция 0.5 —
-урон и защита, актуальная).
+режим «Разработчик» и пользовательский контент), [`docs/GAME_SPEC_PART5.md`](docs/GAME_SPEC_PART5.md) (часть 5, редакция 0.5 —
+урон и защита) и [`docs/GAME_SPEC_PART6.md`](docs/GAME_SPEC_PART6.md) (часть 6, редакция 0.6 — конструктор боевой системы,
+актуальная).
 
 **Текущая версия: v0.25.0** — завершение ТЗ ч.5: сквозная проверка сохранения, импорта, экспорта и миграций всех новых видов
 (одинаковые удары до и после), UX-испытание пяти юнитов, карта приёмки `docs/ACCEPTANCE_PART5.md`, точка расширения для
@@ -175,7 +176,7 @@ git push origin --tags
 
 | Файл | Содержание |
 |---|---|
-| [`docs/GAME_SPEC.md`](docs/GAME_SPEC.md) … [`docs/GAME_SPEC_PART5.md`](docs/GAME_SPEC_PART5.md) | Техническое задание: части 1–5 (0.5 — актуальная) |
+| [`docs/GAME_SPEC.md`](docs/GAME_SPEC.md) … [`docs/GAME_SPEC_PART6.md`](docs/GAME_SPEC_PART6.md) | Техническое задание: части 1–6 (0.6 — актуальная) |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Слои, координаты, формат карты, визуальные слои, камера, автоматизация |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Принятые решения и допущения |
 | [`docs/CONTROLS.md`](docs/CONTROLS.md) | Управление |
