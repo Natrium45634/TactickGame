@@ -31,7 +31,7 @@ public class PassiveEditorTests
         Assert.Equal((50.0, DamageTypes.Magical), (unit.Unit.Passives[0].Value, unit.Unit.Passives[0].DamageType));
         Assert.Equal("Водная мощь", unit.PassiveCards().Single().Name);
         Assert.Contains("+50 % исходящего урона: магический", unit.PassiveCards().Single().Summary, StringComparison.Ordinal);
-        Assert.Equal("пассивов: 1", unit.Sections().Features);
+        Assert.Equal("активных эффектов: 1", unit.Sections().Features);
         Assert.True(unit.Undo()); // the value back to 20
         Assert.Equal(20, unit.Unit.Passives[0].Value);
         Assert.Equal("p2", unit.AddPassive(PassiveOperations.StatAddPercent).Id);

@@ -30,6 +30,7 @@ public static class PassiveOperations
     public const string CritChanceDelta = "crit_chance_delta_pp";
     public const string CritImmunity = "crit_immunity";
     public const string SurpriseImmunity = "surprise_immunity";
+    public const string SurpriseChanceDelta = "surprise_chance_delta_pp";
 
     /// <summary>Characteristics the engine executes (the others are numbers of the <c>unit_stat</c> registry, D-158).</summary>
     public static readonly string[] EngineStats = { "attackPower", "maxHealth", "moveSpeed", "attackRate" };
@@ -61,6 +62,8 @@ public static class PassiveOperations
             false, false, false, false, false, 0, 0, string.Empty, 0),
         new PassiveOperation(SurpriseImmunity, "невосприимчив к внезапным ударам", "Удар с фланга или сзади по этому юниту не получает бонуса внезапности.",
             false, false, false, false, false, 0, 0, string.Empty, 0),
+        new PassiveOperation(SurpriseChanceDelta, "шанс внезапного удара ± п.п.", "Удары этого юнита: к шансу стороны цели прибавляется столько процентных пунктов (итог 0…100 %). Внезапность должна быть включена в правилах боя.",
+            false, false, false, false, false, -100, 100, "п.п.", 15),
         new PassiveOperation(GrantDefenseRule, "правило защиты", "Подключает сохранённое правило защиты (иммунитет, отражение, щит…) как постоянную особенность юнита.",
             false, false, false, true, false, 0, 0, string.Empty, 0),
     };

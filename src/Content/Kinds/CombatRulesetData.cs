@@ -41,6 +41,9 @@ public sealed class CombatRulesetData : IContentData
 
     public double SurpriseMultiplier { get; set; } = 1.5;
 
+    /// <summary>Spec part 6 §6.4: the bonus only for a hit from a neighbouring hex (optional since v0.31.0, absent — false).</summary>
+    public bool SurpriseMeleeOnly { get; set; }
+
     /// <summary>Critical hits (spec part 6 §7): off for a new set until the author turns them on.</summary>
     public bool CritEnabled { get; set; }
 
@@ -65,6 +68,7 @@ public sealed class CombatRulesetData : IContentData
     {
         ["defenseK"] = DefenseK, ["defenseKByFamily"] = UnitData.ValuesJson(DefenseKByFamily),
         ["surpriseEnabled"] = SurpriseEnabled, ["surpriseChances"] = new JsonArray(SurpriseChances.Select(c => (JsonNode)c).ToArray()), ["surpriseMultiplier"] = SurpriseMultiplier,
+        ["surpriseMeleeOnly"] = SurpriseMeleeOnly,
         ["critEnabled"] = CritEnabled, ["baseCritChance"] = BaseCritChance, ["critMultiplier"] = CritMultiplier, ["superCritMultiplier"] = SuperCritMultiplier,
     };
 
@@ -75,6 +79,7 @@ public sealed class CombatRulesetData : IContentData
             DefenseK = JsonFields.Number(obj, "defenseK", HexTactics.Core.Combat.CombatRules.DefaultDefenseK, issues, string.Empty),
             SurpriseEnabled = JsonFields.Flag(obj, "surpriseEnabled", false, issues, string.Empty),
             SurpriseMultiplier = JsonFields.Number(obj, "surpriseMultiplier", 1.5, issues, string.Empty),
+            SurpriseMeleeOnly = JsonFields.Flag(obj, "surpriseMeleeOnly", false, issues, string.Empty),
             CritEnabled = JsonFields.Flag(obj, "critEnabled", false, issues, string.Empty),
             BaseCritChance = JsonFields.Number(obj, "baseCritChance", 0, issues, string.Empty),
             CritMultiplier = JsonFields.Number(obj, "critMultiplier", 1.5, issues, string.Empty),
@@ -137,13 +142,13 @@ public sealed class CombatRulesetData : IContentData
 
     public string Summary() => $"K = {DefenseK.ToString("0.##", CultureInfo.InvariantCulture)}" +
         (DefenseKByFamily.Count > 0 ? $" · своих K семейств: {DefenseKByFamily.Count}" : string.Empty) +
-        (SurpriseEnabled ? " · внезапность" : string.Empty) + (CritEnabled ? " · криты" : string.Empty);
+        (SurpriseEnabled ? SurpriseMeleeOnly ? " · внезапность вблизи" : " · внезапность" : string.Empty) + (CritEnabled ? " · криты" : string.Empty);
 
     public IContentData Clone()
     {
         var copy = new CombatRulesetData
         {
-            DefenseK = DefenseK, SurpriseEnabled = SurpriseEnabled, SurpriseChances = (double[])SurpriseChances.Clone(), SurpriseMultiplier = SurpriseMultiplier,
+            DefenseK = DefenseK, SurpriseEnabled = SurpriseEnabled, SurpriseChances = (double[])SurpriseChances.Clone(), SurpriseMultiplier = SurpriseMultiplier, SurpriseMeleeOnly = SurpriseMeleeOnly,
             CritEnabled = CritEnabled, BaseCritChance = BaseCritChance, CritMultiplier = CritMultiplier, SuperCritMultiplier = SuperCritMultiplier,
         };
         foreach (var (key, value) in DefenseKByFamily)

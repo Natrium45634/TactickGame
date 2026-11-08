@@ -221,6 +221,10 @@ public static class PassiveEffects
     public static double CritChance(UnitData unit, ContentLibrary? library) =>
         unit.CritChance + Active(unit, library).Where(x => x.Passive.Operation == PassiveOperations.CritChanceDelta).Sum(x => x.Passive.Value);
 
+    /// <summary>The attacker's surprise chance bonus in percentage points (spec part 6 §6.3 p.2), from its species, traits and passives.</summary>
+    public static double SurpriseChanceBonus(UnitData unit, ContentLibrary? library) =>
+        Active(unit, library).Where(x => x.Passive.Operation == PassiveOperations.SurpriseChanceDelta).Sum(x => x.Passive.Value);
+
     public static IReadOnlyList<CountModifier> CountModifiers(UnitData unit, ContentLibrary? library) => Active(unit, library)
         .Where(x => x.Passive.Operation == PassiveOperations.CountMatchingUnits)
         .Select(x => new CountModifier(x.Passive.Stat, x.Passive.Value, x.Passive.CountSpecies.Length == 0 ? null : x.Passive.CountSpecies, x.Passive.CountSamePack, x.Source)
@@ -304,6 +308,7 @@ public static class PassiveEffects
             PassiveOperations.CritChanceDelta => $"шанс крита {Signed(p.Value)} п.п.",
             PassiveOperations.CritImmunity => "невосприимчив к критам",
             PassiveOperations.SurpriseImmunity => "невосприимчив к внезапным ударам",
+            PassiveOperations.SurpriseChanceDelta => $"шанс внезапного удара {Signed(p.Value)} п.п.",
             PassiveOperations.CountMatchingUnits => $"{stat} {Signed(p.Value)} % за каждого живого союзника" +
                 (p.CountSpecies.Length > 0 ? $" вида «{library?.Find(ContentTypeRegistry.Species, p.CountSpecies)?.Name ?? p.CountSpecies}» и потомков" : string.Empty) +
                 (p.CountSamePack ? ", той же стаи" : string.Empty) + (p.CountSelf ? ", включая себя" : string.Empty) +

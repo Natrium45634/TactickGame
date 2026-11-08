@@ -64,6 +64,12 @@ public sealed record UnitStats
 
     public bool SurpriseImmune { get; init; }
 
+    /// <summary>
+    /// The attacker's change of the surprise chance in percentage points (spec part 6 §6.3 p.2 <c>SurpriseChanceDeltaPP</c>):
+    /// added to the chance of the side, then clamped to 0…100 %. Never creates surprise where the rules have none.
+    /// </summary>
+    public double SurpriseChanceBonus { get; init; }
+
     /// <summary>Species lineage of the definition, from its own species up to the root (spec part 6 §5.2 <c>isA</c>); empty — none.</summary>
     public IReadOnlyList<string> Species { get; init; } = System.Array.Empty<string>();
 

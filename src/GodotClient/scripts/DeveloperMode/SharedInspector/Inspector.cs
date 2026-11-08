@@ -334,6 +334,14 @@ public sealed class Inspector
         }
     }
 
+    /// <summary>Adds a custom control (a picture, a diagram) to the panel as it is.</summary>
+    public T Add<T>(T control)
+        where T : Control
+    {
+        _box.AddChild(control);
+        return control;
+    }
+
     public HBoxContainer Row()
     {
         var row = UiKit.Row(6);

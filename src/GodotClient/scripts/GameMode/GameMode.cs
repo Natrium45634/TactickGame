@@ -1434,6 +1434,15 @@ public partial class GameMode : Node3D
                     break;
                 }
 
+            case "hitword":
+                {
+                    // expect:hitword:<word>:yes|no — a word over a hit («Крит!», «Внезапно!») was shown in this match
+                    var shown = System.Linq.Enumerable.Any(_combatFx.HitWords.Keys, k => k.Contains(a[1], StringComparison.Ordinal));
+                    actual = shown ? "yes" : "no";
+                    ok = actual == a[2];
+                    break;
+                }
+
             case "lifecycle":
                 actual = Unit(1)?.Lifecycle.ToString() ?? "none";
                 ok = actual == a[2];

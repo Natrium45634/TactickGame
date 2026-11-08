@@ -62,7 +62,19 @@ public sealed record SandboxSetup
 
     /// <summary>The attacker stands next to the target (otherwise three hexes away).</summary>
     public bool AttackerAdjacent { get; init; } = true;
+
+    /// <summary>Seed of the deterministic rolls (spec part 6 §11 p.3): the same seed and key give the same outcome.</summary>
+    public int Seed { get; init; } = DefaultSeed;
+
+    /// <summary>Key of the roll of this hit; a series of checks uses <c>sandbox:{i}</c>.</summary>
+    public string RollKey { get; init; } = "sandbox";
+
+    /// <summary>PROTOTYPE_DEFAULT seed of the battle (the same as <c>SimulationSettings.Seed</c>).</summary>
+    public const int DefaultSeed = 20261106;
 }
+
+/// <summary>A reproducible series of hits (spec part 6 §11 p.6 «Проверить 100 событий»): what happened and how much HP was lost.</summary>
+public sealed record SandboxBatch(int Hits, int Seed, int Surprised, int Crits, int SuperCrits, double MinLoss, double AverageLoss, double MaxLoss);
 
 /// <summary>One hit in the sandbox: the result, the stages in words, the reasons of every rule and what the others lost.</summary>
 public sealed record SandboxRun(
@@ -183,7 +195,7 @@ public static class HitSandbox
             grid.SetTile(c, TileType.Walkable, null, 0);
         }
 
-        var sim = new GameSimulation(new MapDefinition("sandbox", grid, Array.Empty<SpawnZoneDefinition>(), null), new SimulationSettings { DamageTypes = types, CombatRules = rules });
+        var sim = new GameSimulation(new MapDefinition("sandbox", grid, Array.Empty<SpawnZoneDefinition>(), null), new SimulationSettings { DamageTypes = types, CombatRules = rules, Seed = setup.Seed });
         var noSkills = Array.Empty<string>();
         UnitId Spawn(HexCoord cell, Side side, UnitStats stats, string name) =>
             sim.Spawn(SpawnRequest.AtCell(cell, side, HexDirection.North) with { Profile = new UnitProfile("sandbox." + name, name, stats, noSkills) }).Unit!.Value;
@@ -239,7 +251,7 @@ public static class HitSandbox
         sim.Damage.Trace = trace;
         var typeId = types.ContainsKey(setup.DamageTypeId) ? setup.DamageTypeId : DamageTypes.Physical;
         var result = sim.Damage.Resolve(sim.Damage.Create(attacker, target, typeId, setup.Amount, DamageOrigin.Skill, setup.Penetration,
-            armorPenetration: setup.ArmorPenetration, armorPenetrationPercent: setup.ArmorPenetrationPercent, canCrit: true, canSurprise: true, rollKey: "sandbox")
+            armorPenetration: setup.ArmorPenetration, armorPenetrationPercent: setup.ArmorPenetrationPercent, canCrit: true, canSurprise: true, rollKey: setup.RollKey)
             with { ForcedSurprise = setup.ForceSurprise, ForcedCrit = setup.ForceCrit }, sim.Tick);
         var reactions = sim.Damage.Results.Where(r => r.Event.Reactive).ToList();
         var others = labels.Select(x => (x.Value, othersBefore[x.Key], sim.State.FindUnit(x.Key)?.CurrentHealth ?? 0)).ToList();
@@ -360,6 +372,37 @@ public static class HitSandbox
     internal static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
 
     internal static string N3(double v) => v.ToString("0.###", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// <paramref name="hits"/> hits by the rolls (keys <c>sandbox:0…</c>, forced outcomes ignored) with the same drafts as
+    /// <see cref="Run"/>: the same seed always gives the same series; nothing is saved.
+    /// </summary>
+    public static SandboxBatch Batch(ContentLibrary library, SandboxSetup setup, int hits = 100, ContentItem? ruleDraft = null, ContentItem? unitDraft = null,
+        ContentItem? typeDraft = null, ContentItem? rulesetDraft = null, ContentItem? attackerDraft = null) =>
+        Batch(setup, s => Run(library, s, ruleDraft, unitDraft, typeDraft, rulesetDraft, attackerDraft), hits);
+
+    /// <summary>The same series through an editor's own sandbox call (it carries the editor's unsaved drafts).</summary>
+    public static SandboxBatch Batch(SandboxSetup setup, Func<SandboxSetup, SandboxReport> runOne, int hits = 100)
+    {
+        hits = Math.Clamp(hits, 1, 1000);
+        var losses = new List<double>(hits);
+        int surprised = 0, crits = 0, supers = 0;
+        for (var i = 0; i < hits; i++)
+        {
+            var run = runOne(setup with { RollKey = $"sandbox:{i}", ForceSurprise = null, ForceCrit = null }).With;
+            losses.Add(run.TargetBefore - run.TargetAfter);
+            surprised += run.Result.Surprised ? 1 : 0;
+            crits += run.Result.Crit == CritTier.Crit ? 1 : 0;
+            supers += run.Result.Crit == CritTier.SuperCrit ? 1 : 0;
+        }
+
+        return new SandboxBatch(hits, setup.Seed, surprised, crits, supers, losses.Min(), losses.Average(), losses.Max());
+    }
+
+    /// <summary>«100 событий (seed 20261106): внезапных 74, критов 50, сверхкритов 25; потеря HP цели: мин 10, сред 18.4, макс 33.75.»</summary>
+    public static string Describe(SandboxBatch b) =>
+        $"{b.Hits} событий (seed {b.Seed.ToString(CultureInfo.InvariantCulture)}): внезапных {b.Surprised}, критов {b.Crits}, сверхкритов {b.SuperCrits}; " +
+        $"потеря HP цели: мин {N(b.MinLoss)}, сред {N(b.AverageLoss)}, макс {N(b.MaxLoss)}.";
 
     /// <summary>The whole report as text (the developer panel and tests).</summary>
     public static string Describe(SandboxReport report)

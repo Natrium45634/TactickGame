@@ -226,6 +226,34 @@ public partial class CombatFxView : Node3D
         Float(position + new Vector3(0, 0.45f, 0), text, text == "щит" ? new Color(0.65f, 0.85f, 1f) : new Color(0.8f, 0.8f, 0.8f), 34, 0.9);
     }
 
+    /// <summary>How many times each hit word was shown (automation: <c>expect:hitword:&lt;word&gt;:yes|no</c>).</summary>
+    public System.Collections.Generic.Dictionary<string, int> HitWords { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Spec part 6 §6.3 p.4, P6-51: a surprise or a critical hit is shown by a word over the target — never by its chance,
+    /// side or multiplier (those stay in the developer mode).
+    /// </summary>
+    private void HitWord(DamageApplied d, Vector3 at)
+    {
+        var word = (d.Crit, d.Surprised) switch
+        {
+            (HexTactics.Core.Combat.CritTier.SuperCrit, true) => "Внезапный сверхкрит!",
+            (HexTactics.Core.Combat.CritTier.SuperCrit, false) => "Сверхкрит!",
+            (HexTactics.Core.Combat.CritTier.Crit, true) => "Внезапный крит!",
+            (HexTactics.Core.Combat.CritTier.Crit, false) => "Крит!",
+            (_, true) => "Внезапно!",
+            _ => null,
+        };
+        if (word is null)
+        {
+            return;
+        }
+
+        HitWords[word] = HitWords.TryGetValue(word, out var n) ? n + 1 : 1;
+        Float(at + new Vector3(0, 0.45f, 0), word, d.Crit == HexTactics.Core.Combat.CritTier.SuperCrit ? new Color(1f, 0.55f, 0.2f) : new Color(1f, 0.85f, 0.35f),
+            d.Crit == HexTactics.Core.Combat.CritTier.Normal ? 36 : 42, 1.1);
+    }
+
     /// <summary>Spawns effects for the combat events of the last simulation update.</summary>
     public void Handle(SimulationEvent e, Func<UnitId, Vector3?> positionOf, HexTactics.Core.Hex.HexLayout layout)
     {
@@ -255,6 +283,7 @@ public partial class CombatFxView : Node3D
                 break;
             case DamageApplied d when d.Amount > 0 && positionOf(d.Target) is { } p:
                 Damage(p, d.Amount, d.Kind == DamageKind.Skill);
+                HitWord(d, p);
                 break;
             case UnitDied died:
                 Death(layout.HexToPlane(died.Cell).ToWorld(0f));

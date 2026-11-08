@@ -277,10 +277,12 @@ public sealed class DamageResolver
         var key = e.RollKey.Length > 0 ? e.RollKey : $"e{e.EventId}";
         if (!e.Reactive && e.Origin is DamageOrigin.NormalAttack or DamageOrigin.Skill && e.Source is { } striker && _state.FindUnit(striker) is { IsAlive: true } strikerUnit && strikerUnit.Id != target.Id)
         {
-            if (combat.SurpriseEnabled && e.CanSurprise && !target.Stats.SurpriseImmune && SurpriseMath.Sector(target.Cell, target.Facing, strikerUnit.Cell) is { } s)
+            if (combat.SurpriseEnabled && e.CanSurprise && !target.Stats.SurpriseImmune && (!combat.SurpriseMeleeOnly || target.Cell.DistanceTo(strikerUnit.Cell) <= 1)
+                && SurpriseMath.Sector(target.Cell, target.Facing, strikerUnit.Cell) is { } s)
             {
                 sector = s;
-                surpriseChance = Math.Clamp(combat.SurpriseChance.Count == 6 ? combat.SurpriseChance[s] : 0, 0, 100);
+                var bonus = double.IsFinite(strikerUnit.Stats.SurpriseChanceBonus) ? strikerUnit.Stats.SurpriseChanceBonus : 0;
+                surpriseChance = Math.Clamp((combat.SurpriseChance.Count == 6 ? combat.SurpriseChance[s] : 0) + bonus, 0, 100);
                 surpriseRoll = DeterministicRoll.Of(_settings.Seed, key, "surprise");
                 surprised = e.ForcedSurprise ?? surpriseRoll < surpriseChance / 100;
             }
@@ -455,6 +457,8 @@ public sealed class DamageResolver
             DamageTypeId = type.Id,
             Immune = immune,
             ShieldAbsorbed = shieldLoss,
+            Surprised = surprised,
+            Crit = crit,
         });
 
         // 7. Consequences of the actual loss: retaliation (needs a living defender), vampirism of the attacker.

@@ -407,6 +407,13 @@ public partial class CombatRulesetEditor : SmallBoardEditor
     }
 
     private bool _asymmetric;
+    private int _side = -1;
+    private double _testChance = 125;
+    private CombatRulesetEditorModel.RollStats? _rolls;
+
+    private SandboxReport RunSandbox(SandboxSetup setup) => HitSandbox.Run(Library, setup with { RulesetId = _model.Item.Id }, rulesetDraft: _model.Item);
+
+    private SandboxPanel SandboxOf() => _sandbox ??= new SandboxPanel(IdPrefix, new SandboxSetup { RulesetId = _model.Item.Id, EnemiesAround = 1 }, fixedRuleset: true);
 
     /// <summary>«Направление» and «Криты» (spec part 6 §9.5): two small sections, no permanent panels.</summary>
     private void BuildDirectionAndCrits(Inspector inspector)
@@ -417,6 +424,22 @@ public partial class CombatRulesetEditor : SmallBoardEditor
             "Шанс зависит от стороны цели относительно её логического взгляда; удача — множитель урона до защиты.");
         if (r.SurpriseEnabled)
         {
+            // Spec part 6 §9.5: the six sides as a picture; a click selects a side to set or to test.
+            var hexagon = inspector.Add(new SectorHexagon(IdPrefix));
+            hexagon.Show(r.SurpriseChances, _side);
+            hexagon.SectorPressed += sector => { _side = sector; Stamp++; };
+            if (_side >= 0)
+            {
+                var side = _side;
+                var mirror = !_asymmetric && side is not (0 or 3);
+                inspector.LineText(IdPrefix + "side.value", $"{HexTactics.Core.Combat.SurpriseMath.SectorNames[side]}{(mirror ? " (и зеркально)" : string.Empty)}, %",
+                    Inspector.Num(r.SurpriseChances.Length == 6 ? r.SurpriseChances[side] : 0), v => Refuse(_model.SetSurpriseChance(side, v, !_asymmetric)));
+                inspector.Button(IdPrefix + "side.test", "▶ Тест атаки с этой стороны", () => { SandboxOf().TestFromSide(side, RunSandbox); Stamp++; }, ButtonKind.Normal,
+                    "Открывает «Проверить на ударе» справа: атакующий стоит с выбранной стороны цели");
+            }
+
+            inspector.Check(IdPrefix + "surprise.melee", "Только удар с соседнего гекса", r.SurpriseMeleeOnly, on => _model.SetSurpriseMeleeOnly(on),
+                "Бонус только для ближнего боя: дальняя атака и навык издалека внезапными не бывают.");
             inspector.Check(IdPrefix + "asymmetric", "Разные левый и правый фланги", _asymmetric, on => { _asymmetric = on; Stamp++; });
             var sectors = _asymmetric ? new[] { 0, 1, 2, 3, 4, 5 } : new[] { 0, 1, 2, 3 };
             foreach (var sector in sectors)
@@ -438,6 +461,20 @@ public partial class CombatRulesetEditor : SmallBoardEditor
             inspector.LineText(IdPrefix + "crit.base", "Базовый шанс всех атакующих, п.п.", Inspector.Num(r.BaseCritChance), v => Refuse(_model.SetValue("baseCritChance", v)));
             inspector.LineText(IdPrefix + "crit.multiplier", "Множитель крита", Inspector.Num(r.CritMultiplier), v => Refuse(_model.SetValue("critMultiplier", v)));
             inspector.LineText(IdPrefix + "crit.super", "Множитель сверхкрита", Inspector.Num(r.SuperCritMultiplier), v => Refuse(_model.SetValue("superCritMultiplier", v)));
+            // Spec part 6 §9.5: a visible series of 1000 deterministic rolls next to the exact table.
+            inspector.LineText(IdPrefix + "crit.test", "Шанс для проверки, п.п.", Inspector.Num(_testChance), v =>
+            {
+                if (double.TryParse(v.Trim().Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var c) && double.IsFinite(c))
+                {
+                    _testChance = System.Math.Clamp(c, 0, 1000);
+                }
+            });
+            inspector.Button(IdPrefix + "crit.rolls", "▶ Проверить 1000 бросков", () => { _rolls = CombatRulesetEditorModel.RollTest(_testChance); Stamp++; }, ButtonKind.Normal,
+                "Те же детерминированные броски, что в бою: результат не меняется от запуска к запуску");
+            if (_rolls is not null)
+            {
+                inspector.Text(CombatRulesetEditorModel.DescribeRolls(_rolls), size: 12);
+            }
         }
     }
 
@@ -458,8 +495,7 @@ public partial class CombatRulesetEditor : SmallBoardEditor
             }
         }
 
-        _sandbox ??= new SandboxPanel(IdPrefix, new SandboxSetup { RulesetId = _model.Item.Id, EnemiesAround = 1 }, fixedRuleset: true);
-        _sandbox.Build(preview, Library, setup => HitSandbox.Run(Library, setup with { RulesetId = _model.Item.Id }, rulesetDraft: _model.Item), () => Stamp++);
+        SandboxOf().Build(preview, Library, RunSandbox, () => Stamp++);
     }
 
     protected override SandboxPanel? Sandbox => _sandbox;
@@ -476,6 +512,16 @@ public partial class CombatRulesetEditor : SmallBoardEditor
             case "ruleset-preview":
                 actual = string.Join(" | ", _model.Preview());
                 ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
+            case "ruleset-rolls":
+                // expect:ruleset-rolls:<text of the last 1000-roll check>
+                actual = _rolls is null ? "none" : CombatRulesetEditorModel.DescribeRolls(_rolls);
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
+            case "ruleset-side":
+                // expect:ruleset-side:<selected side 0…5 or -1>
+                actual = _side.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
                 return true;
             default:
                 actual = "unknown";
@@ -747,12 +793,55 @@ public partial class TraitEditor : SmallBoardEditor
         }
     }
 
+    private readonly List<string> _assign = new();
+    private string? _assignPick;
+    private string _assignMessage = string.Empty;
+
     protected override void BuildPreview(Inspector preview)
     {
         preview.Section("Тег словами");
         foreach (var line in _model.Preview())
         {
             preview.Text(line, size: 12);
+        }
+
+        // Spec part 6 §9.2: the units with this tag and the explicit mass assignment of the saved tag.
+        preview.Section("Юниты с этим тегом");
+        var users = _model.UnitsWithTrait();
+        preview.Text(users.Count == 0 ? "Пока ни у одного юнита." : string.Join(", ", users.Select(u => u.Name)), size: 12);
+        var free = _model.AssignableUnits().Where(u => !_assign.Contains(u.Id)).ToList();
+        if (free.Count > 0)
+        {
+            _assignPick = free.Any(u => u.Id == _assignPick) ? _assignPick : free[0].Id;
+            preview.Choice(IdPrefix + "assign.pick", "Назначить юниту", free.Select(u => new ChoiceOption(u.Id, u.Name)).ToList(), _assignPick!, v => _assignPick = v);
+            preview.Button(IdPrefix + "assign.add", "＋ В список назначения", () =>
+            {
+                if (_assignPick is not null && !_assign.Contains(_assignPick))
+                {
+                    _assign.Add(_assignPick);
+                }
+
+                Stamp++;
+            }, ButtonKind.Flat);
+        }
+
+        if (_assign.Count > 0)
+        {
+            preview.Text("К назначению: " + string.Join(", ", _assign.Select(id => Library.Find(ContentTypeRegistry.Unit, id)?.Name ?? id)), size: 12);
+            preview.Button(IdPrefix + "assign", $"Назначить тег ({_assign.Count})", () =>
+            {
+                var result = _model.AssignTo(_assign);
+                _assignMessage = result.Refusals.Count > 0
+                    ? "✗ Ничего не изменено: " + string.Join("; ", result.Refusals)
+                    : $"✓ Тег назначен: {string.Join(", ", result.Assigned)}";
+                Message(_assignMessage, result.Refusals.Count > 0 ? HexTactics.Content.Model.IssueSeverity.Error : null);
+                if (result.Refusals.Count == 0)
+                {
+                    _assign.Clear();
+                }
+
+                Stamp++;
+            }, ButtonKind.Primary, "Каждый юнит проверяется с тегом заранее; при ошибке не меняется ни один");
         }
     }
 
@@ -774,6 +863,14 @@ public partial class TraitEditor : SmallBoardEditor
         {
             actual = string.Join(" | ", _model.Preview());
             ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+            return true;
+        }
+
+        if (a[0] == "trait-units")
+        {
+            // expect:trait-units:<N> — how many units carry the tag
+            actual = _model.UnitsWithTrait().Count.ToString(CultureInfo.InvariantCulture);
+            ok = actual == a[1];
             return true;
         }
 

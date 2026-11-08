@@ -320,7 +320,29 @@ public sealed class UnitEditorModel : DefinitionEditorModel
             $"атака {N(u.AttackPower)}, {type}{(u.AttackAreaRadius > 0 ? $", область {u.AttackAreaRadius}" : string.Empty)} · навыков: {u.Skills.Count}",
             (res.Length == 0 ? "всё 0 %" : res) + (reactions > 0 ? $" · реакций: {reactions}" : string.Empty),
             $"ред. {Item.Revision} · схема {Item.Kind.SchemaVersion}" + (u.ResistanceProfiles.Count > 0 ? $" · наборов: {u.ResistanceProfiles.Count}" : string.Empty),
-            u.Passives.Count == 0 ? "пассивов нет" : $"пассивов: {u.Passives.Count}");
+            FeaturesSummary());
+    }
+
+    /// <summary>
+    /// Spec part 6 §9.2 «Активные эффекты: 8»: the species, the tags and how many effects of the species line, the tags and the
+    /// passives act on this unit (each effect once, after replacements and conflicts).
+    /// </summary>
+    public string FeaturesSummary()
+    {
+        var u = Unit;
+        var parts = new List<string>();
+        if (u.Species.Length > 0)
+        {
+            parts.Add($"вид «{Library.Find(ContentTypeRegistry.Species, u.Species)?.Name ?? u.Species}»");
+        }
+
+        if (u.Traits.Count > 0)
+        {
+            parts.Add($"тегов: {u.Traits.Count}");
+        }
+
+        parts.Add($"активных эффектов: {PassiveEffects.Active(u, Library).Count}");
+        return string.Join(" · ", parts);
     }
 
     // ------------------------------------------------------------------ passives (spec part 6 §4)

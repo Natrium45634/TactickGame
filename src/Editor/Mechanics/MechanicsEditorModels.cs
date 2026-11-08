@@ -447,6 +447,38 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
 
     public void SetCritEnabled(bool on) => Apply(on ? "Криты включены" : "Криты выключены", (d, _) => ((CombatRulesetData)d).CritEnabled = on);
 
+    /// <summary>Spec part 6 §6.4 «бонус только для ближнего боя».</summary>
+    public void SetSurpriseMeleeOnly(bool on) =>
+        Apply(on ? "Внезапность только вблизи" : "Внезапность с любой дистанции", (d, _) => ((CombatRulesetData)d).SurpriseMeleeOnly = on);
+
+    /// <summary>The counts of one reproducible series of crit rolls at the chance C (spec part 6 §9.5 «тест на 1000 бросков»).</summary>
+    public sealed record RollStats(double Chance, int Rolls, int Normal, int Crit, int SuperCrit);
+
+    /// <summary>
+    /// Rolls <paramref name="rolls"/> deterministic crit rolls at the chance <paramref name="chance"/> with the same function the
+    /// battle uses (keys <c>test:{i}</c>): the same numbers every time. A picture of the formula, not a replacement for it.
+    /// </summary>
+    public static RollStats RollTest(double chance, int rolls = 1000, int seed = 20261106)
+    {
+        var counts = new int[3];
+        for (var i = 0; i < rolls; i++)
+        {
+            counts[(int)HexTactics.Core.Combat.CritMath.Tier(chance, HexTactics.Core.Combat.DeterministicRoll.Of(seed, $"test:{i}", "crit"))]++;
+        }
+
+        return new RollStats(chance, rolls, counts[(int)HexTactics.Core.Combat.CritTier.Normal], counts[(int)HexTactics.Core.Combat.CritTier.Crit], counts[(int)HexTactics.Core.Combat.CritTier.SuperCrit]);
+    }
+
+    /// <summary>«1000 бросков при C 125 п.п.: обычный 0, крит 748, сверхкрит 252 (по формуле 0 / 750 / 250)».</summary>
+    public static string DescribeRolls(RollStats s)
+    {
+        string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+        var super = HexTactics.Core.Combat.CritMath.SuperChance(s.Chance);
+        var crit = HexTactics.Core.Combat.CritMath.CritOnlyChance(s.Chance);
+        return $"{s.Rolls} бросков при C {N(s.Chance)} п.п.: обычный {s.Normal}, крит {s.Crit}, сверхкрит {s.SuperCrit} " +
+            $"(по формуле {N(s.Rolls * (1 - crit - super))} / {N(s.Rolls * crit)} / {N(s.Rolls * super)}).";
+    }
+
     /// <summary>
     /// Sets the surprise chance of a side (0…5 clockwise from the front); <paramref name="symmetric"/> sets the mirrored side
     /// too (front right ↔ front left, rear right ↔ rear left), as the symmetric preset requires (spec part 6 §6.1).
@@ -539,7 +571,7 @@ public sealed class CombatRulesetEditorModel : DefinitionEditorModel
         lines.Add("Чистый урон защиту A не учитывает. У юнитов без защиты A (старый контент) урон не меняется при любом K.");
         var r = Ruleset;
         lines.Add(r.SurpriseEnabled
-            ? "Внезапность: " + string.Join(", ", r.SurpriseChances.Select((c, i) => $"{HexTactics.Core.Combat.SurpriseMath.SectorNames[i]} {N(c)} %")) + $"; удача — ×{N(r.SurpriseMultiplier)}. Сторона — относительно логического взгляда цели."
+            ? "Внезапность: " + string.Join(", ", r.SurpriseChances.Select((c, i) => $"{HexTactics.Core.Combat.SurpriseMath.SectorNames[i]} {N(c)} %")) + $"; удача — ×{N(r.SurpriseMultiplier)}. Сторона — относительно логического взгляда цели." + (r.SurpriseMeleeOnly ? " Только для удара с соседнего гекса." : string.Empty)
             : "Внезапность выключена.");
         lines.Add(r.CritEnabled
             ? $"Криты: шанс атакующего + {N(r.BaseCritChance)} п.п.; крит ×{N(r.CritMultiplier)}, сверхкрит ×{N(r.SuperCritMultiplier)}. Внезапность и крит независимы, множители перемножаются."
@@ -773,6 +805,85 @@ public sealed class TraitEditorModel : DefinitionEditorModel
     public void RemoveEffect(string id) => RemoveEffect(d => ((TraitData)d).Effects, id, "эффект");
 
     public ContentIssue? SetEffect(string id, string key, object? input) => SetEffect(d => ((TraitData)d).Effects, "effects", id, key, input);
+
+    // ------------------------------------------------------------------ mass assignment (spec part 6 §9.2 «массовое назначение общих тегов»)
+
+    /// <summary>Units of the library that carry this tag.</summary>
+    public IReadOnlyList<ContentItem> UnitsWithTrait() =>
+        Library.Items(ContentTypeRegistry.Unit).Where(u => u.Data is UnitData d && d.Traits.Contains(Item.Id)).ToList();
+
+    /// <summary>The user's units the tag can still be given to (built-in units are read-only).</summary>
+    public IReadOnlyList<ContentItem> AssignableUnits() =>
+        Library.Items(ContentTypeRegistry.Unit).Where(u => !u.IsBuiltIn && !u.Archived && u.Data is UnitData d && !d.Traits.Contains(Item.Id)).ToList();
+
+    /// <summary>The outcome of a mass assignment: the units that got the tag and, if nothing was saved, why.</summary>
+    public sealed record AssignResult(IReadOnlyList<string> Assigned, IReadOnlyList<string> Refusals);
+
+    /// <summary>
+    /// Adds this (saved) tag to every listed unit as one explicit operation: each unit is checked first with the tag (allowed
+    /// species, required and excluded tags, exclusive groups); if any of them would get an error nothing is saved. Each unit
+    /// gets a new revision, the tag itself does not change. Not part of the tag's undo history (it changes other objects).
+    /// </summary>
+    public AssignResult AssignTo(IEnumerable<string> unitIds)
+    {
+        if (Library.Find(Item.Ref) is null || IsDirty)
+        {
+            return new AssignResult(Array.Empty<string>(), new[] { "сначала сохраните тег — назначается сохранённая версия" });
+        }
+
+        var copies = new List<ContentItem>();
+        var refusals = new List<string>();
+        foreach (var id in unitIds.Distinct(StringComparer.Ordinal))
+        {
+            if (Library.Find(ContentTypeRegistry.Unit, id) is not { Data: UnitData } unit)
+            {
+                refusals.Add($"юнит «{id}» не найден");
+                continue;
+            }
+
+            if (unit.IsBuiltIn)
+            {
+                refusals.Add($"«{unit.Name}» — встроенный юнит, его можно только дублировать");
+                continue;
+            }
+
+            if (((UnitData)unit.Data).Traits.Contains(Item.Id))
+            {
+                continue;
+            }
+
+            var copy = unit.Clone();
+            ((UnitData)copy.Data).Traits.Add(Item.Id);
+            foreach (var issue in Library.Validate(copy).Where(i => i.IsError))
+            {
+                refusals.Add($"«{unit.Name}»: {issue.Message}");
+            }
+
+            copies.Add(copy);
+        }
+
+        if (refusals.Count > 0)
+        {
+            return new AssignResult(Array.Empty<string>(), refusals);
+        }
+
+        var assigned = new List<string>();
+        foreach (var copy in copies)
+        {
+            var saved = Library.Save(copy);
+            if (saved.Ok)
+            {
+                assigned.Add(copy.Name);
+            }
+            else
+            {
+                refusals.Add($"«{copy.Name}»: {saved.Message}");
+            }
+        }
+
+        RaiseChanged();
+        return new AssignResult(assigned, refusals);
+    }
 
     public IReadOnlyList<HexTactics.Editor.Units.PassiveCard> EffectCards() => EffectCards(Trait.Effects);
 

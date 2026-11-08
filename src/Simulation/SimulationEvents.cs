@@ -83,6 +83,12 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
 
     /// <summary>Damage taken by the target's shields instead of health.</summary>
     public double ShieldAbsorbed { get; init; }
+
+    /// <summary>The hit was a surprise by the side of the target (spec part 6 §6); the game may show a word, never the chance.</summary>
+    public bool Surprised { get; init; }
+
+    /// <summary>The critical tier of the hit (spec part 6 §7).</summary>
+    public HexTactics.Core.Combat.CritTier Crit { get; init; }
 }
 
 /// <summary>A technical combat limit dropped a reaction (spec part 5 §5.5): no endless chains, no unbounded events.</summary>

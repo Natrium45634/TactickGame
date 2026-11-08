@@ -19,13 +19,16 @@ public sealed class SandboxPanel
 {
     private readonly string _prefix;
     private SandboxSetup _setup;
+    private readonly SandboxSetup _initial;
     private SandboxReport? _report;
+    private SandboxBatch? _batch;
     private bool _open;
 
     public SandboxPanel(string prefix, SandboxSetup initial, bool fixedTarget = false, bool fixedRuleset = false)
     {
         _prefix = prefix;
         _setup = initial;
+        _initial = initial;
         FixedTarget = fixedTarget;
         FixedRuleset = fixedRuleset;
     }
@@ -41,7 +44,16 @@ public sealed class SandboxPanel
 
     public SandboxReport? Report => _report;
 
-    public string Text => _report is null ? string.Empty : HitSandbox.Describe(_report);
+    public string Text => (_report is null ? string.Empty : HitSandbox.Describe(_report)) + (_batch is null ? string.Empty : "\n" + HitSandbox.Describe(_batch));
+
+    /// <summary>Points the panel at a side of the target and opens it (spec part 6 §9.5 «Тест атаки с направления»).</summary>
+    public void TestFromSide(int sector, Func<SandboxSetup, SandboxReport> run)
+    {
+        _open = true;
+        _setup = _setup with { Sector = Math.Clamp(sector, 0, 5), ForceSurprise = null, ForceCrit = null };
+        _report = run(_setup);
+        _batch = null;
+    }
 
     /// <summary>Builds the panel; <paramref name="run"/> runs the sandbox with the editor's unsaved objects.</summary>
     public void Build(Inspector panel, ContentLibrary library, Func<SandboxSetup, SandboxReport> run, Action rebuild)
@@ -77,6 +89,11 @@ public sealed class SandboxPanel
             {
                 panel.Text(_report.Comparison, size: 12);
             }
+        }
+
+        if (_batch is not null)
+        {
+            panel.Text(HitSandbox.Describe(_batch), size: 12);
         }
 
         if (!FixedTarget)
@@ -135,11 +152,28 @@ public sealed class SandboxPanel
         panel.LineText(_prefix + "sandbox.enemies", "Врагов цели вокруг (0–6)", _setup.EnemiesAround.ToString(CultureInfo.InvariantCulture), v => _setup = _setup with { EnemiesAround = (int)Parse(v, _setup.EnemiesAround, 0, 6) },
             "Атакующий стоит рядом и считается одним из них.");
         panel.LineText(_prefix + "sandbox.allies", "Союзников цели вокруг", _setup.AlliesAround.ToString(CultureInfo.InvariantCulture), v => _setup = _setup with { AlliesAround = (int)Parse(v, _setup.AlliesAround, 0, 6) });
+        // Spec part 6 §11 p.3, p.6: a seed for the rolls, a reproducible series and a reset of the test (nothing is saved).
+        panel.LineText(_prefix + "sandbox.seed", "Seed бросков", _setup.Seed.ToString(CultureInfo.InvariantCulture),
+            v => _setup = _setup with { Seed = (int)Parse(v, _setup.Seed, int.MinValue, int.MaxValue) }, "Тот же seed — те же броски внезапности и крита.");
         panel.Button(_prefix + "sandbox.run", "▶ Проверить", () =>
         {
             _report = run(_setup);
+            _batch = null;
             rebuild();
         }, ButtonKind.Primary);
+        var row = panel.Row();
+        row.AddChild(UiKit.Button("Проверить 100 событий", () =>
+        {
+            _batch = HitSandbox.Batch(_setup, run);
+            rebuild();
+        }, ButtonKind.Normal, _prefix + "sandbox.batch", "100 ударов по броскам (без заданного исхода) с тем же seed — сводка внезапных, критов и потерь HP"));
+        row.AddChild(UiKit.Button("Сбросить тест", () =>
+        {
+            _setup = _initial;
+            _report = null;
+            _batch = null;
+            rebuild();
+        }, ButtonKind.Flat, _prefix + "sandbox.reset", "Вернуть настройки проверки к начальным; определения не меняются"));
     }
 
     private string Outcome() => (_setup.ForceSurprise, _setup.ForceCrit) switch

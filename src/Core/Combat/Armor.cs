@@ -73,6 +73,9 @@ public sealed record CombatRules
     /// <summary>Damage multiplier of a successful surprise (PROTOTYPE_DEFAULT ×1.5).</summary>
     public double SurpriseMultiplier { get; init; } = 1.5;
 
+    /// <summary>Spec part 6 §6.4 «бонус только для ближнего боя»: surprise only from a neighbouring hex of the target.</summary>
+    public bool SurpriseMeleeOnly { get; init; }
+
     /// <summary>Critical hits (spec part 6 §7); off in the compatible rules of old maps.</summary>
     public bool CritEnabled { get; init; }
 
