@@ -36,7 +36,8 @@ public class DefinitionEditorModel
 
     public bool IsDirty => History.IsDirty || Item.Revision == 0;
 
-    public IReadOnlyList<ContentIssue> Validate() => Library.Validate(Item);
+    /// <summary>The checks shown by the editor; a kind may add checks that need other objects (a scenario: its map and units).</summary>
+    public virtual IReadOnlyList<ContentIssue> Validate() => Library.Validate(Item);
 
     public void SetName(string name) => Apply("Название", (_, i) => i.Name = name.Trim());
 

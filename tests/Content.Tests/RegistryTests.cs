@@ -17,8 +17,8 @@ public class RegistryTests
     public void The_default_catalog_has_maps_units_skills_tiles_in_this_order()
     {
         var registry = ContentTypeRegistry.CreateDefault();
-        Assert.Equal(new[] { "Карты", "Юниты", "Дерево видов", "Теги", "Навыки", "Гексы", "Типы урона", "Правила защиты", "Профили защиты и сопротивлений", "Правила боя", "Базовые атаки", "Характеристики" }, registry.Visible.Select(k => k.Title));
-        Assert.Equal(new[] { "maps", "units", "species", "traits", "skills", "tiles", "damage_types", "defense_rules", "resistance_profiles", "combat_rulesets", "basic_attacks", "unit_stats" }, registry.Visible.Select(k => k.Folder));
+        Assert.Equal(new[] { "Карты", "Сценарии", "Юниты", "Дерево видов", "Теги", "Навыки", "Гексы", "Типы урона", "Правила защиты", "Профили защиты и сопротивлений", "Правила боя", "Базовые атаки", "Характеристики" }, registry.Visible.Select(k => k.Title));
+        Assert.Equal(new[] { "maps", "scenarios", "units", "species", "traits", "skills", "tiles", "damage_types", "defense_rules", "resistance_profiles", "combat_rulesets", "basic_attacks", "unit_stats" }, registry.Visible.Select(k => k.Folder));
         Assert.Equal(new[] { "damage_type", "defense_rule", "resistance_profile", "combat_ruleset", "basic_attack", "unit_stat" }, registry.Visible.Where(k => k.Group == ContentTypeRegistry.MechanicsGroup).Select(k => k.Id));
         Assert.Equal(new[] { "species", "trait" }, registry.Visible.Where(k => k.Group == ContentTypeRegistry.OriginGroup).Select(k => k.Id));
     }
@@ -32,8 +32,8 @@ public class RegistryTests
             Id = "status", Title = "Статусы", Singular = "статус", Folder = "statuses", Order = 50, Available = false,
             Read = (o, i) => TileData.Read(o, i), CreateDefault = () => new TileData(),
         });
-        Assert.Equal(13, registry.All.Count); // + species, traits, characteristics (v0.29.0), base attacks (v0.32.0) and the new one
-        Assert.Equal(12, registry.Visible.Count);
+        Assert.Equal(14, registry.All.Count); // + species, traits, characteristics (v0.29.0), base attacks (v0.32.0), scenarios (v0.34.0) and the new one
+        Assert.Equal(13, registry.Visible.Count);
         Assert.Throws<InvalidOperationException>(() => registry.Register(registry.Find("map")!));
     }
 

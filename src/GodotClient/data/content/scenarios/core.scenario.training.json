@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "core.scenario.training",
+  "kind": "scenario",
+  "name": "Учебный бой",
+  "description": "Встроенный пример обычного боя (ТЗ ч.7 §3): три оперативника противника уже стоят на прототипной карте; отряд игрока — три оперативника. Победа — все враги побеждены. Демонстрация, а не баланс (PROTOTYPE_DEFAULT).",
+  "revision": 1,
+  "modified": "2026-11-09T00:00:00Z",
+  "tags": [],
+  "data": {
+    "mode": "battle",
+    "map": "core.map.prototype",
+    "ruleset": "",
+    "autoAttacks": true,
+    "blocking": true,
+    "squad": ["core.unit.operative", "core.unit.operative", "core.unit.operative"],
+    "enemies": [
+      { "unit": "core.unit.operative", "col": 6, "row": 2, "facing": "South" },
+      { "unit": "core.unit.operative", "col": 8, "row": 3, "facing": "SouthWest" },
+      { "unit": "core.unit.operative", "col": 9, "row": 5, "facing": "SouthWest" }
+    ],
+    "timeLimit": 0,
+    "startPaused": true
+  }
+}

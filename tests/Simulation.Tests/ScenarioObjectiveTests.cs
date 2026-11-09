@@ -46,6 +46,9 @@ public class ScenarioObjectiveTests
         Kill(sim, b);
         Assert.Equal((ScenarioPhase.Victory, ScenarioEndReason.AllEnemiesDefeated), (sim.ScenarioPhase, sim.ScenarioEndReason!.Value));
         Assert.Single(sim.DrainEvents().OfType<ScenarioEnded>());
+        Assert.True(sim.IsPaused); // the result stops the battle at once …
+        sim.SetPaused(false);
+        Assert.True(sim.IsPaused); // … for good
         sim.Step();
         Assert.Empty(sim.DrainEvents().OfType<ScenarioEnded>()); // decided once
     }

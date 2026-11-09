@@ -28,7 +28,7 @@ public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IRead
 public sealed record ScenarioUnit(UnitProfile Profile, HexCoord Cell, HexDirection Facing, Side Side);
 
 /// <summary>What the match needs of a scenario: its goals, the units already on the map and the goals in words.</summary>
-public sealed record ScenarioRuntime(string Id, string Name, HexTactics.Core.Scenarios.ScenarioRules Rules, IReadOnlyList<ScenarioUnit> Placed, string GoalsText);
+public sealed record ScenarioRuntime(string Id, string Name, HexTactics.Core.Scenarios.ScenarioRules Rules, IReadOnlyList<ScenarioUnit> Placed, string GoalsText, bool StartPaused = true);
 
 /// <summary>Everything a match needs, built from content definitions by one factory (spec part 4 §9.2 <c>RuntimeFactory</c>).</summary>
 public sealed record GameContent(
@@ -522,6 +522,11 @@ public static class RuntimeFactory
         }
 
         var grid = BuildMap(mapItem, library, new IssueList()).Grid;
+        if (!grid.Coords.Any(c => grid.Exists(c) && HexTactics.Core.Spawning.PlacementRules.IsDeployTile(grid[c].Type)))
+        {
+            issues.Error("map", $"на карте «{mapItem.Name}» нет гексов выставления (база игрока или зона выставления) — отряду некуда выйти");
+        }
+
         for (var i = 0; i < s.Enemies.Count; i++)
         {
             var e = s.Enemies[i];
@@ -570,11 +575,12 @@ public static class RuntimeFactory
         var rulesetId = s.Ruleset.Length > 0 ? s.Ruleset : content.CombatRulesetId;
         return content with
         {
+            Squad = content.Squad.Take(s.Squad.Count).ToList(), // the roster is the squad as it is: three units, three cards (spec part 7 §3.2)
             AutoAttacks = s.AutoAttacks,
             Blocking = s.Blocking,
             CombatRules = BuildCombatRules(library, rulesetId),
             CombatRulesetId = rulesetId,
-            Scenario = new ScenarioRuntime(scenarioItem.Id, scenarioItem.Name, new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit }, placed, s.GoalsText()),
+            Scenario = new ScenarioRuntime(scenarioItem.Id, scenarioItem.Name, new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit }, placed, s.GoalsText(), s.StartPaused),
         };
     }
 

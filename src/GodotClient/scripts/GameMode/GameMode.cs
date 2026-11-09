@@ -161,36 +161,7 @@ public partial class GameMode : Node3D
         _map = _content.Map;
         TilePalette.Current = new TilePalette(_content.TileVisuals);
         _layout = new HexLayout(VisualConfig.HexSize);
-        _sim = new GameSimulation(
-            _map,
-            new SimulationSettings
-            {
-                DefaultStats = _content.DefaultUnit.Stats,
-                Skills = _content.Skills,
-                DefaultSkillSet = _content.DefaultUnit.Skills,
-                DefaultUnitId = _content.DefaultUnit.Id,
-                TileEffects = _content.TileEffects,
-                DamageTypes = _content.DamageTypes,
-                CombatRules = _content.CombatRules,
-                AutoAttacks = _content.AutoAttacks,
-                Blocking = _content.Blocking,
-                Scenario = _content.Scenario?.Rules,
-            },
-            _content.Squad.Count > 0
-                ? new RosterState(System.Linq.Enumerable.Select(_content.Squad, s => (s.Name, (HexTactics.Core.Units.UnitProfile?)s.Profile)))
-                : RosterState.Prototype());
-        if (_content.Scenario is { } scenario)
-        {
-            // Spec part 7 §3.1: the enemies of the scenario are on the map before the start; «Подготовка» is the first pause —
-            // the player deploys and plans, nothing advances until «Начать» (space).
-            foreach (var placed in scenario.Placed)
-            {
-                _sim.Spawn(SpawnRequest.AtCell(placed.Cell, placed.Side, placed.Facing) with { Profile = placed.Profile });
-            }
-
-            _sim.SetPaused(true);
-        }
-
+        _sim = HexTactics.Editor.Scenarios.MatchFactory.Start(_content);
         _fsm = new InputStateMachine(_sim, _layout);
         _fsm.Feedback += OnFeedback;
         _picker = new BoardPicker(_map.Grid, _layout);
@@ -555,7 +526,10 @@ public partial class GameMode : Node3D
         _placementButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Player);
         _enemyButton.SetPressedNoSignal(_fsm.Mode == InputMode.Placement && _fsm.PlacementSide == HexTactics.Core.Units.Side.Enemy);
         _pauseButton.SetPressedNoSignal(_sim.IsPaused);
-        _pauseButton.Text = _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
+        _pauseButton.Text = _sim.IsScenarioOver ? "Бой окончен"
+            : _content.Scenario is not null && _sim.ScenarioPhase == HexTactics.Core.Scenarios.ScenarioPhase.Preparing && _sim.IsPaused ? "▶ Начать бой (пробел)"
+            : _sim.IsPaused ? "▶ Продолжить (пробел)" : "⏸ Пауза (пробел)";
+        _pauseButton.Disabled = _sim.IsScenarioOver;
         _timeLabel.Text = $"Игровое время {_sim.GameTime:0.0} с · тик {_sim.Tick} · {(_sim.IsPaused ? "пауза" : "идёт")}";
         _obstacleButton.SetPressedNoSignal(_fsm.Mode == InputMode.ObstacleEdit);
         SyncSkillButtons(selected);
@@ -563,7 +537,7 @@ public partial class GameMode : Node3D
         {
             _scenarioLabel.Text = _sim.ScenarioPhase switch
             {
-                HexTactics.Core.Scenarios.ScenarioPhase.Preparing => $"Подготовка: выставьте отряд и нажмите «Продолжить» (пробел). Врагов: {_sim.EnemiesLeft}.",
+                HexTactics.Core.Scenarios.ScenarioPhase.Preparing => $"Подготовка: выставьте отряд, задайте маршруты и нажмите «Начать бой» (пробел). Врагов: {_sim.EnemiesLeft}.",
                 HexTactics.Core.Scenarios.ScenarioPhase.Victory => "ПОБЕДА: все враги побеждены.",
                 HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp ? "ПОРАЖЕНИЕ: время вышло." : "ПОРАЖЕНИЕ: отряд погиб, резерв пуст.",
                 _ => $"Бой: осталось врагов — {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с",
@@ -832,7 +806,6 @@ public partial class GameMode : Node3D
             {
                 case ScenarioEnded ended:
                     // Spec part 7 §2.3: the result is logical — the match stops at once, the effects do not delay it.
-                    _sim.SetPaused(true);
                     ShowMessage(ended.Phase == HexTactics.Core.Scenarios.ScenarioPhase.Victory ? "Победа! Все враги побеждены." : "Поражение.", ended.Phase != HexTactics.Core.Scenarios.ScenarioPhase.Victory);
                     break;
                 case SkillActivated s:

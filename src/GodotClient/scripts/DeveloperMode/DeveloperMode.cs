@@ -178,6 +178,12 @@ public partial class DeveloperMode : Node
             editor.Configure(_library, item, draft);
             return editor;
         };
+        Editors["scenario"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Scenario.ScenarioEditor { Name = "ScenarioEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
         _browser = new LibraryBrowser(library);
         foreach (var problem in library.Problems)
         {

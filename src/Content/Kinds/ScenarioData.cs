@@ -71,12 +71,15 @@ public sealed class ScenarioData : IContentData
     /// <summary>An additional defeat condition: game seconds of the battle; 0 — none (spec part 7 §3.2).</summary>
     public double TimeLimit { get; set; }
 
+    /// <summary>«Подготовка» (spec part 7 §2.3, §3.4): the battle waits on a pause until «Начать»; off — it runs at once.</summary>
+    public bool StartPaused { get; set; } = true;
+
     public JsonObject ToJson() => new()
     {
         ["mode"] = Mode, ["map"] = Map, ["ruleset"] = Ruleset, ["autoAttacks"] = AutoAttacks, ["blocking"] = Blocking,
         ["squad"] = new JsonArray(Squad.Select(s => (JsonNode)s).ToArray()),
         ["enemies"] = new JsonArray(Enemies.Select(e => (JsonNode)new JsonObject { ["unit"] = e.Unit, ["col"] = e.Col, ["row"] = e.Row, ["facing"] = e.Facing.ToString() }).ToArray()),
-        ["timeLimit"] = TimeLimit,
+        ["timeLimit"] = TimeLimit, ["startPaused"] = StartPaused,
     };
 
     public static ScenarioData Read(JsonObject obj, IssueList issues)
@@ -89,6 +92,7 @@ public sealed class ScenarioData : IContentData
             AutoAttacks = JsonFields.Flag(obj, "autoAttacks", true, issues, string.Empty),
             Blocking = JsonFields.Flag(obj, "blocking", true, issues, string.Empty),
             TimeLimit = JsonFields.Number(obj, "timeLimit", 0, issues, string.Empty),
+            StartPaused = JsonFields.Flag(obj, "startPaused", true, issues, string.Empty),
         };
         if (obj["squad"] is JsonArray)
         {
@@ -216,7 +220,7 @@ public sealed class ScenarioData : IContentData
 
     public IContentData Clone()
     {
-        var copy = new ScenarioData { Mode = Mode, Map = Map, Ruleset = Ruleset, AutoAttacks = AutoAttacks, Blocking = Blocking, TimeLimit = TimeLimit };
+        var copy = new ScenarioData { Mode = Mode, Map = Map, Ruleset = Ruleset, AutoAttacks = AutoAttacks, Blocking = Blocking, TimeLimit = TimeLimit, StartPaused = StartPaused };
         copy.Squad.Clear();
         copy.Squad.AddRange(Squad);
         copy.Enemies.AddRange(Enemies.Select(e => e.Copy()));

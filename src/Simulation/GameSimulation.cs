@@ -56,6 +56,9 @@ public sealed class GameSimulation
     /// <summary>Enemies still alive — the goal «победить всех врагов».</summary>
     public int EnemiesLeft => _objectives.EnemiesLeft;
 
+    /// <summary>The scenario has its result (victory or defeat): the simulation pauses and stays paused.</summary>
+    public bool IsScenarioOver => _objectives.Phase is HexTactics.Core.Scenarios.ScenarioPhase.Victory or HexTactics.Core.Scenarios.ScenarioPhase.Defeat;
+
     /// <summary>The single executor of configured effects (spec part 4 §6.3).</summary>
     public EffectResolver Effects { get; }
 
@@ -87,7 +90,8 @@ public sealed class GameSimulation
     /// </summary>
     public void SetPaused(bool paused)
     {
-        if (IsPaused == paused)
+        // Spec part 7 §2.3: «Победа» and «Поражение» are final — the battle cannot be resumed after its result.
+        if (IsPaused == paused || (!paused && IsScenarioOver))
         {
             return;
         }
@@ -156,6 +160,10 @@ public sealed class GameSimulation
 
         GroupCoordinator.CompleteFinished(State);
         PruneGroups();
+        if (IsScenarioOver)
+        {
+            SetPaused(true); // the logical result stops the match at once (spec part 7 §2.3)
+        }
     }
 
     private void PruneGroups()
