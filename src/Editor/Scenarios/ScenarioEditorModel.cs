@@ -21,7 +21,7 @@ namespace HexTactics.Editor.Scenarios;
 /// checks include the map and the units (an enemy on a missing hex, a unit that is not in the library), so a broken
 /// scenario is saved as a draft but never started.
 /// </summary>
-public sealed class ScenarioEditorModel : DefinitionEditorModel
+public sealed partial class ScenarioEditorModel : DefinitionEditorModel
 {
     public ScenarioEditorModel(ContentLibrary library, ContentItem item)
         : base(library, item)
@@ -85,6 +85,17 @@ public sealed class ScenarioEditorModel : DefinitionEditorModel
     /// </summary>
     public string? Click(HexCoord cell)
     {
+        if (PlaceObjects)
+        {
+            return ClickObject(cell);
+        }
+
+        if (ObjectAt(cell) is not null)
+        {
+            var spot = cell.ToOffset();
+            return $"на {spot.Col},{spot.Row} стоит объект миссии — один гекс, один юнит";
+        }
+
         if (EnemyAt(cell) is { } index)
         {
             Selected = index;
@@ -316,7 +327,7 @@ public sealed class ScenarioEditorModel : DefinitionEditorModel
         var lines = new List<string>
         {
             $"{mode?.Title ?? s.Mode} на карте «{map?.Name ?? s.Map}» · {ruleset}.",
-            s.IsTowerDefense
+            s.IsTowerDefense || s.IsDefense
                 ? $"Волн: {s.Waves.Count(w => w.Enabled)} · врагов по волнам: {s.WaveEnemies}" + (RouteTotals() is { Count: > 0 } totals ? " · " + string.Join(", ", totals.Select(t => $"«{RouteName(t.Route)}» — {t.Enemies}")) : string.Empty) + "."
                     + (s.Enemies.Count > 0 ? $" Враги на карте с начала: {EnemiesText()}." : string.Empty)
                 : $"Враги на карте: {EnemiesText()}.",
@@ -325,7 +336,11 @@ public sealed class ScenarioEditorModel : DefinitionEditorModel
                 + " " + (s.AutoAttacks ? "Автоатака включена" : "Автоатака выключена") + " · " + (s.Blocking ? "блок действует." : "блок выключен."),
             s.GoalsText(),
         };
-        if (s.IsTowerDefense)
+        if (s.IsDefense)
+        {
+            lines.AddRange(DefensePreview());
+        }
+        else if (s.IsTowerDefense)
         {
             lines.AddRange(WaveTimeline());
             lines.Add("Базы: " + string.Join(", ", PlayerBases().Select(b => $"«{b.Name}» — {b.Lives} жизн." + (b.Critical ? " (критическая)" : string.Empty))) + ".");
@@ -465,7 +480,11 @@ public sealed class ScenarioEditorModel : DefinitionEditorModel
             return $"маршрута «{routeId}» нет на карте сценария — нарисуйте его в редакторе карт («Маршруты»)";
         }
 
-        EditGroup(waveId, groupId, "Маршрут группы", g => g.Route = routeId);
+        EditGroup(waveId, groupId, "Маршрут группы", g =>
+        {
+            g.Route = routeId;
+            g.Source = string.Empty; // a route walker comes in at its first visit
+        });
         return null;
     }
 
@@ -558,21 +577,34 @@ public sealed class ScenarioEditorModel : DefinitionEditorModel
         {
             var w = Scenario.Waves[i];
             var groups = w.Groups.Where(g => g.Enabled).Select(g =>
-                $"{g.Count} × «{UnitName(g.Unit)}» по «{RouteName(g.Route)}» с {N(g.Offset + g.FirstDelay)} с" + (g.Count > 1 ? $" каждые {N(g.Interval)} с" : string.Empty));
+                $"{g.Count} × «{UnitName(g.Unit)}» " + (g.Route.Length > 0 ? $"по «{RouteName(g.Route)}»" : $"из «{SourceName(g.Source)}» ({g.Ai.Short()})")
+                + $" с {N(g.Offset + g.FirstDelay)} с" + (g.Count > 1 ? $" каждые {N(g.Interval)} с" : string.Empty));
             lines.Add($"{i + 1}. «{w.Name}» {(w.Enabled ? string.Empty : "(выключена) ")}— {w.StartText(i == 0)}: {string.Join("; ", groups)} · всего {w.Total}");
         }
 
         return lines;
     }
 
-    private SpawnGroupData NewGroup(string id) => new()
-    {
-        Id = id,
-        Route = MapRoutes().FirstOrDefault(r => r.Enabled)?.Id ?? string.Empty,
-        Unit = Brush.Length > 0 ? Brush : FirstUnit() ?? string.Empty,
-        Count = 5,
-        Interval = 1,
-    };
+    private SpawnGroupData NewGroup(string id) => Scenario.IsDefense
+        ? new SpawnGroupData
+        {
+            // Spec part 7 §5.1: a defense group comes out of a source with a simple AI; the object first when there is one.
+            Id = id,
+            Route = string.Empty,
+            Source = Sources().FirstOrDefault().Value ?? string.Empty,
+            Unit = Brush.Length > 0 ? Brush : FirstUnit() ?? string.Empty,
+            Count = 5,
+            Interval = 1,
+            Ai = new AiData { Preset = Scenario.Objects.Count > 0 ? "attack_objective" : "attack_units" },
+        }
+        : new SpawnGroupData
+        {
+            Id = id,
+            Route = MapRoutes().FirstOrDefault(r => r.Enabled)?.Id ?? string.Empty,
+            Unit = Brush.Length > 0 ? Brush : FirstUnit() ?? string.Empty,
+            Count = 5,
+            Interval = 1,
+        };
 
     private void EditWave(string id, string what, Action<WaveData> change)
     {

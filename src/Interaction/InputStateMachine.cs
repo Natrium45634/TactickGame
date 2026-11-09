@@ -178,8 +178,12 @@ public sealed partial class InputStateMachine
         {
             case PressTarget.UnitTarget u:
                 SelectInternal(u.Unit, null);
-                BeginDraft(new OrderDraft(u.Unit), held: true);
-                UpdateDraftView(sample);
+                if (_sim.State.FindUnit(u.Unit) is { IsCommandable: true })
+                {
+                    BeginDraft(new OrderDraft(u.Unit), held: true);
+                    UpdateDraftView(sample);
+                }
+
                 break;
 
             case PressTarget.WaypointTarget w:
@@ -367,9 +371,9 @@ public sealed partial class InputStateMachine
     /// </summary>
     public void StartDraft(UnitId unit)
     {
-        if (_sim.State.FindUnit(unit) is null)
+        if (_sim.State.FindUnit(unit) is not { IsCommandable: true })
         {
-            return;
+            return; // gone, or a mission object (spec part 7 §5.1): it takes no orders
         }
 
         if (IsGrouping)
