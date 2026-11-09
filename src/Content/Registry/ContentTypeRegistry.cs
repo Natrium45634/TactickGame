@@ -76,6 +76,7 @@ public sealed class ContentTypeRegistry
     public const string Species = "species";
     public const string Trait = "trait";
     public const string BasicAttack = "basic_attack";
+    public const string Scenario = "scenario";
 
     /// <summary>The «Механики» group of the catalog.</summary>
     public const string MechanicsGroup = "mechanics";
@@ -140,6 +141,12 @@ public sealed class ContentTypeRegistry
             Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData { CombatRuleset = CombatRulesetData.Standard },
             SchemaVersion = 2, Migrate = Migrations.Map,
             OptionalDataKeys = new[] { "testPoints", "combatRuleset", "autoAttacks" },
+        });
+        registry.Register(new ContentKind
+        {
+            Id = Scenario, Title = "Сценарии", Singular = "сценарий", Folder = "scenarios", Order = 12,
+            Description = "Что играть: карта, режим (обычный бой; Tower Defense, оборона и исследование — следующими версиями), отряд игрока, враги на карте и цели.",
+            Read = (o, i) => ScenarioData.Read(o, i), CreateDefault = () => new ScenarioData(),
         });
         registry.Register(new ContentKind
         {

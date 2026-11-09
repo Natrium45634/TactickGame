@@ -24,6 +24,12 @@ public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IRead
     public UnitProfile ToProfile() => new(Id, Name, Stats, Skills);
 }
 
+/// <summary>A unit already on the map when a scenario starts (spec part 7 §3.1 p.2).</summary>
+public sealed record ScenarioUnit(UnitProfile Profile, HexCoord Cell, HexDirection Facing, Side Side);
+
+/// <summary>What the match needs of a scenario: its goals, the units already on the map and the goals in words.</summary>
+public sealed record ScenarioRuntime(string Id, string Name, HexTactics.Core.Scenarios.ScenarioRules Rules, IReadOnlyList<ScenarioUnit> Placed, string GoalsText);
+
 /// <summary>Everything a match needs, built from content definitions by one factory (spec part 4 §9.2 <c>RuntimeFactory</c>).</summary>
 public sealed record GameContent(
     MapDefinition Map,
@@ -55,6 +61,12 @@ public sealed record GameContent(
 
     /// <summary>The map allows automatic base attacks (spec part 7 §8, D-170) for <c>SimulationSettings.AutoAttacks</c>.</summary>
     public bool AutoAttacks { get; init; }
+
+    /// <summary>Blocking acts (spec part 7 §7.3); a scenario may switch it off.</summary>
+    public bool Blocking { get; init; } = true;
+
+    /// <summary>The scenario of the match (spec part 7 §2.1); null — free play or a test of one object.</summary>
+    public ScenarioRuntime? Scenario { get; init; }
 
     /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
     public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
@@ -481,6 +493,88 @@ public static class RuntimeFactory
             Units = units, Squad = roster, TileEffects = tileEffects, DamageTypes = damageTypes,
             CombatRules = BuildCombatRules(library, rulesetId), CombatRulesetId = rulesetId,
             AutoAttacks = mapItem.Data is MapData { AutoAttacks: true },
+        };
+    }
+
+    /// <summary>
+    /// The checks of a scenario that need its map and units (spec part 7 §2.2, M7-59): the map and every unit exist and are
+    /// valid, every enemy stands on an existing walkable hex of the map, inside it and not twice. Errors block the battle start;
+    /// the editor shows them with the object to fix.
+    /// </summary>
+    public static IReadOnlyList<ContentIssue> CheckScenario(ContentLibrary library, ContentItem scenarioItem)
+    {
+        var issues = new IssueList();
+        if (scenarioItem.Data is not ScenarioData s)
+        {
+            issues.Error(scenarioItem.Id, "не сценарий");
+            return issues.Items;
+        }
+
+        foreach (var issue in library.Validate(scenarioItem).Where(i => i.IsError))
+        {
+            issues.Error(issue.Path, issue.Message);
+        }
+
+        if (library.Find(ContentTypeRegistry.Map, s.Map) is not { } mapItem || mapItem.HasErrors)
+        {
+            issues.Error("map", $"карта «{s.Map}» не найдена или с ошибками — откройте «Карты» и исправьте её");
+            return issues.Items;
+        }
+
+        var grid = BuildMap(mapItem, library, new IssueList()).Grid;
+        for (var i = 0; i < s.Enemies.Count; i++)
+        {
+            var e = s.Enemies[i];
+            if (library.Find(ContentTypeRegistry.Unit, e.Unit) is not { } unit || unit.HasErrors)
+            {
+                issues.Error($"enemies.{i}", $"враг на {e.Col},{e.Row}: юнит «{e.Unit}» не найден или с ошибками");
+            }
+            else if (!grid.Exists(e.Cell) || !grid.IsWalkable(e.Cell))
+            {
+                issues.Error($"enemies.{i}", $"враг «{unit.Name}» стоит на {e.Col},{e.Row} — там нет проходимого гекса карты «{mapItem.Name}»");
+            }
+        }
+
+        foreach (var id in s.Squad.Distinct(StringComparer.Ordinal))
+        {
+            if (library.Find(ContentTypeRegistry.Unit, id) is not { } unit || unit.HasErrors)
+            {
+                issues.Error("squad", $"в отряде юнит «{id}» не найден или с ошибками");
+            }
+        }
+
+        if (s.Ruleset.Length > 0 && library.Find(ContentTypeRegistry.CombatRuleset, s.Ruleset) is null)
+        {
+            issues.Error("ruleset", $"правила боя «{s.Ruleset}» не найдены");
+        }
+
+        return issues.Items;
+    }
+
+    /// <summary>
+    /// A match of a scenario (spec part 7 §2.1, §3): its map, its squad as the roster, its enemies on their hexes, its rules
+    /// (the scenario's ruleset over the map's), automatic attacks and blocking as the scenario says, and its goals. Throws when
+    /// <see cref="CheckScenario"/> finds an error — a broken scenario never starts.
+    /// </summary>
+    public static GameContent BuildScenario(ContentLibrary library, ContentItem scenarioItem)
+    {
+        if (CheckScenario(library, scenarioItem) is { Count: > 0 } errors)
+        {
+            throw new InvalidOperationException("Сценарий с ошибками: " + string.Join("; ", errors.Select(e => e.Message)));
+        }
+
+        var s = (ScenarioData)scenarioItem.Data;
+        var units = s.Squad.Concat(s.Enemies.Select(e => e.Unit)).Distinct(StringComparer.Ordinal).Select(id => library.Find(ContentTypeRegistry.Unit, id)!).ToList();
+        var content = BuildGame(library, library.Find(ContentTypeRegistry.Map, s.Map)!, squad: s.Squad, extraUnits: units);
+        var placed = s.Enemies.Select(e => new ScenarioUnit(content.Units[e.Unit].ToProfile(), e.Cell, e.Facing, Side.Enemy)).ToList();
+        var rulesetId = s.Ruleset.Length > 0 ? s.Ruleset : content.CombatRulesetId;
+        return content with
+        {
+            AutoAttacks = s.AutoAttacks,
+            Blocking = s.Blocking,
+            CombatRules = BuildCombatRules(library, rulesetId),
+            CombatRulesetId = rulesetId,
+            Scenario = new ScenarioRuntime(scenarioItem.Id, scenarioItem.Name, new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit }, placed, s.GoalsText()),
         };
     }
 

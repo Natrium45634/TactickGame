@@ -85,6 +85,8 @@ public partial class AppRoot : Node
             SelectedMap = _mapId,
             Units = PlayableUnits(),
             SelectedUnit = _squadUnit,
+            Scenarios = PlayableScenarios(),
+            SelectedScenario = _scenarioId,
         };
         _menu.PlayPressed += () => CallDeferred(MethodName.StartGame);
         _menu.DeveloperPressed += () => CallDeferred(MethodName.OpenDeveloper);
@@ -106,6 +108,23 @@ public partial class AppRoot : Node
 
         return list;
     }
+
+    /// <summary>Scenarios without errors (spec part 7 §2.2: a broken scenario is never started).</summary>
+    private System.Collections.Generic.List<(string Id, string Name)> PlayableScenarios()
+    {
+        var list = new System.Collections.Generic.List<(string Id, string Name)>();
+        foreach (var scenario in _library.Items(HexTactics.Content.Registry.ContentTypeRegistry.Scenario))
+        {
+            if (!scenario.Archived && RuntimeFactory.CheckScenario(_library, scenario).Count == 0)
+            {
+                list.Add((scenario.Id, scenario.IsBuiltIn ? scenario.Name : $"{scenario.Name} (свой)"));
+            }
+        }
+
+        return list;
+    }
+
+    private string? _scenarioId;
 
     private System.Collections.Generic.List<(string Id, string Name)> PlayableUnits()
     {
@@ -131,6 +150,19 @@ public partial class AppRoot : Node
         if (_menu?.SelectedUnit is { } unitChoice && _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Unit, unitChoice) is not null)
         {
             _squadUnit = unitChoice;
+        }
+
+        _scenarioId = _menu?.SelectedScenario is { Length: > 0 } sc ? sc : null;
+        if (_scenarioId is not null && _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Scenario, _scenarioId) is { } scenarioItem)
+        {
+            CloseModes();
+            var scenarioContent = RuntimeFactory.BuildScenario(_library, scenarioItem);
+            _game = new GameMode { Name = "Game", Automation = _automation };
+            _game.Configure(scenarioContent, scenarioItem.Name);
+            _game.ExitRequested += () => CallDeferred(MethodName.ShowMenu);
+            AddChild(_game);
+            Current = Screen.Play;
+            return;
         }
 
         CloseModes();
@@ -185,6 +217,8 @@ public partial class AppRoot : Node
             // Skill test: the prototype map, every operative has the tested skill first.
             HexTactics.Content.Registry.ContentTypeRegistry.Skill => RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, testSkill: item),
             HexTactics.Content.Registry.ContentTypeRegistry.Tile => RuntimeFactory.BuildGame(_library, _library.Find(HexTactics.Content.Registry.ContentTypeRegistry.Map, RuntimeFactory.DefaultMapId)!, testTile: item),
+            // Scenario test (spec part 7 §9.3): the edited scenario as it is (the editor refuses a test while it has errors).
+            HexTactics.Content.Registry.ContentTypeRegistry.Scenario => RuntimeFactory.BuildScenario(_library, item),
             _ => RuntimeFactory.BuildGame(_library, item),
         };
         _game = new GameMode { Name = "TestGame", Automation = _automation };

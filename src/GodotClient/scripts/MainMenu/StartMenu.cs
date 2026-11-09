@@ -37,6 +37,12 @@ public partial class StartMenu : CanvasLayer
     /// <summary>The unit definition of the five roster operatives.</summary>
     public string? SelectedUnit { get; set; }
 
+    /// <summary>Scenarios that can be played (spec part 7 §1.1 p.1): id, name; the empty id is the free play on a map.</summary>
+    public IReadOnlyList<(string Id, string Name)> Scenarios { get; set; } = Array.Empty<(string, string)>();
+
+    /// <summary>The chosen scenario; null or empty — free play with the map and the squad below.</summary>
+    public string? SelectedScenario { get; set; }
+
     public override void _Ready()
     {
         Layer = 20;
@@ -58,6 +64,24 @@ public partial class StartMenu : CanvasLayer
         column.AddChild(new Control { CustomMinimumSize = new Vector2(0, 10) });
 
         column.AddChild(BigButton("▶  Играть", "Тактический бой: карта, юниты из ростера, приказы ТД/КТД, пауза.", ButtonKind.Primary, "menu.play", () => PlayPressed?.Invoke()));
+        var scenarioRow = UiKit.Row(8);
+        scenarioRow.AddChild(UiKit.Label("Сценарий:", 13, dim: true));
+        var scenarios = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "menu.scenario");
+        scenarios.AddItem("свободная игра на карте", 0);
+        scenarios.SetItemMetadata(0, string.Empty);
+        for (var i = 0; i < Scenarios.Count; i++)
+        {
+            scenarios.AddItem(Scenarios[i].Name, i + 1);
+            scenarios.SetItemMetadata(i + 1, Scenarios[i].Id);
+            if (Scenarios[i].Id == SelectedScenario)
+            {
+                scenarios.Select(i + 1);
+            }
+        }
+
+        scenarios.ItemSelected += index => SelectedScenario = scenarios.GetItemMetadata((int)index).AsString();
+        scenarioRow.AddChild(scenarios);
+        column.AddChild(scenarioRow);
         var mapRow = UiKit.Row(8);
         mapRow.AddChild(UiKit.Label("Карта:", 13, dim: true));
         var maps = AutomationIds.Register(new OptionButton { FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "menu.map");
