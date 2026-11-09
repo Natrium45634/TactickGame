@@ -562,7 +562,13 @@ public static class RuntimeFactory
             return issues.Items;
         }
 
-        var grid = BuildMap(mapItem, library, new IssueList()).Grid;
+        var built = BuildMap(mapItem, library, new IssueList());
+        var grid = built.Grid;
+        if (s.IsTowerDefense)
+        {
+            CheckWaves(library, s, built, mapItem.Name, issues);
+        }
+
         if (!grid.Coords.Any(c => grid.Exists(c) && HexTactics.Core.Spawning.PlacementRules.IsDeployTile(grid[c].Type)))
         {
             issues.Error("map", $"на карте «{mapItem.Name}» нет гексов выставления (база игрока или зона выставления) — отряду некуда выйти");
@@ -598,6 +604,56 @@ public static class RuntimeFactory
     }
 
     /// <summary>
+    /// Tower Defense checks with the map (spec part 7 §4.3, §4.6, M7-24): every enabled group refers to an existing, enabled route
+    /// of the map that passes the route check (the same walkability for every enemy type of the line — the data has no movement
+    /// types yet), to a library unit; the map has a player base.
+    /// </summary>
+    private static void CheckWaves(ContentLibrary library, ScenarioData s, MapDefinition map, string mapName, IssueList issues)
+    {
+        if (!map.Bases.Any(b => b.Side == BaseSide.Player))
+        {
+            issues.Error("waves", $"на карте «{mapName}» нет базы игрока — врагам некуда идти");
+        }
+
+        for (var i = 0; i < s.Waves.Count; i++)
+        {
+            var w = s.Waves[i];
+            if (!w.Enabled)
+            {
+                continue;
+            }
+
+            for (var k = 0; k < w.Groups.Count; k++)
+            {
+                var g = w.Groups[k];
+                if (!g.Enabled)
+                {
+                    continue;
+                }
+
+                var at = $"волна «{w.Name}», группа {k + 1}";
+                if (map.FindRoute(g.Route) is not { } route)
+                {
+                    issues.Error($"waves[{i}].groups[{k}].route", $"{at}: маршрута «{g.Route}» нет на карте «{mapName}» — выберите другой или нарисуйте его в редакторе карт («Маршруты»)");
+                }
+                else if (!route.Enabled)
+                {
+                    issues.Error($"waves[{i}].groups[{k}].route", $"{at}: маршрут «{route.Name}» выключен на карте «{mapName}»");
+                }
+                else if (RouteCheck.Check(map, route) is { Count: > 0 } problems)
+                {
+                    issues.Error($"waves[{i}].groups[{k}].route", $"{at}: маршрут «{route.Name}» требует проверки — {problems[0].Message}");
+                }
+
+                if (g.Unit.Length > 0 && (library.Find(ContentTypeRegistry.Unit, g.Unit) is not { } unit || unit.HasErrors))
+                {
+                    issues.Error($"waves[{i}].groups[{k}].unit", $"{at}: юнит «{g.Unit}» не найден или с ошибками");
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// A match of a scenario (spec part 7 §2.1, §3): its map, its squad as the roster, its enemies on their hexes, its rules
     /// (the scenario's ruleset over the map's), automatic attacks and blocking as the scenario says, and its goals. Throws when
     /// <see cref="CheckScenario"/> finds an error — a broken scenario never starts.
@@ -610,7 +666,8 @@ public static class RuntimeFactory
         }
 
         var s = (ScenarioData)scenarioItem.Data;
-        var units = s.Squad.Concat(s.Enemies.Select(e => e.Unit)).Distinct(StringComparer.Ordinal).Select(id => library.Find(ContentTypeRegistry.Unit, id)!).ToList();
+        var units = s.Squad.Concat(s.Enemies.Select(e => e.Unit)).Concat(s.IsTowerDefense ? s.Waves.Where(w => w.Enabled).SelectMany(w => w.Groups).Where(g => g.Enabled).Select(g => g.Unit) : Enumerable.Empty<string>())
+            .Distinct(StringComparer.Ordinal).Select(id => library.Find(ContentTypeRegistry.Unit, id)!).ToList();
         var content = BuildGame(library, library.Find(ContentTypeRegistry.Map, s.Map)!, squad: s.Squad, extraUnits: units);
         var placed = s.Enemies.Select(e => new ScenarioUnit(content.Units[e.Unit].ToProfile(), e.Cell, e.Facing, Side.Enemy)).ToList();
         var rulesetId = s.Ruleset.Length > 0 ? s.Ruleset : content.CombatRulesetId;
@@ -621,7 +678,36 @@ public static class RuntimeFactory
             Blocking = s.Blocking,
             CombatRules = BuildCombatRules(library, rulesetId),
             CombatRulesetId = rulesetId,
-            Scenario = new ScenarioRuntime(scenarioItem.Id, scenarioItem.Name, new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit }, placed, s.GoalsText(), s.StartPaused),
+            Scenario = new ScenarioRuntime(scenarioItem.Id, scenarioItem.Name, ScenarioRulesOf(s, content), placed, s.GoalsText(), s.StartPaused),
+        };
+    }
+
+    /// <summary>The goals of the mode: the ordinary battle, or Tower Defense waves, base lives and the defeat policy.</summary>
+    private static HexTactics.Core.Scenarios.ScenarioRules ScenarioRulesOf(ScenarioData s, GameContent content)
+    {
+        if (!s.IsTowerDefense)
+        {
+            return new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit };
+        }
+
+        var waves = s.Waves.Where(w => w.Enabled).Select(w => new HexTactics.Core.Scenarios.WaveDefinition(
+            w.Id,
+            w.Name,
+            w.Start switch { WaveData.AtTime => HexTactics.Core.Scenarios.WaveStart.AtTime, WaveData.AfterPreviousStart => HexTactics.Core.Scenarios.WaveStart.AfterPreviousStart, _ => HexTactics.Core.Scenarios.WaveStart.AfterPrevious },
+            w.Delay,
+            w.Groups.Where(g => g.Enabled && g.Count > 0).Select(g => new HexTactics.Core.Scenarios.SpawnGroupDefinition(
+                g.Id, content.Map.FindRoute(g.Route)!, content.Units[g.Unit].ToProfile(), g.Count, g.FirstDelay, g.Interval, g.Offset)).ToList())).ToList();
+        var bases = content.Map.Bases.Where(b => b.Side == BaseSide.Player)
+            .Select(b => new HexTactics.Core.Scenarios.BaseLives(b.Number, s.LivesOf(b.Number).Lives, s.LivesOf(b.Number).Critical)).ToList();
+        return new HexTactics.Core.Scenarios.ScenarioRules
+        {
+            TowerDefense = true,
+            EliminateAllEnemies = false,
+            DefeatWhenSquadLost = false,
+            TimeLimitSeconds = s.TimeLimit,
+            Waves = waves,
+            Bases = bases,
+            Defeat = s.Defeat switch { "all_bases" => HexTactics.Core.Scenarios.DefeatPolicy.AllBases, "shared_lives" => HexTactics.Core.Scenarios.DefeatPolicy.SharedLives, _ => HexTactics.Core.Scenarios.DefeatPolicy.AnyCriticalBase },
         };
     }
 

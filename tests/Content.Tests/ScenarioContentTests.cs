@@ -50,17 +50,17 @@ public class ScenarioContentTests
     }
 
     [Fact]
-    public void M7_51_scenarios_is_one_new_category_and_holds_all_four_modes_only_the_battle_runs_yet()
+    public void M7_51_scenarios_is_one_new_category_and_holds_all_four_modes_the_ones_without_executor_are_refused()
     {
         var registry = ContentTypeRegistry.CreateDefault();
         Assert.Single(registry.All, k => k.Title == "Сценарии");
         Assert.Equal(new[] { "battle", "tower_defense", "defense", "exploration" }, ScenarioData.Modes.Select(m => m.Id));
-        Assert.Equal(new[] { "battle" }, ScenarioData.Modes.Where(m => m.Available).Select(m => m.Id));
+        Assert.Equal(new[] { "battle", "tower_defense" }, ScenarioData.Modes.Where(m => m.Available).Select(m => m.Id)); // v0.36.0
 
         var library = ContentTestKit.Library(null);
-        var td = Scenario(library, "Башни", (6, 2));
-        ((ScenarioData)td.Data).Mode = "tower_defense";
-        Assert.Contains(library.Validate(td), i => i.IsError && i.Message.Contains("появится в v0.36.0", StringComparison.Ordinal));
+        var defense = Scenario(library, "Оборона", (6, 2));
+        ((ScenarioData)defense.Data).Mode = "defense";
+        Assert.Contains(library.Validate(defense), i => i.IsError && i.Message.Contains("появится в v0.37.0", StringComparison.Ordinal));
     }
 
     [Fact]
