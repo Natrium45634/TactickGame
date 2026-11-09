@@ -40,6 +40,12 @@ public sealed record UnitStats
     public bool AutoAttackEnabled { get; init; }
 
     /// <summary>
+    /// Spec part 7 §7.1 <c>BlockCapacity</c>: how many moving enemies the unit holds on their hexes at once while it stands
+    /// (0 — none). Not defense A, not damage. From the characteristic «Блок» of the registry with its passives and tags.
+    /// </summary>
+    public int BlockCapacity { get; init; }
+
+    /// <summary>
     /// Area of the normal attack (spec part 5 §2.1, §8.3): 0 — the target only; N — every enemy of the attacker within N
     /// hexes of the target's hex (the target included).
     /// </summary>

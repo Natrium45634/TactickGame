@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HexTactics.Core.Combat;
 using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
@@ -218,6 +219,21 @@ public sealed class GameState
     /// then, not every frame.
     /// </summary>
     public long RosterVersion { get; private set; }
+
+    private readonly List<BlockLink> _blocks = new();
+
+    /// <summary>Active block links (spec part 7 §7.2), in creation order.</summary>
+    public IReadOnlyList<BlockLink> BlockLinks => _blocks;
+
+    /// <summary>The unit holding <paramref name="enemy"/>, if any.</summary>
+    public BlockLink? BlockOf(UnitId enemy) => _blocks.Find(b => b.Enemy == enemy);
+
+    /// <summary>How many enemies <paramref name="blocker"/> holds now.</summary>
+    public int BlockCount(UnitId blocker) => _blocks.Count(b => b.Blocker == blocker);
+
+    public void AddBlock(BlockLink link) => _blocks.Add(link);
+
+    public bool RemoveBlock(BlockLink link) => _blocks.Remove(link);
 
     /// <summary>Sets the «per matching ally» bonuses of a unit (percentage points by characteristic) and recomputes its stats.</summary>
     public void SetPackPercent(UnitId id, IReadOnlyDictionary<string, double> percent)

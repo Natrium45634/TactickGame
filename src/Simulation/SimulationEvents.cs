@@ -91,6 +91,12 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
     public HexTactics.Core.Combat.CritTier Crit { get; init; }
 }
 
+/// <summary>A standing unit started to hold an enemy on the neighbouring hex (spec part 7 §7.2).</summary>
+public sealed record BlockStarted(long Tick, UnitId Blocker, UnitId Enemy) : SimulationEvent(Tick);
+
+/// <summary>A block ended; the enemy may step on from the next tick.</summary>
+public sealed record BlockReleased(long Tick, UnitId Blocker, UnitId Enemy, BlockReleaseReason Reason) : SimulationEvent(Tick);
+
 /// <summary>A technical combat limit dropped a reaction (spec part 5 §5.5): no endless chains, no unbounded events.</summary>
 public sealed record CombatLimitReached(long Tick, long RootActionId, string Reason) : SimulationEvent(Tick);
 

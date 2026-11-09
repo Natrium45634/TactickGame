@@ -53,6 +53,12 @@ public static class Stats
     /// <summary>Incoming healing multiplier (spec part 5 §4.6): a debuff of −100 % blocks healing.</summary>
     public const string HealingReceived = "healingReceived";
 
+    /// <summary>
+    /// Block capacity in enemies (spec part 7 §7.1): a buff or debuff adds or removes whole slots for its duration; the total
+    /// is never below zero. Links over the new capacity are released, the newest first.
+    /// </summary>
+    public const string Block = "block";
+
     /// <summary>Safe lower limits of debuffed values: a unit never stops completely or attacks infinitely slowly.</summary>
     public const double MinMoveSpeed = 0.1;
     public const double MinAttackRate = 0.1;

@@ -30,7 +30,9 @@ public sealed class GameSimulation
         _context = new SimulationContext(State, _events);
         _packs = new PackSystem(State);
         AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
-        AddSystem(new MovementSystem(State, _events, Settings, Layout));
+        var blocks = new BlockSystem(State, _events);
+        AddSystem(blocks); // spec part 7 §11.1 p.5: contacts are settled before the next movement segment
+        AddSystem(new MovementSystem(State, _events, Settings, Layout, blocks));
         Damage = new DamageResolver(State, _events, Settings);
         Effects = new EffectResolver(State, _events, Damage);
         AddSystem(new SkillSystem(State, _events, Settings, Effects));

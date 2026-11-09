@@ -53,6 +53,9 @@ public enum WaitReason
 
     /// <summary>At a waypoint with a planned skill: fires it (one tick), then continues (spec part 3 §6.1, §7).</summary>
     Skill = 5,
+
+    /// <summary>Held by a hostile blocker on a neighbouring hex (spec part 7 §7.2): stays on its own hex until released.</summary>
+    Blocked = 6,
 }
 
 /// <summary>

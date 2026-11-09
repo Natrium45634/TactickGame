@@ -26,9 +26,11 @@ internal sealed class MovementSystem : ISimulationSystem
     private readonly List<SimulationEvent> _events;
     private readonly SimulationSettings _settings;
     private readonly HexLayout _layout;
+    private readonly BlockSystem? _blocks;
 
-    public MovementSystem(GameState state, List<SimulationEvent> events, SimulationSettings? settings = null, HexLayout? layout = null)
+    public MovementSystem(GameState state, List<SimulationEvent> events, SimulationSettings? settings = null, HexLayout? layout = null, BlockSystem? blocks = null)
     {
+        _blocks = blocks;
         _state = state;
         _events = events;
         _settings = settings ?? SimulationSettings.Default;
@@ -131,6 +133,14 @@ internal sealed class MovementSystem : ISimulationSystem
             // §6.5); an immediate skill also holds the unit. Then the route goes on by itself.
             m.Status = MovementStatus.Waiting;
             m.WaitReason = WaitReason.Skill;
+            return false;
+        }
+
+        // Spec part 7 §7.2: a standing hostile blocker next to the unit holds it on its own hex — the next step does not start.
+        if (_blocks is not null && _blocks.HoldsBack(unit, tick))
+        {
+            m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.Blocked;
             return false;
         }
 
