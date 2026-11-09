@@ -31,12 +31,13 @@ public sealed class GameSimulation
         if (Settings.Scenario is { Waves.Count: > 0 } scenario)
         {
             // Spec part 7 §11.1 p.2–3: timers and spawn queues of the waves first, so new enemies act in the same tick order.
-            _waves = new WaveSystem(State, _events, scenario.Waves, (route, profile) => SpawnOnRoute(route, profile).Unit);
+            _waves = new WaveSystem(State, _events, scenario.Waves, SpawnFromWave);
             AddSystem(_waves);
         }
 
         _packs = new PackSystem(State);
-        AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
+        AddSystem(_packs);
+        AddSystem(new AiSystem(State, Settings, ApplyOrder)); // spec part 7 §5.2: targets chosen before blocks and movement // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
         var blocks = new BlockSystem(State, _events, Settings.Blocking);
         AddSystem(blocks); // spec part 7 §11.1 p.5: contacts are settled before the next movement segment
         AddSystem(new MovementSystem(State, _events, Settings, Layout, blocks));
@@ -47,6 +48,10 @@ public sealed class GameSimulation
         AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
         _objectives = new ObjectiveSystem(State, _events, Settings.Scenario, _waves);
+        foreach (var obj in Settings.Scenario?.Objects ?? Array.Empty<HexTactics.Core.Scenarios.MissionObject>())
+        {
+            SpawnObjective(obj);
+        }
         AddSystem(_objectives); // spec part 7 §11.1 p.9: victory and defeat once, from the confirmed state of the tick
     }
 
@@ -226,6 +231,40 @@ public sealed class GameSimulation
     }
 
     private readonly PackSystem _packs;
+
+    /// <summary>
+    /// A defended mission object (spec part 7 §5.1 <c>DefenseObjective</c>): a player-side unit of its own role on its hex with its
+    /// health; it never moves, attacks or takes orders, damage reaches it through the same <c>DamageResolver</c>.
+    /// </summary>
+    public SpawnResult SpawnObjective(HexTactics.Core.Scenarios.MissionObject obj)
+    {
+        var stats = new UnitStats { MaxHealth = (int)Math.Round(Math.Max(1, obj.Health)), AttackPower = 0, AutoAttackEnabled = false, BasicAttack = null, BlockCapacity = 0 };
+        var result = Spawn(SpawnRequest.AtCell(obj.Cell, Side.Player, HexDirection.North) with { Profile = new UnitProfile("objective:" + obj.Id, obj.Name, stats, Array.Empty<string>()) });
+        if (result.Unit is { } id)
+        {
+            State.SetRole(id, UnitRole.Objective);
+            _objectives.RegisterObject(obj, id);
+        }
+
+        return result;
+    }
+
+    /// <summary>A wave enemy: on its route, or on a free hex of its source with its AI (spec part 7 §5.1).</summary>
+    private UnitId? SpawnFromWave(HexTactics.Core.Scenarios.SpawnGroupDefinition group, HexCoord cell)
+    {
+        if (group.Route is { } route)
+        {
+            return SpawnOnRoute(route, group.Profile).Unit;
+        }
+
+        var result = Spawn(SpawnRequest.AtCell(cell, Side.Enemy, SpawnRules.DefaultFacing(State.Grid, cell)) with { Profile = group.Profile });
+        if (result.Unit is { } id)
+        {
+            State.SetAi(id, group.Ai);
+        }
+
+        return result.Unit;
+    }
 
     /// <summary>
     /// An enemy appears on the first visit of <paramref name="route"/> facing its second one and follows the route
@@ -507,9 +546,9 @@ public sealed class GameSimulation
     public OrderApplyResult ApplyOrder(IndividualOrder order)
     {
         ArgumentNullException.ThrowIfNull(order);
-        if (State.FindUnit(order.Unit) is not { IsAlive: true } unit)
+        if (State.FindUnit(order.Unit) is not { IsAlive: true, IsCommandable: true } unit)
         {
-            return new OrderApplyResult(false, 0, WaypointError.UnknownUnit);
+            return new OrderApplyResult(false, 0, WaypointError.UnknownUnit); // dead, removed, or a mission object (never commanded)
         }
 
         if (!Enum.IsDefined(order.FinalFacing))

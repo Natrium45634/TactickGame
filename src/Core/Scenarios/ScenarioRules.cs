@@ -27,6 +27,12 @@ public enum ScenarioEndReason
 
     /// <summary>Tower Defense: the base lives ran out under the defeat policy.</summary>
     BaseLost = 4,
+
+    /// <summary>Defense: the battle lasted the required game seconds (spec part 7 §5.3).</summary>
+    Survived = 5,
+
+    /// <summary>Defense: a defended object was destroyed under the objects policy.</summary>
+    ObjectLost = 6,
 }
 
 /// <summary>
@@ -56,4 +62,18 @@ public sealed record ScenarioRules
     /// the base lives (spec part 7 §4.6).
     /// </summary>
     public bool TowerDefense { get; init; }
+
+    /// <summary>
+    /// Defense goals (spec part 7 §5.3): no player base; victory by surviving <see cref="SurviveSeconds"/> or, without it, by
+    /// repelling every wave; defeat by the defended objects (<see cref="Objects"/>, <see cref="ObjectsPolicy"/>) or the squad.
+    /// </summary>
+    public bool Defense { get; init; }
+
+    /// <summary>Defense: game seconds to hold out; 0 — the goal is to repel every wave.</summary>
+    public double SurviveSeconds { get; init; }
+
+    /// <summary>The defended objects placed at the start (spec part 7 §5.1).</summary>
+    public System.Collections.Generic.IReadOnlyList<MissionObject> Objects { get; init; } = System.Array.Empty<MissionObject>();
+
+    public ObjectsPolicy ObjectsPolicy { get; init; } = ObjectsPolicy.AllMustSurvive;
 }

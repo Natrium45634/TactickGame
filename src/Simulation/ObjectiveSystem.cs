@@ -27,6 +27,7 @@ internal sealed class ObjectiveSystem : ISimulationSystem
     private readonly ScenarioRules? _rules;
     private readonly WaveSystem? _waves;
     private readonly SortedDictionary<int, int> _lives = new();
+    private readonly List<(MissionObject Object, UnitId Unit)> _objects = new();
     private int _sharedLives;
 
     public ObjectiveSystem(GameState state, List<SimulationEvent> events, ScenarioRules? rules, WaveSystem? waves = null)
@@ -60,6 +61,11 @@ internal sealed class ObjectiveSystem : ISimulationSystem
     /// <summary>The shared pool of lives (meaningful with <see cref="DefeatPolicy.SharedLives"/>).</summary>
     public int SharedLives => _sharedLives;
 
+    /// <summary>The defended objects of the mission and their units.</summary>
+    public IReadOnlyList<(MissionObject Object, UnitId Unit)> Objects => _objects;
+
+    public void RegisterObject(MissionObject obj, UnitId unit) => _objects.Add((obj, unit));
+
     public void Tick(SimulationContext context)
     {
         if (_rules is null || Phase is ScenarioPhase.Victory or ScenarioPhase.Defeat)
@@ -69,6 +75,33 @@ internal sealed class ObjectiveSystem : ISimulationSystem
 
         Phase = ScenarioPhase.Running;
         Elapsed += context.DeltaSeconds;
+        if (_rules.Defense)
+        {
+            // Spec part 7 §5.3: losses are decisive — a lost object or squad ends the battle even on the second of victory.
+            if (ObjectLost())
+            {
+                End(ScenarioPhase.Defeat, ScenarioEndReason.ObjectLost, context.Tick);
+            }
+            else if (_rules.DefeatWhenSquadLost && SquadLost())
+            {
+                End(ScenarioPhase.Defeat, ScenarioEndReason.SquadLost, context.Tick);
+            }
+            else if (_rules.SurviveSeconds > 0 && Elapsed + 1e-9 >= _rules.SurviveSeconds)
+            {
+                End(ScenarioPhase.Victory, ScenarioEndReason.Survived, context.Tick);
+            }
+            else if (_rules.SurviveSeconds <= 0 && (_waves?.AllResolved ?? true) && EnemiesLeft == 0)
+            {
+                End(ScenarioPhase.Victory, ScenarioEndReason.AllWavesCleared, context.Tick);
+            }
+            else if (_rules.TimeLimitSeconds > 0 && Elapsed + 1e-9 >= _rules.TimeLimitSeconds)
+            {
+                End(ScenarioPhase.Defeat, ScenarioEndReason.TimeUp, context.Tick);
+            }
+
+            return;
+        }
+
         if (_rules.TowerDefense)
         {
             Leaks(context.Tick);
@@ -151,9 +184,22 @@ internal sealed class ObjectiveSystem : ISimulationSystem
         };
     }
 
-    /// <summary>No living unit of the player on the map and no roster card that can still be deployed (spec part 7 §3.2).</summary>
+    /// <summary>Critical objects lost under the policy: one of them (all must survive) or every one (at least one must).</summary>
+    private bool ObjectLost()
+    {
+        var critical = _objects.Where(o => o.Object.Critical).ToList();
+        if (critical.Count == 0)
+        {
+            return false; // a non-critical object may fall (spec part 7 M7-28)
+        }
+
+        bool Lost((MissionObject Object, UnitId Unit) o) => _state.FindUnit(o.Unit) is not { IsAlive: true };
+        return _rules!.ObjectsPolicy == ObjectsPolicy.AnyMustSurvive ? critical.All(Lost) : critical.Any(Lost);
+    }
+
+    /// <summary>No living fighter of the player on the map and no roster card that can still be deployed (spec part 7 §3.2).</summary>
     private bool SquadLost() =>
-        !_state.Units.Any(u => u.Side == Side.Player && u.IsAlive)
+        !_state.Units.Any(u => u.Side == Side.Player && u.IsAlive && u.Role == UnitRole.Combatant)
         && !_state.Roster.Entries.Any(e => e.State is RosterEntryState.AvailableInRoster or RosterEntryState.PlacementPreview); // placed ones are units
 
     private void End(ScenarioPhase phase, ScenarioEndReason reason, long tick)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using HexTactics.Core.Hex;
 using HexTactics.Core.Map;
 using HexTactics.Core.Units;
 
@@ -23,8 +24,17 @@ public enum WaveStart
 /// wave start + offset + first delay + k × interval (game seconds). Interval 0 asks for all at once — the spawn queue lets them
 /// in one by one.
 /// </summary>
-public sealed record SpawnGroupDefinition(string Id, EnemyRoute Route, UnitProfile Profile, int Count, double FirstDelaySeconds = 0, double IntervalSeconds = 1, double StartOffsetSeconds = 0)
+public sealed record SpawnGroupDefinition(string Id, EnemyRoute? Route, UnitProfile Profile, int Count, double FirstDelaySeconds = 0, double IntervalSeconds = 1, double StartOffsetSeconds = 0)
 {
+    /// <summary>Defense (spec part 7 §5.1): hexes of a source (an enemy base or a spawn zone) for a group without a route.</summary>
+    public IReadOnlyList<HexCoord> SourceCells { get; init; } = System.Array.Empty<HexCoord>();
+
+    /// <summary>The AI of the enemies of the group (spec part 7 §5.2); none for route walkers.</summary>
+    public AiProfile? Ai { get; init; }
+
+    /// <summary>Where the enemies of the group come in: the first visit of the route, or the source hexes.</summary>
+    public IReadOnlyList<HexCoord> Entrance => Route is { } r ? new[] { r.Cells[0] } : SourceCells;
+
     public double SpawnTime(double waveStart, int k) => waveStart + StartOffsetSeconds + FirstDelaySeconds + (k * IntervalSeconds);
 }
 

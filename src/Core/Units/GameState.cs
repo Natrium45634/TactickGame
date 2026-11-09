@@ -421,6 +421,15 @@ public sealed class GameState
         unit.Lifecycle = UnitLifecycle.Active;
     }
 
+    public void SetRole(UnitId id, UnitRole role) => GetUnit(id).Role = role;
+
+    /// <summary>The unit is driven by the simple AI of <paramref name="profile"/>; its home is where it stands now.</summary>
+    public void SetAi(UnitId id, HexTactics.Core.Scenarios.AiProfile? profile)
+    {
+        var unit = GetUnit(id);
+        unit.Ai = profile is null || profile.Preset == HexTactics.Core.Scenarios.AiPreset.None ? null : new AiState(profile, unit.Cell);
+    }
+
     /// <summary>The unit follows <paramref name="route"/> from the visit <paramref name="index"/> (where it must stand).</summary>
     public void AssignRoute(UnitId id, HexTactics.Core.Map.EnemyRoute route, int index = 0)
     {

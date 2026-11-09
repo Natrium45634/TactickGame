@@ -122,6 +122,15 @@ public sealed class UnitState
     /// <summary>Current movement between hex centres (driven by the simulation).</summary>
     public UnitMotion Motion { get; } = new();
 
+    /// <summary>A fighter, or a defended mission object (spec part 7 §5.1) that never moves, attacks or takes orders.</summary>
+    public UnitRole Role { get; internal set; }
+
+    /// <summary>The player may give it orders (fighters only).</summary>
+    public bool IsCommandable => Role == UnitRole.Combatant;
+
+    /// <summary>The simple AI of the unit (spec part 7 §5.2), or null.</summary>
+    public AiState? Ai { get; internal set; }
+
     /// <summary>The enemy route the unit follows (spec part 7 §4.4), or null; explicit orders go first.</summary>
     public RouteProgress? Route { get; internal set; }
 

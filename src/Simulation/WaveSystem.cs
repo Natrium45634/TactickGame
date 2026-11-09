@@ -9,7 +9,7 @@ using HexTactics.Core.Units;
 namespace HexTactics.Simulation;
 
 /// <summary>A planned enemy of a wave waiting for its entrance hex (spec part 7 §4.5: the queue keeps order, count and route).</summary>
-public sealed record PendingSpawn(int Wave, int Group, int Index, EnemyRoute Route, UnitProfile Profile, double DueTime);
+public sealed record PendingSpawn(int Wave, int Group, int Index, SpawnGroupDefinition Definition, double DueTime);
 
 /// <summary>
 /// Waves of a Tower Defense scenario (spec part 7 §4.5, §11.1 p.2–3): the first system of the tick. Scenario time runs only on
@@ -24,14 +24,14 @@ internal sealed class WaveSystem : ISimulationSystem
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
     private readonly IReadOnlyList<WaveDefinition> _waves;
-    private readonly Func<EnemyRoute, UnitProfile, UnitId?> _spawn;
+    private readonly Func<SpawnGroupDefinition, HexCoord, UnitId?> _spawn;
     private readonly double?[] _started;
     private readonly double?[] _resolved;
     private readonly int[][] _nextIndex;
     private readonly HashSet<UnitId>[] _members;
     private readonly List<(HexCoord Cell, Queue<PendingSpawn> Queue)> _queues = new();
 
-    public WaveSystem(GameState state, List<SimulationEvent> events, IReadOnlyList<WaveDefinition> waves, Func<EnemyRoute, UnitProfile, UnitId?> spawn)
+    public WaveSystem(GameState state, List<SimulationEvent> events, IReadOnlyList<WaveDefinition> waves, Func<SpawnGroupDefinition, HexCoord, UnitId?> spawn)
     {
         _state = state;
         _events = events;
@@ -134,7 +134,7 @@ internal sealed class WaveSystem : ISimulationSystem
             while (_nextIndex[w][g] < group.Count && Time + Epsilon >= group.SpawnTime(start, _nextIndex[w][g]))
             {
                 var k = _nextIndex[w][g]++;
-                QueueFor(group.Route.Cells[0]).Enqueue(new PendingSpawn(w, g, k, group.Route, group.Profile, group.SpawnTime(start, k)));
+                QueueFor(group.Entrance[0]).Enqueue(new PendingSpawn(w, g, k, group, group.SpawnTime(start, k)));
             }
         }
     }
@@ -154,21 +154,40 @@ internal sealed class WaveSystem : ISimulationSystem
         return queue;
     }
 
-    /// <summary>Each entrance lets in its first waiting enemy when the hex is free; the others keep their places.</summary>
+    /// <summary>
+    /// Each entrance lets in its waiting enemies in order while a hex of it is free (the route's first visit — one per tick; a
+    /// source — its free hexes in row-major order); the others keep their places.
+    /// </summary>
     private void LetIn(long tick)
     {
-        foreach (var (cell, queue) in _queues)
+        foreach (var (_, queue) in _queues)
         {
-            if (queue.Count == 0 || _state.UnitAt(cell) is not null || _state.ReservedBy(cell) is not null)
+            // Every free hex of the entrance takes the next waiting enemy (a route has one entrance hex; a source may have several).
+            while (queue.Count > 0)
             {
-                continue;
-            }
+                HexCoord? free = null;
+                foreach (var cell in queue.Peek().Definition.Entrance)
+                {
+                    if (_state.UnitAt(cell) is null && _state.ReservedBy(cell) is null)
+                    {
+                        free = cell;
+                        break;
+                    }
+                }
 
-            var next = queue.Dequeue();
-            if (_spawn(next.Route, next.Profile) is { } unit)
-            {
+                if (free is not { } at)
+                {
+                    break;
+                }
+
+                var next = queue.Dequeue();
+                if (_spawn(next.Definition, at) is not { } unit)
+                {
+                    break;
+                }
+
                 _members[next.Wave].Add(unit);
-                _events.Add(new WaveEnemySpawned(tick, unit, next.Wave, next.Route.Id));
+                _events.Add(new WaveEnemySpawned(tick, unit, next.Wave, next.Definition.Route?.Id ?? string.Empty));
             }
         }
     }
