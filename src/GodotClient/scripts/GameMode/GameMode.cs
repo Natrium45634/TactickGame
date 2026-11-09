@@ -547,6 +547,16 @@ public partial class GameMode : Node3D
 
     private Label? _scenarioLabel;
 
+    /// <summary>The pause banner of a scenario: «Подготовка» before the start, the result after the end; null — the usual pause.</summary>
+    private string? ScenarioBanner() => _content.Scenario is null ? null : _sim.ScenarioPhase switch
+    {
+        HexTactics.Core.Scenarios.ScenarioPhase.Preparing => "⏸  ПОДГОТОВКА  ·  пробел — начать бой",
+        HexTactics.Core.Scenarios.ScenarioPhase.Victory => "★  ПОБЕДА  ·  все враги побеждены",
+        HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp
+            ? "✖  ПОРАЖЕНИЕ  ·  время вышло" : "✖  ПОРАЖЕНИЕ  ·  отряд погиб, резерв пуст",
+        _ => null,
+    };
+
     private string DescribeCell(HexCoord h)
     {
         var tile = _map.Grid[h];
@@ -850,9 +860,10 @@ public partial class GameMode : Node3D
                     ShowMessage($"Юнит {f.Unit} выполнил все ТД и стоит на {UiText.Cell(f.Cell)}.", false);
                     break;
                 case PauseChanged p:
-                    _hud.SetPaused(p.Paused);
-                    ShowMessage(p.Paused
-                        ? "Пауза: время остановлено. Можно выбирать юнитов и строить цепочки ТД."
+                    _hud.SetPaused(p.Paused, ScenarioBanner());
+                    ShowMessage(p.Paused && _content.Scenario is not null && _sim.ScenarioPhase == HexTactics.Core.Scenarios.ScenarioPhase.Preparing
+                        ? "Подготовка: выставьте отряд из нижней панели, задайте маршруты и взгляд, затем «Начать бой» (пробел)."
+                        : p.Paused ? "Пауза: время остановлено. Можно выбирать юнитов и строить цепочки ТД."
                         : "Игра продолжается.", false);
                     break;
             }

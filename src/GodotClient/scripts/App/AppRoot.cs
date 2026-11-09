@@ -158,7 +158,7 @@ public partial class AppRoot : Node
             CloseModes();
             var scenarioContent = RuntimeFactory.BuildScenario(_library, scenarioItem);
             _game = new GameMode { Name = "Game", Automation = _automation };
-            _game.Configure(scenarioContent, scenarioItem.Name);
+            _game.Configure(scenarioContent, scenarioContent.Map.Name);
             _game.ExitRequested += () => CallDeferred(MethodName.ShowMenu);
             AddChild(_game);
             Current = Screen.Play;

@@ -100,7 +100,8 @@ public partial class DebugHud : CanvasLayer
             ContentMarginTop = 6,
             ContentMarginBottom = 6,
         });
-        var bannerLabel = new Label { Text = "⏸  ПАУЗА  ·  пробел — продолжить", MouseFilter = Control.MouseFilterEnum.Ignore };
+        var bannerLabel = new Label { Text = PauseText, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _bannerLabel = bannerLabel;
         bannerLabel.AddThemeFontSizeOverride("font_size", 18);
         bannerLabel.AddThemeColorOverride("font_color", new Color(1f, 0.88f, 0.55f));
         _pauseBanner.AddChild(bannerLabel);
@@ -110,10 +111,18 @@ public partial class DebugHud : CanvasLayer
         UpdateScale();
     }
 
-    /// <summary>Shows or hides the pause banner (centred above the board area right of the panel).</summary>
-    public void SetPaused(bool paused)
+    private const string PauseText = "⏸  ПАУЗА  ·  пробел — продолжить";
+
+    private Label _bannerLabel = null!;
+
+    /// <summary>
+    /// Shows or hides the pause banner (centred above the board area right of the panel); a scenario names its pause
+    /// («Подготовка», the result of the battle).
+    /// </summary>
+    public void SetPaused(bool paused, string? text = null)
     {
         _pauseBanner.Visible = paused;
+        _bannerLabel.Text = text ?? PauseText;
         if (paused)
         {
             _pauseBanner.ResetSize();
@@ -198,7 +207,7 @@ public partial class DebugHud : CanvasLayer
     {
         if (_pauseBanner.Visible)
         {
-            SetPaused(true); // keeps the banner centred if the window or panel changes
+            SetPaused(true, _bannerLabel.Text); // keeps the banner centred if the window or panel changes, with its text
         }
 
         // Content-margins of the panel style (12 + 12) and the outer margins.

@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.33.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.34.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя, пассивы, виды, теги и стая). Формат контента —
+зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -471,6 +471,15 @@ tests/*  ──► соответствующие сборки
   (+ статусы `Stats.Block`, `BlockMath.Capacity`). Связи `BlockLink` хранятся в `GameState`; `BlockSystem` (после `PackSystem`,
   до `MovementSystem`) снимает недействительные, а `MovementSystem.TryStartStep` спрашивает `HoldsBack` перед каждым шагом:
   враг остаётся на своём гексе с `WaitReason.Blocked`. События `BlockStarted`/`BlockReleased`; клиент показывает слово «блок».
+- **Сценарии и цели (с v0.34.0, ТЗ ч.7 §2–§3, D-174–D-177).** Content: вид `scenario` (`ScenarioData`: режим из реестра
+  `ScenarioData.Modes`, карта, правила, отряд, враги на карте, переключатели, время), `RuntimeFactory.CheckScenario` (проверка с
+  картой и юнитами) и `BuildScenario` → `GameContent.Scenario` (`ScenarioRuntime`: правила целей, расставленные враги, цели
+  словами, пауза старта) и `GameContent.Blocking`. Editor: `MatchFactory.Start(GameContent)` — единый старт матча (настройки
+  симуляции, ростер, враги, «Подготовка»), им пользуются игра, тест и автотесты; `ScenarioEditorModel`. Simulation:
+  `ObjectiveSystem` — последняя система тика (`Packs, Blocks, Movement, Skills, Attack, Tiles, Statuses, Objectives`):
+  `Preparing → Running → Victory | Defeat`, событие `ScenarioEnded`, после итога `GameSimulation` стоит на паузе
+  (`IsScenarioOver`). Клиент: выбор «Сценарий» в стартовом меню, `ScenarioEditor` (карта сценария на `BoardView`, враги —
+  цилиндры с указателем взгляда), цели и «Начать бой» в панели игры, название паузы `DebugHud.SetPaused(bool, string?)`.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -605,7 +614,13 @@ crit|surprise|moving`, `battack.turn.left|right`, `cell:q,r` (гекс поля 
 `unit.autoAttackEnabled`, `unit.basicAttack`; проверки `expect:battack-cells:<q,r q,r …>`, `expect:battack-preview:<текст>`,
 `expect:battack-facing:<направление>`, `expect:map-autoattacks:yes|no`, `expect:battle-preview:<текст>` (строки «В бою» юнита).
 Шаг `row:` прокручивает список к строке и щёлкает в следующем кадре (D-169). С v0.33.0: юнит — `unit.block`; в игре
-`expect:blocked:<ID>:yes|no` (юнит удерживается блоком). В бою: `advance:N` — ровно N
+`expect:blocked:<ID>:yes|no` (юнит удерживается блоком). С v0.34.0: меню — `menu.scenario`; редактор сценария —
+`scenario.mode.<режим>`, `scenario.map`, `scenario.map.open`, `scenario.brush`, `scenario.turn.left|right`, `scenario.enemy.remove|deselect`,
+`scenario.enemies.fix`, `scenario.squad.remove.<N>`, `scenario.squad.pick`, `scenario.squad.add`, `scenario.ruleset`,
+`scenario.startpaused|autoattacks|blocking|timelimit`, `scenario.test`, шаги `cell:c,r` (ЛКМ по гексу карты сценария) и
+`rcell:c,r` (ПКМ — убрать врага); проверки `expect:scenario-enemies:<N>`, `expect:scenario-enemy:c,r:<ID юнита>:<взгляд>`,
+`expect:scenario-squad:<N|ID,ID…>`, `expect:scenario-errors:<N>`, `expect:scenario-preview:<текст>`, `expect:scenario-selected:c,r|none`;
+в игре `expect:phase:Preparing|Running|Victory|Defeat`, `expect:enemies-left:<N>`. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -658,11 +673,13 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV31` = V30 + «Вода», тег «Гидромант», «Водный маг» (вид, три тега, пассив, R, A), назначение тега, шестиугольник,
 100 событий, 1000 бросков, «Сверхкрит!» в игре, экспорт «Вода.hxp» для v0.31.0,
 `$RegressionScenarioV32` = V31 + базовая атака «Копьё», «Копейщик», автоатака на «Арене копий» (3 удара/с, поворот) для v0.32.0,
-`$RegressionScenarioV33` = V32 + «Страж» с блоком 1: один из двух проходящих удержан, второй дошёл, для v0.33.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
+`$RegressionScenarioV33` = V32 + «Страж» с блоком 1: один из двух проходящих удержан, второй дошёл, для v0.33.0,
+`$RegressionScenarioV34` = V33 + сценарий «Засада» в редакторе (враг щелчком, поворот, отмена, отряд из одного), его тест от
+«Подготовки» до «Победы» и «Учебный бой» из меню для v0.34.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
 30 урона в тесте юнита; `$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Сценарий длиннее 32 000 символов (предел командной строки Windows) идёт несколькими запусками `smoke`, `smoke-2`, … с одной папкой пользователя, разрезанный по концам сценариев прежних версий (D-164). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
