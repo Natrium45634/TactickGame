@@ -168,6 +168,43 @@ public class BasicAttackTests
     }
 
     [Fact]
+    public void M7_49_a_skill_hits_once_and_the_base_attack_goes_on_after_it()
+    {
+        var skill = SkillCatalog.LinearStrike(20);
+        var sim = new GameSimulation(TestMaps.Empty(), new SimulationSettings
+        {
+            AutoAttacks = true, Skills = new Dictionary<string, SkillDefinition> { [skill.Id] = skill }, DefaultSkillSet = new[] { skill.Id },
+        });
+        var unit = sim.Spawn(SpawnRequest.AtCell(C(5, 5), Side.Player, HexDirection.North) with
+        {
+            Profile = new UnitProfile("f", "Боец", new UnitStats { AttackPower = 10, AttackRatePerSecond = 1, BasicAttack = BasicAttackDefinition.Front, AutoAttackEnabled = true }, new[] { skill.Id }),
+        }).Unit!.Value;
+        var target = Dummy(sim, C(5, 4));
+        sim.DrainEvents();
+        Assert.True(sim.UseSkill(unit, skill.Id, HexDirection.North).Success);
+        var skillHits = 0;
+        var autoHits = 0;
+        for (var i = 0; i < 120; i++)
+        {
+            sim.Step();
+            foreach (var d in sim.DrainEvents().OfType<DamageApplied>().Where(d => d.Target == target))
+            {
+                if (d.Kind == DamageKind.Skill)
+                {
+                    skillHits++;
+                }
+                else
+                {
+                    autoHits++;
+                }
+            }
+        }
+
+        Assert.Equal(1, skillHits);       // the skill acts once
+        Assert.InRange(autoHits, 2, 4);   // and the base attack goes on (1/s over four seconds, none during the skill action)
+    }
+
+    [Fact]
     public void Several_targets_by_priority_and_a_dead_target_takes_no_hit()
     {
         var sim = Sim();

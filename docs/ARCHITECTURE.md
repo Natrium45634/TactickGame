@@ -1,6 +1,6 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.31.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.32.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
@@ -461,6 +461,12 @@ tests/*  ──► соответствующие сборки
   `DamageApplied.Surprised/Crit`. Editor: `CombatRulesetEditorModel.RollTest` (та же `DeterministicRoll`), `HitSandbox.Batch`
   (ключи `sandbox:i`), `TraitEditorModel.AssignTo` (проверка всех юнитов до записи), `UnitEditorModel.FeaturesSummary`.
   Правила: `CombatRules.SurpriseMeleeOnly` (дистанция 1), `UnitStats.SurpriseChanceBonus` — в стадии 1b `DamageResolver`.
+- **Автоматическая базовая атака (с v0.32.0, ТЗ ч.7 §8, D-170, D-171).** Core `Combat/BasicAttack.cs`:
+  `BasicAttackDefinition` (область, поворот, выбор целей). `AttackSystem`: без явного приказа — `AutoAttack` по
+  `CombatState.AutoTimer`, только при `SimulationSettings.AutoAttacks` (из карты, `GameContent.AutoAttacks`) и
+  `UnitStats.AutoAttackEnabled`; удар — тот же `DamageResolver`. Content: `BasicAttackData` (вид `basic_attack`),
+  `RuntimeFactory.BuildUnit` кладёт определение в `UnitStats`. Editor: `BasicAttackEditorModel`. Клиент: `BasicAttackEditor`
+  (гекс-поле как у навыка), флажок «Автоатака юнитов» карты.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -590,7 +596,11 @@ min|max|decimals`; юнит — `unit.species`, `unit.trait.pick|add`, `unit.tra
 боя — `rules.hex.<0–5>` (сторона на рисунке), `rules.side.value`, `rules.side.test`, `rules.surprise.melee`, `rules.crit.test`,
 `rules.crit.rolls`; песочница — `<префикс>sandbox.seed|batch|reset`; тег — `trait.assign.pick`, `trait.assign.add`, `trait.assign`;
 проверки `expect:ruleset-side:<n>`, `expect:ruleset-rolls:<текст>`, `expect:trait-units:<N>`, `expect:features-summary:<текст>`,
-`expect:hitword:<слово>:yes|no` (слово над ударом в этом матче). В бою: `advance:N` — ровно N
+`expect:hitword:<слово>:yes|no` (слово над ударом в этом матче). С v0.32.0: базовая атака — `battack.name|priority|targets|power|type|more|
+crit|surprise|moving`, `battack.turn.left|right`, `cell:q,r` (гекс поля относительно юнита); карта — `map.autoattacks`; юнит —
+`unit.autoAttackEnabled`, `unit.basicAttack`; проверки `expect:battack-cells:<q,r q,r …>`, `expect:battack-preview:<текст>`,
+`expect:battack-facing:<направление>`, `expect:map-autoattacks:yes|no`, `expect:battle-preview:<текст>` (строки «В бою» юнита).
+Шаг `row:` прокручивает список к строке и щёлкает в следующем кадре (D-169). В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -641,11 +651,12 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV29` = V28 + дерево видов, теги, стая, бонус вожака в тестовом запуске для v0.29.0,
 `$RegressionScenarioV30` = V29 + «Засада», «Убийца», песочница с заданным исходом, бой на совместимых и стандартных правилах для v0.30.0,
 `$RegressionScenarioV31` = V30 + «Вода», тег «Гидромант», «Водный маг» (вид, три тега, пассив, R, A), назначение тега, шестиугольник,
-100 событий, 1000 бросков, «Сверхкрит!» в игре, экспорт «Вода.hxp» для v0.31.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
+100 событий, 1000 бросков, «Сверхкрит!» в игре, экспорт «Вода.hxp» для v0.31.0,
+`$RegressionScenarioV32` = V31 + базовая атака «Копьё», «Копейщик», автоатака на «Арене копий» (3 удара/с, поворот) для v0.32.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
 30 урона в тесте юнита; `$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Сценарий длиннее 32 000 символов (предел командной строки Windows) идёт несколькими запусками `smoke`, `smoke-2`, … с одной папкой пользователя, разрезанный по концам сценариев прежних версий (D-164). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
