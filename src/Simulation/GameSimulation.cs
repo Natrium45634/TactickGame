@@ -30,7 +30,7 @@ public sealed class GameSimulation
         _context = new SimulationContext(State, _events);
         _packs = new PackSystem(State);
         AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
-        var blocks = new BlockSystem(State, _events);
+        var blocks = new BlockSystem(State, _events, Settings.Blocking);
         AddSystem(blocks); // spec part 7 §11.1 p.5: contacts are settled before the next movement segment
         AddSystem(new MovementSystem(State, _events, Settings, Layout, blocks));
         Damage = new DamageResolver(State, _events, Settings);
@@ -39,7 +39,22 @@ public sealed class GameSimulation
         AddSystem(new AttackSystem(State, _events, Settings, Damage));
         AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
+        _objectives = new ObjectiveSystem(State, _events, Settings.Scenario);
+        AddSystem(_objectives); // spec part 7 §11.1 p.9: victory and defeat once, from the confirmed state of the tick
     }
+
+    private readonly ObjectiveSystem _objectives;
+
+    /// <summary>The scenario state (spec part 7 §2.3); free play stays «Preparing» without goals.</summary>
+    public HexTactics.Core.Scenarios.ScenarioPhase ScenarioPhase => _objectives.Phase;
+
+    public HexTactics.Core.Scenarios.ScenarioEndReason? ScenarioEndReason => _objectives.Reason;
+
+    /// <summary>Game seconds of the running scenario (never the pause).</summary>
+    public double ScenarioTime => _objectives.Elapsed;
+
+    /// <summary>Enemies still alive — the goal «победить всех врагов».</summary>
+    public int EnemiesLeft => _objectives.EnemiesLeft;
 
     /// <summary>The single executor of configured effects (spec part 4 §6.3).</summary>
     public EffectResolver Effects { get; }

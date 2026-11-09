@@ -45,6 +45,12 @@ public sealed record SimulationSettings
     /// </summary>
     public bool AutoAttacks { get; init; }
 
+    /// <summary>Spec part 7 §7.3: a scenario may switch blocking off for a free manoeuvre battle (on by default).</summary>
+    public bool Blocking { get; init; } = true;
+
+    /// <summary>Goals of a scenario (spec part 7 §3.2); null — free play and tests, no victory or defeat.</summary>
+    public HexTactics.Core.Scenarios.ScenarioRules? Scenario { get; init; }
+
     /// <summary>Damage types by id (spec part 5 §2): the content catalog; the built-in one if no content is loaded.</summary>
     public IReadOnlyDictionary<string, HexTactics.Core.Combat.DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
 

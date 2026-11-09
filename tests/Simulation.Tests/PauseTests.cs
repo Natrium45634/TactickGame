@@ -130,7 +130,7 @@ public class PauseTests
         var sim = new GameSimulation(TestMaps.Empty());
         var counter = new CountingSystem();
         sim.AddSystem(counter);
-        Assert.Equal(new[] { "Packs", "Blocks", "Movement", "Skills", "Attack", "Tiles", "Statuses", "Counting" }, sim.Systems.Select(s => s.Name)); // spec part 3 §7 order; packs first (part 6 §5.5)
+        Assert.Equal(new[] { "Packs", "Blocks", "Movement", "Skills", "Attack", "Tiles", "Statuses", "Objectives", "Counting" }, sim.Systems.Select(s => s.Name)); // spec part 3 §7 order; packs first (part 6 §5.5)
 
         sim.Advance(0.1); // 3 ticks
         sim.SetPaused(true);

@@ -91,6 +91,9 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
     public HexTactics.Core.Combat.CritTier Crit { get; init; }
 }
 
+/// <summary>The scenario was won or lost (spec part 7 §2.3, §3.2).</summary>
+public sealed record ScenarioEnded(long Tick, HexTactics.Core.Scenarios.ScenarioPhase Phase, HexTactics.Core.Scenarios.ScenarioEndReason Reason) : SimulationEvent(Tick);
+
 /// <summary>A standing unit started to hold an enemy on the neighbouring hex (spec part 7 §7.2).</summary>
 public sealed record BlockStarted(long Tick, UnitId Blocker, UnitId Enemy) : SimulationEvent(Tick);
 

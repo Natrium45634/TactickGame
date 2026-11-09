@@ -15,11 +15,13 @@ internal sealed class BlockSystem : ISimulationSystem
 {
     private readonly GameState _state;
     private readonly List<SimulationEvent> _events;
+    private readonly bool _enabled;
 
-    public BlockSystem(GameState state, List<SimulationEvent> events)
+    public BlockSystem(GameState state, List<SimulationEvent> events, bool enabled = true)
     {
         _state = state;
         _events = events;
+        _enabled = enabled;
     }
 
     public string Name => "Blocks";
@@ -32,6 +34,11 @@ internal sealed class BlockSystem : ISimulationSystem
     /// </summary>
     public bool HoldsBack(UnitState unit, long tick)
     {
+        if (!_enabled)
+        {
+            return false; // a scenario without blocking (spec part 7 §7.3)
+        }
+
         if (_state.BlockOf(unit.Id) is { } held)
         {
             if (Reason(held) is not { } reason)
