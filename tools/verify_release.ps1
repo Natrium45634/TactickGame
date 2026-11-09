@@ -722,7 +722,11 @@ $script:PersistenceScenarioV31 = (@(
     'expect:resistance:core.damage.magical:20', 'expect:armor:global:10', 'ui:unit.back', 'ui:dev.cat.trait', 'row:name=Гидромант', 'ui:dev.open',
     'expect:trait-units:2', 'ui:trait.back', 'ui:dev.cat.combat_ruleset', 'row:name=Засада', 'ui:dev.open', 'expect:ruleset-preview:задний правый фланг 60 %',
     'ui:rules.back', 'ui:dev.back'
-) -join ';') + ';' + $script:PersistenceScenarioV30.Replace('ui:dev.cat.trait;expect:rows:2;', 'ui:dev.cat.trait;expect:rows:3;') # «Гидромант» is the third tag
+) -join ';') + ';' + $script:PersistenceScenarioV30.Replace('ui:dev.cat.trait;expect:rows:2;', 'ui:dev.cat.trait;expect:rows:3;').Replace(
+    'ui:dev.cat.unit;row:name=Убийца;ui:dev.open;expect:unit-field:critChance:200;ui:unit.back;',
+    'ui:dev.cat.unit;field:dev.search=Убийца;row:name=Убийца;ui:dev.open;expect:unit-field:critChance:200;ui:unit.back;field:dev.search=;')
+# «Гидромант» is the third tag; with 21 units «Убийца» is below the fold of a 1600 × 900 window, and the row step of v0.31.0 clicks
+# before its own scroll takes effect (D-169), so the search narrows the list first.
 
 # v0.31.0+ clean installation: «Вода.hxp» brings the element, the tags, the species and the unit with the same ids; «Водный маг» hits
 # for the same 30 in a test run (P6-55).
