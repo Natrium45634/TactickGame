@@ -188,6 +188,8 @@ public static class UiText
             WaitReason.TeamStage => "на месте, ждёт остальных у КТД",
             WaitReason.Teammate => "ждёт, пока свои освободят проход",
             WaitReason.Yielding => "уступил проход своему",
+            WaitReason.Blocked => "удержан блоком врага", // spec part 7 §7.2: the state only, never the capacity
+            WaitReason.Skill => "применяет навык в ТД",
             _ => "ждёт освобождения клетки",
         },
         MovementStatus.Blocked => u.Motion.BlockReason switch
