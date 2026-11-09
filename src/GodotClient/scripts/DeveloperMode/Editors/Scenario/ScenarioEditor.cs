@@ -30,6 +30,7 @@ public partial class ScenarioEditor : DefinitionEditorShell
     private ScenarioEditorModel _model = null!;
     private Node3D? _boardRoot;
     private Node3D _markers = null!;
+    private RouteLayer? _routes;
     private HexFillLayer? _fills;
     private BoardPicker? _picker;
     private MapDefinition? _map;
@@ -66,6 +67,8 @@ public partial class ScenarioEditor : DefinitionEditorShell
     {
         _markers = new Node3D { Name = "Enemies" };
         AddChild(_markers);
+        _routes = new RouteLayer { Name = "Routes" };
+        AddChild(_routes);
         RebuildBoard();
     }
 
@@ -124,8 +127,22 @@ public partial class ScenarioEditor : DefinitionEditorShell
         _fills?.ClearAll();
         if (_map is null || _fills is null)
         {
+            _routes?.Show(System.Array.Empty<RouteDrawing>(), Layout, _ => 0f);
             return;
         }
+
+        // Tower Defense: the red lines of the map's routes (their geometry is edited in the map editor, spec part 7 §9.2).
+        var routes = new List<RouteDrawing>();
+        if (_model.Scenario.IsTowerDefense)
+        {
+            for (var i = 0; i < _map.Routes.Count; i++)
+            {
+                var r = _map.Routes[i];
+                routes.Add(new RouteDrawing(r.Id, (i + 1).ToString(CultureInfo.InvariantCulture), r.Cells, r.Enabled, false));
+            }
+        }
+
+        _routes?.Show(routes, Layout, c => TilePalette.Current.HeightOf(_map.Grid, c));
 
         if (_hover is { } h && _map.Grid.Exists(h))
         {
@@ -284,7 +301,12 @@ public partial class ScenarioEditor : DefinitionEditorShell
         inspector.Button(IdPrefix + "map.open", "✎ Открыть карту в редакторе", OpenMap, ButtonKind.Flat,
             "Гексы выставления, препятствия и уровни правятся в редакторе карт; карта общая для всех сценариев с ней.");
 
-        inspector.Section("Враги на карте");
+        if (s.IsTowerDefense)
+        {
+            BuildWaves(inspector);
+        }
+
+        inspector.Section(s.IsTowerDefense ? "Враги на карте с начала (необязательно)" : "Враги на карте");
         inspector.Hint("Щёлкните свободный гекс — поставить врага; щёлкните врага — выбрать; ПКМ — убрать; Q / E — повернуть.");
         var selected = _model.SelectedEnemy;
         var units = ReferenceOptions(ContentTypeRegistry.Unit, ReferenceFilter.Any, selected?.Unit ?? _model.Brush, allowCreate: false);
@@ -343,6 +365,102 @@ public partial class ScenarioEditor : DefinitionEditorShell
             "Юниты с «Блоком» удерживают соседних врагов; снято — свободный манёвр.");
         inspector.LineText(IdPrefix + "timelimit", "Ограничение времени, с", Inspector.Num(s.TimeLimit), v => Refuse(_model.SetTimeLimit(v)),
             "0 — без ограничения. Когда время боя (без пауз) вышло, а враги ещё живы, — поражение.");
+        if (s.IsTowerDefense)
+        {
+            inspector.Choice(IdPrefix + "defeat", "Поражение, когда", ScenarioData.DefeatPolicies.Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), s.Defeat, v => _model.SetDefeat(v),
+                "Как потеря жизней баз заканчивает бой. Утечка одного врага — минус 1 жизнь его базы.");
+        }
+    }
+
+    /// <summary>
+    /// Waves and bases of a Tower Defense scenario (spec part 7 §4.5–4.6): the list of waves, the card of the selected one with its
+    /// groups (route of the map, unit, count, times), the lives of each player base. Sums are computed, never typed.
+    /// </summary>
+    private void BuildWaves(Inspector inspector)
+    {
+        var s = _model.Scenario;
+        inspector.Section("Базы игрока");
+        var bases = _model.PlayerBases();
+        if (bases.Count == 0)
+        {
+            inspector.Text("✗ на карте нет базы игрока — врагам некуда идти", size: 12).AddThemeColorOverride("font_color", UiKit.Error);
+        }
+
+        foreach (var b in bases)
+        {
+            var number = b.Number;
+            inspector.LineText(IdPrefix + $"base.{number}.lives", $"«{b.Name}»: жизни", b.Lives.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetBaseLives(number, v)));
+            inspector.Check(IdPrefix + $"base.{number}.critical", "критическая — её падение = поражение", b.Critical, on => _model.SetBaseCritical(number, on));
+        }
+
+        inspector.Section($"Волны — врагов всего {s.WaveEnemies}");
+        inspector.Hint("Кто и когда идёт по маршрутам карты. Маршруты рисуются в редакторе карт («〰 Маршруты»).");
+        if (_model.MapRoutes().Count == 0)
+        {
+            inspector.Text("✗ на карте нет маршрутов врагов — откройте карту и нарисуйте их", size: 12).AddThemeColorOverride("font_color", UiKit.Error);
+        }
+
+        for (var i = 0; i < s.Waves.Count; i++)
+        {
+            var w = s.Waves[i];
+            var id = w.Id;
+            var pick = UiKit.Button($"{i + 1}. {w.Name} — {w.Total} вр." + (w.Enabled ? string.Empty : " (выкл.)"), () => { _model.SelectedWave = _model.SelectedWave == id ? null : id; Stamp++; },
+                ButtonKind.Flat, IdPrefix + "wave.pick." + (i + 1), w.StartText(i == 0));
+            pick.ToggleMode = true;
+            pick.SetPressedNoSignal(_model.SelectedWave == id);
+            pick.Alignment = HorizontalAlignment.Left;
+            inspector.Add(pick);
+        }
+
+        inspector.Button(IdPrefix + "wave.add", "＋ Волна", () => { _model.AddWave(); Stamp++; });
+        if (s.Waves.FirstOrDefault(w => w.Id == _model.SelectedWave) is { } wave)
+        {
+            BuildWaveCard(inspector, wave, s.Waves.IndexOf(wave));
+        }
+    }
+
+    private void BuildWaveCard(Inspector inspector, WaveData wave, int index)
+    {
+        var id = wave.Id;
+        inspector.Section($"Волна «{wave.Name}» — {wave.Total} вр.");
+        inspector.LineText(IdPrefix + "wave.name", "Название", wave.Name, v => Refuse(_model.SetWaveName(id, v)));
+        inspector.Choice(IdPrefix + "wave.start", "Старт", WaveData.Starts.Select(o => new ChoiceOption(o.Value, o.Label)).ToList(), wave.Start, v => Refuse(_model.SetWaveStart(id, v)));
+        inspector.LineText(IdPrefix + "wave.delay", wave.Start == WaveData.AtTime ? "Секунда боя" : "Задержка, с", Inspector.Num(wave.Delay), v => Refuse(_model.SetWaveDelay(id, v)),
+            wave.StartText(index == 0));
+        inspector.Check(IdPrefix + "wave.enabled", "Включена", wave.Enabled, on => _model.SetWaveEnabled(id, on), "Выключенная волна остаётся в сценарии, но не идёт и не считается.");
+        var row = inspector.Row();
+        row.AddChild(UiKit.Button("Копия", () => { _model.DuplicateWave(id); Stamp++; }, ButtonKind.Normal, IdPrefix + "wave.copy"));
+        row.AddChild(UiKit.Button("↑", () => _model.MoveWave(id, -1), ButtonKind.Normal, IdPrefix + "wave.up", "Раньше"));
+        row.AddChild(UiKit.Button("↓", () => _model.MoveWave(id, 1), ButtonKind.Normal, IdPrefix + "wave.down", "Позже"));
+        row.AddChild(UiKit.Button("Удалить", () => _model.RemoveWave(id), ButtonKind.Danger, IdPrefix + "wave.delete"));
+
+        var routes = _model.MapRoutes().Select(r => new ChoiceOption(r.Id, r.Name + (r.Enabled ? string.Empty : " (выкл.)"))).ToList();
+        var units = ReferenceOptions(ContentTypeRegistry.Unit, ReferenceFilter.Any, null, allowCreate: false);
+        for (var k = 0; k < wave.Groups.Count; k++)
+        {
+            var g = wave.Groups[k];
+            var gid = g.Id;
+            var n = (k + 1).ToString(CultureInfo.InvariantCulture);
+            inspector.Text($"Группа {n}: {g.Count} × «{_model.UnitName(g.Unit)}» по «{_model.RouteName(g.Route)}»", size: 13);
+            inspector.Choice(IdPrefix + $"group.{n}.route", "Маршрут", routes, g.Route, v => Refuse(_model.SetGroupRoute(id, gid, v)));
+            inspector.Choice(IdPrefix + $"group.{n}.unit", "Юнит врага", units, g.Unit, v => Refuse(_model.SetGroupUnit(id, gid, v)));
+            inspector.LineText(IdPrefix + $"group.{n}.count", "Врагов", g.Count.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetGroupCount(id, gid, v)));
+            inspector.LineText(IdPrefix + $"group.{n}.delay", "Первый через, с", Inspector.Num(g.FirstDelay), v => Refuse(_model.SetGroupTime(id, gid, "firstDelay", v)));
+            inspector.LineText(IdPrefix + $"group.{n}.interval", "Интервал, с", Inspector.Num(g.Interval), v => Refuse(_model.SetGroupTime(id, gid, "interval", v)),
+                "0 — все сразу: занятый вход пропускает их по одному, без наложений.");
+            inspector.LineText(IdPrefix + $"group.{n}.offset", "Сдвиг группы, с", Inspector.Num(g.Offset), v => Refuse(_model.SetGroupTime(id, gid, "offset", v)),
+                "Сдвиг от начала волны, чтобы согласовать несколько маршрутов.");
+            var grow = inspector.Row();
+            var on = AutomationIds.Register(new CheckBox { Text = "включена", ButtonPressed = g.Enabled, FocusMode = Control.FocusModeEnum.None }, IdPrefix + $"group.{n}.enabled");
+            on.Toggled += value => _model.SetGroupEnabled(id, gid, value);
+            grow.AddChild(on);
+            grow.AddChild(UiKit.Button("Убрать группу", () => _model.RemoveGroup(id, gid), ButtonKind.Flat, IdPrefix + $"group.{n}.remove"));
+        }
+
+        if (wave.Groups.Count < ScenarioData.MaxGroups)
+        {
+            inspector.Button(IdPrefix + "group.add", "＋ Группа", () => _model.AddGroup(id));
+        }
     }
 
     private void OpenMap()
@@ -433,6 +551,29 @@ public partial class ScenarioEditor : DefinitionEditorShell
             case "scenario-preview":
                 actual = string.Join(" | ", _model.Preview());
                 ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
+            case "scenario-waves":
+                actual = s.Waves.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "scenario-wave-total":
+                // expect:scenario-wave-total:<1-based wave>:<enemies>
+                var w = int.Parse(a[1], CultureInfo.InvariantCulture) - 1;
+                actual = w < s.Waves.Count ? s.Waves[w].Total.ToString(CultureInfo.InvariantCulture) : "none";
+                ok = actual == a[2];
+                return true;
+            case "scenario-wave-enemies":
+                actual = s.WaveEnemies.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "scenario-route-total":
+                // expect:scenario-route-total:<route id>:<enemies over the enabled waves>
+                actual = _model.RouteTotals().FirstOrDefault(t => t.Route == a[1]).Enemies.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[2];
+                return true;
+            case "scenario-base-lives":
+                actual = _model.PlayerBases().FirstOrDefault(b => b.Number.ToString(CultureInfo.InvariantCulture) == a[1]).Lives.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[2];
                 return true;
             case "scenario-selected":
                 actual = _model.SelectedEnemy is { } e ? $"{e.Col},{e.Row}" : "none";

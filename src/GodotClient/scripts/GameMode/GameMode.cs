@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using Godot;
 using HexTactics.Client.App;
 using HexTactics.Client.Debug;
@@ -539,13 +540,30 @@ public partial class GameMode : Node3D
         SyncSkillButtons(selected);
         if (_scenarioLabel is not null)
         {
+            var td = _content.Scenario?.Rules.TowerDefense == true;
             _scenarioLabel.Text = _sim.ScenarioPhase switch
             {
-                HexTactics.Core.Scenarios.ScenarioPhase.Preparing => $"Подготовка: выставьте отряд, задайте маршруты и нажмите «Начать бой» (пробел). Врагов: {_sim.EnemiesLeft}.",
-                HexTactics.Core.Scenarios.ScenarioPhase.Victory => "ПОБЕДА: все враги побеждены.",
-                HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp ? "ПОРАЖЕНИЕ: время вышло." : "ПОРАЖЕНИЕ: отряд погиб, резерв пуст.",
-                _ => $"Бой: осталось врагов — {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с",
+                HexTactics.Core.Scenarios.ScenarioPhase.Preparing => td
+                    ? $"Подготовка: выставьте отряд у маршрутов и нажмите «Начать бой» (пробел). Волн: {_sim.WaveCount}, врагов впереди: {_sim.UpcomingEnemies}."
+                    : $"Подготовка: выставьте отряд, задайте маршруты и нажмите «Начать бой» (пробел). Врагов: {_sim.EnemiesLeft}.",
+                HexTactics.Core.Scenarios.ScenarioPhase.Victory => td ? "ПОБЕДА: все волны пройдены, базы выстояли." : "ПОБЕДА: все враги побеждены.",
+                HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason switch
+                {
+                    HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "ПОРАЖЕНИЕ: время вышло.",
+                    HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "ПОРАЖЕНИЕ: база потеряла все жизни.",
+                    _ => "ПОРАЖЕНИЕ: отряд погиб, резерв пуст.",
+                },
+                _ => td
+                    ? $"Волна {_sim.WavesStarted} из {_sim.WaveCount} · впереди врагов: {_sim.UpcomingEnemies} · на поле: {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с"
+                    : $"Бой: осталось врагов — {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с",
             };
+            if (td)
+            {
+                // Spec part 7 §4.7: the lives of every base (or the shared pool) — what the player defends.
+                _scenarioLabel.Text += "\n" + (_content.Scenario!.Rules.Defeat == HexTactics.Core.Scenarios.DefeatPolicy.SharedLives
+                    ? $"Жизни баз (общие): {_sim.SharedLives}"
+                    : string.Join(" · ", _content.Scenario.Rules.Bases.Select(b => $"«{_map.Bases.FirstOrDefault(m => m.Side == BaseSide.Player && m.Number == b.Base)?.Name ?? b.Base.ToString(CultureInfo.InvariantCulture)}»: {(_sim.BaseLives.TryGetValue(b.Base, out var l) ? l : b.Lives)}/{b.Lives}" + (b.Critical ? string.Empty : " (не крит.)"))));
+            }
         }
     }
 
@@ -555,9 +573,13 @@ public partial class GameMode : Node3D
     private string? ScenarioBanner() => _content.Scenario is null ? null : _sim.ScenarioPhase switch
     {
         HexTactics.Core.Scenarios.ScenarioPhase.Preparing => "⏸  ПОДГОТОВКА  ·  пробел — начать бой",
-        HexTactics.Core.Scenarios.ScenarioPhase.Victory => "★  ПОБЕДА  ·  все враги побеждены",
-        HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp
-            ? "✖  ПОРАЖЕНИЕ  ·  время вышло" : "✖  ПОРАЖЕНИЕ  ·  отряд погиб, резерв пуст",
+        HexTactics.Core.Scenarios.ScenarioPhase.Victory => _content.Scenario.Rules.TowerDefense ? "★  ПОБЕДА  ·  все волны пройдены" : "★  ПОБЕДА  ·  все враги побеждены",
+        HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason switch
+        {
+            HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "✖  ПОРАЖЕНИЕ  ·  время вышло",
+            HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "✖  ПОРАЖЕНИЕ  ·  база потеряла все жизни",
+            _ => "✖  ПОРАЖЕНИЕ  ·  отряд погиб, резерв пуст",
+        },
         _ => null,
     };
 
@@ -860,7 +882,13 @@ public partial class GameMode : Node3D
             {
                 case ScenarioEnded ended:
                     // Spec part 7 §2.3: the result is logical — the match stops at once, the effects do not delay it.
-                    ShowMessage(ended.Phase == HexTactics.Core.Scenarios.ScenarioPhase.Victory ? "Победа! Все враги побеждены." : "Поражение.", ended.Phase != HexTactics.Core.Scenarios.ScenarioPhase.Victory);
+                    ShowMessage(ended.Phase == HexTactics.Core.Scenarios.ScenarioPhase.Victory ? "Победа!" : "Поражение.", ended.Phase != HexTactics.Core.Scenarios.ScenarioPhase.Victory);
+                    break;
+                case WaveStarted wave:
+                    ShowMessage($"Волна {wave.Wave + 1} из {_sim.WaveCount}: врагов {wave.Total}.", false);
+                    break;
+                case EnemyLeaked leak:
+                    ShowMessage($"Враг прорвался к «{_map.Bases.FirstOrDefault(m => m.Side == BaseSide.Player && m.Number == leak.Base)?.Name ?? leak.Base.ToString(CultureInfo.InvariantCulture)}»: осталось жизней {leak.LivesLeft}.", true);
                     break;
                 case SkillActivated s:
                     _combatFx.Handle(e, id => _units.Views.TryGetValue(id, out var v) ? v.Position : null, _layout);
@@ -1511,6 +1539,20 @@ public partial class GameMode : Node3D
             case "enemies-left":
                 actual = _sim.EnemiesLeft.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];
+                break;
+            case "wave":
+                // expect:wave:<started>/<count>
+                actual = $"{_sim.WavesStarted}/{_sim.WaveCount}";
+                ok = actual == a[1];
+                break;
+            case "upcoming":
+                actual = _sim.UpcomingEnemies.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "base-lives":
+                // expect:base-lives:<base number>:<lives left>
+                actual = _sim.BaseLives.TryGetValue(int.Parse(a[1], CultureInfo.InvariantCulture), out var lives) ? lives.ToString(CultureInfo.InvariantCulture) : "none";
+                ok = actual == a[2];
                 break;
             case "routes-visible":
                 actual = _routeLayer.Visible ? "yes" : "no";
