@@ -927,6 +927,9 @@ public static class CombatPreviewText
                 + (unit.AttackAreaRadius > 0 ? $"; область {unit.AttackAreaRadius} гекс. вокруг цели, {(unit.AttackAreaSplit ? "сила делится между целями" : "полная сила каждой цели")}." : "."),
             string.Create(CultureInfo.InvariantCulture, $"Здоровье {N(health)} HP · движение {N(speed)} гекс/с (переход одного гекса за {N(1 / Math.Max(0.01, speed))} с)."),
         };
+        // Spec part 7 §8.5: «Предпросмотр: 3 удара/с · передний гекс · 1 враг · 10 урона до защиты».
+        lines.Add(BasicAttackPreview(unit, library, power, rate));
+
         // Spec part 6 §7.1, P6-41: the tiers of the unit's own chance (the base of the combat rules adds to it in battle).
         var crit = PassiveEffects.CritChance(unit, library);
         if (crit > 0)
@@ -958,6 +961,24 @@ public static class CombatPreviewText
         }
 
         return lines;
+    }
+
+    /// <summary>The base attack in one line (spec part 7 §8.5); it acts only on maps with automatic attacks on.</summary>
+    public static string BasicAttackPreview(UnitData unit, ContentLibrary library, double power, double rate)
+    {
+        if (!unit.AutoAttackEnabled)
+        {
+            return "Базовая атака: автоатака выключена — юнит бьёт только по приказу атаки.";
+        }
+
+        if (library.Find(ContentTypeRegistry.BasicAttack, unit.BasicAttack) is not { Data: BasicAttackData attack })
+        {
+            return $"✗ базовая атака «{unit.BasicAttack}» не найдена — автоатаки не будет.";
+        }
+
+        var targets = attack.MaxTargets == 1 ? "1 враг" : $"до {attack.MaxTargets} врагов";
+        return string.Create(CultureInfo.InvariantCulture,
+            $"Базовая атака: {N(rate)} удар/с · {HexTactics.Editor.Mechanics.BasicAttackEditorModel.Area(attack)} · {targets} · {N(power * attack.PowerPercent / 100)} урона до защиты (на картах с автоатакой).");
     }
 
     private static string N(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);

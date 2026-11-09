@@ -790,6 +790,8 @@ public partial class MapEditor : Node3D, IContentEditor
                 Message("✗ " + refusal, IssueSeverity.Error);
             }
         }, "Общие константы боя (K защиты A); без выбора — совместимые правила старых карт.");
+        _inspector.Check("map.autoattacks", "Автоатака юнитов", map.AutoAttacks, on => _model.SetAutoAttacks(on),
+            "Юниты сами бьют врагов в области своей базовой атаки, не поворачиваясь и не преследуя их. Карты до v0.32.0 — без автоатаки.");
         _inspector.Section("Рабочая область");
         var row = _inspector.Row();
         var columns = AutomationIds.Register(new SpinBox { MinValue = 1, MaxValue = 32, Value = map.Columns, Prefix = "ширина", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }, "map.columns");
@@ -913,6 +915,11 @@ public partial class MapEditor : Node3D, IContentEditor
         {
             case "tiles":
                 actual = _model.Map.Tiles.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "map-autoattacks":
+                // expect:map-autoattacks:yes|no
+                actual = _model.Map.AutoAttacks ? "yes" : "no";
                 ok = actual == a[1];
                 break;
             case "map-ruleset":

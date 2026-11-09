@@ -137,7 +137,7 @@ public partial class UnitEditor : DefinitionEditorShell
     private const string SecFeatures = "features";
 
     private static readonly string[] MainKeys = { "maxHealth", "moveSpeed", "attackRate", "side" };
-    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "critChance", "attackArmorPenetration", "attackArmorPenetrationPercent" };
+    private static readonly string[] AttackKeys = { "attackPower", "attackRange", "attackDamageType", "attackAreaRadius", "attackAreaSplit", "autoAttackEnabled", "basicAttack", "critChance", "attackArmorPenetration", "attackArmorPenetrationPercent" };
 
     private string _section = SecMain;
     private string _resSearch = string.Empty;
@@ -929,6 +929,11 @@ public partial class UnitEditor : DefinitionEditorShell
                 // expect:res-has:<row label>:yes|no — a row with this label is visible in the table
                 actual = _model.ResistanceView(_resSearch, _resAll, _expanded).Rows.Any(r => r.Row.Label == a[1]) ? "yes" : "no";
                 ok = actual == a[2];
+                return true;
+            case "battle-preview":
+                // expect:battle-preview:<text> — the «В бою» lines of the unit (attack, base attack, crit, skills)
+                actual = string.Join(" | ", HexTactics.Editor.Units.CombatPreviewText.Describe(_model.Unit, Library!));
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
                 return true;
             case "features-summary":
                 // expect:features-summary:<text> — the summary of «Особенности» (species, tags, active effects)

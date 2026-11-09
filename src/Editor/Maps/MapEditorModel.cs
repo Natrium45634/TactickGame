@@ -187,6 +187,9 @@ public sealed class MapEditorModel
         .Select(r => (r.Id, r.Name + (r.IsBuiltIn ? string.Empty : " (свой)")))
         .ToList();
 
+    /// <summary>Spec part 7 §8, D-170: units hit enemies in their base attack area on their own on this map.</summary>
+    public void SetAutoAttacks(bool on) => Apply(on ? "Автоатака юнитов включена" : "Автоатака юнитов выключена", m => m.AutoAttacks = on);
+
     /// <summary>Assigns the map's combat ruleset (the compatible one stays the meaning of an empty value).</summary>
     public string? SetRuleset(string rulesetId)
     {

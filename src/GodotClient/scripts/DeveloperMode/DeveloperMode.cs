@@ -166,6 +166,12 @@ public partial class DeveloperMode : Node
             editor.Configure(_library, item, draft);
             return editor;
         };
+        Editors["basic_attack"] = (item, draft) =>
+        {
+            var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.BasicAttackEditor { Name = "BasicAttackEditor" };
+            editor.Configure(_library, item, draft);
+            return editor;
+        };
         Editors["combat_ruleset"] = (item, draft) =>
         {
             var editor = new HexTactics.Client.DeveloperMode.Editors.Mechanics.CombatRulesetEditor { Name = "CombatRulesetEditor" };
