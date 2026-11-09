@@ -111,6 +111,8 @@ public static class Migrations
     /// Unit 4 → 5 (spec part 6 §3.5, §10.3): defense A = 0 and no armor penetration — K / (K + 0) = 1, old hits stay the same.
     /// Unit 5 → 6 (spec part 6 §10.3): no personal passives — nothing changes.
     /// Unit 6 → 7: no species, traits, pack or own characteristic values — nothing changes.
+    /// Unit 7 → 8: critical chance 0.
+    /// Unit 8 → 9 (spec part 7 §10): the built-in front base attack, auto attack on — only maps that allow it use it.
     /// </summary>
     public static JsonObject? Unit(int from, JsonObject data, IssueList issues)
     {
@@ -137,6 +139,12 @@ public static class Migrations
                 return copy;
             case 7:
                 copy["critChance"] ??= 0.0; // spec part 6 §10.3: no hidden critical chance for old units
+                return copy;
+            case 8:
+                // Spec part 7 §10: the inherited base attack — the built-in front hex, enabled; it acts only on maps that allow
+                // automatic attacks, and maps made before v0.32.0 do not (D-170). Idempotent: present values stay.
+                copy["basicAttack"] ??= HexTactics.Core.Combat.BasicAttackDefinition.DefaultId;
+                copy["autoAttackEnabled"] ??= true;
                 return copy;
             case 6:
                 copy["species"] ??= string.Empty; // spec part 6 §10.3: no species, no traits, no pack, no own stats

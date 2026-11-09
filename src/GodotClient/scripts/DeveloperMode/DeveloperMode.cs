@@ -1324,15 +1324,26 @@ public partial class DeveloperMode : Node
     // ------------------------------------------------------------------ automation
 
     /// <summary>Screen point of the list row of an object (automation clicks it like a user).</summary>
-    public Vector2? RowScreenPoint(string id)
+    /// <summary>
+    /// The screen centre of a catalog row for automation. A row outside the visible part of the list is scrolled into view
+    /// first and <paramref name="scrolled"/> is set: the click must wait one frame until the scroll applies (D-169).
+    /// </summary>
+    public Vector2? RowScreenPoint(string id, bool allowScroll, out bool scrolled)
     {
+        scrolled = false;
         var item = _tree.GetRoot()?.GetFirstChild();
         while (item is not null)
         {
             if (item.GetMetadata(0).AsString() == id)
             {
-                _tree.ScrollToItem(item);
                 var rect = _tree.GetItemAreaRect(item, 0);
+                if (allowScroll && (rect.Position.Y < 0 || rect.End.Y > _tree.Size.Y))
+                {
+                    _tree.ScrollToItem(item);
+                    scrolled = true;
+                    return null;
+                }
+
                 return _tree.GetCanvasTransform() * (_tree.GetGlobalTransform() * (rect.Position + (rect.Size * 0.5f)));
             }
 

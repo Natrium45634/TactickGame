@@ -75,6 +75,7 @@ public sealed class ContentTypeRegistry
     public const string UnitStat = "unit_stat";
     public const string Species = "species";
     public const string Trait = "trait";
+    public const string BasicAttack = "basic_attack";
 
     /// <summary>The «Механики» group of the catalog.</summary>
     public const string MechanicsGroup = "mechanics";
@@ -138,14 +139,14 @@ public sealed class ContentTypeRegistry
             Description = "Поля из гексов: размер, типы местности, базы и зоны.",
             Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData { CombatRuleset = CombatRulesetData.Standard },
             SchemaVersion = 2, Migrate = Migrations.Map,
-            OptionalDataKeys = new[] { "testPoints", "combatRuleset" },
+            OptionalDataKeys = new[] { "testPoints", "combatRuleset", "autoAttacks" },
         });
         registry.Register(new ContentKind
         {
             Id = Unit, Title = "Юниты", Singular = "юнит", Folder = "units", Order = 20,
             Description = "Определения юнитов: характеристики, навыки, внешний вид.",
             Read = (o, i) => UnitData.Read(o, i), CreateDefault = () => new UnitData(), Fields = UnitData.Fields,
-            SchemaVersion = 8, Migrate = Migrations.Unit,
+            SchemaVersion = 9, Migrate = Migrations.Unit,
         });
         registry.Register(new ContentKind
         {
@@ -190,6 +191,13 @@ public sealed class ContentTypeRegistry
             Description = "Общие константы боя проекта: K защиты A (урон × K / (K + A)) и K по семействам; назначаются карте.",
             Read = (o, i) => CombatRulesetData.Read(o, i), CreateDefault = () => new CombatRulesetData(), Fields = CombatRulesetData.Fields,
             SchemaVersion = 2, Migrate = Migrations.CombatRuleset,
+            Group = MechanicsGroup,
+        });
+        registry.Register(new ContentKind
+        {
+            Id = BasicAttack, Title = "Базовые атаки", Singular = "базовая атака", Folder = "basic_attacks", Order = 85,
+            Description = "Автоматическая атака юнита: своя область гексов относительно взгляда, выбор цели, доля силы атаки и тип урона. Не зависит от навыков.",
+            Read = (o, i) => BasicAttackData.Read(o, i), CreateDefault = () => new BasicAttackData(),
             Group = MechanicsGroup,
         });
         registry.Register(new ContentKind

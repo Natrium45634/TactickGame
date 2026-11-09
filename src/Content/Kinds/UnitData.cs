@@ -54,6 +54,12 @@ public sealed class UnitData : IContentData
     /// <summary>Critical chance of the unit's hits in percentage points (spec part 6 §7.1); may exceed 100 (supercrit).</summary>
     public double CritChance { get; set; }
 
+    /// <summary>The automatic base attack (spec part 7 §8.2 <c>basicAttackRef</c>): a <c>basic_attack</c> id.</summary>
+    public string BasicAttack { get; set; } = HexTactics.Core.Combat.BasicAttackDefinition.DefaultId;
+
+    /// <summary>Spec part 7 §8.2 <c>autoAttackEnabled</c>: the unit hits enemies in its base attack area on its own (where the map allows).</summary>
+    public bool AutoAttackEnabled { get; set; } = true;
+
     /// <summary>Armor penetration of the normal attack in defense points (spec part 6 §3.4 p.4).</summary>
     public double AttackArmorPenetration { get; set; }
 
@@ -154,6 +160,19 @@ public sealed class UnitData : IContentData
         },
         new()
         {
+            Key = "autoAttackEnabled", Label = "Автоатака включена", Kind = FieldKind.Flag, Default = true,
+            Hint = "Юнит сам бьёт врагов в области своей базовой атаки (на картах с включённой автоатакой), не поворачиваясь и не преследуя их.",
+            Get = o => ((UnitData)o).AutoAttackEnabled, Set = (o, v) => ((UnitData)o).AutoAttackEnabled = (bool)v!,
+        },
+        new()
+        {
+            Key = "basicAttack", Label = "Базовая атака", Kind = FieldKind.Reference, RefKind = "basic_attack",
+            Default = HexTactics.Core.Combat.BasicAttackDefinition.DefaultId,
+            Hint = "Область и выбор цели автоматической атаки; не зависит от навыков. Своя — «Механики» → «Базовые атаки».",
+            Get = o => ((UnitData)o).BasicAttack, Set = (o, v) => ((UnitData)o).BasicAttack = (string)v!,
+        },
+        new()
+        {
             Key = "critChance", Label = "Шанс крита", Kind = FieldKind.Number, Default = 0.0, Min = 0, Max = 1000, Unit = "п.п.",
             Hint = "Только если правила боя карты включают криты: 35 — 35 % крита, 100 — крит всегда, 125 — ещё 25 % сверхкрита, 200 — сверхкрит всегда.",
             Get = o => ((UnitData)o).CritChance, Set = (o, v) => ((UnitData)o).CritChance = (double)v!,
@@ -223,6 +242,8 @@ public sealed class UnitData : IContentData
             ["resistances"] = ResistancesJson(),
             ["armor"] = ValuesJson(Armor),
             ["critChance"] = CritChance,
+            ["basicAttack"] = BasicAttack,
+            ["autoAttackEnabled"] = AutoAttackEnabled,
             ["attackArmorPenetration"] = AttackArmorPenetration,
             ["attackArmorPenetrationPercent"] = AttackArmorPenetrationPercent,
             ["resistanceProfiles"] = Strings(ResistanceProfiles),
@@ -278,6 +299,8 @@ public sealed class UnitData : IContentData
         ReadValues(obj, "armor", data.Armor, issues, "защита A — число очков");
         data.AttackArmorPenetration = JsonFields.Number(obj, "attackArmorPenetration", 0, issues, string.Empty);
         data.CritChance = JsonFields.Number(obj, "critChance", 0, issues, string.Empty);
+        data.BasicAttack = JsonFields.Text(obj, "basicAttack", HexTactics.Core.Combat.BasicAttackDefinition.DefaultId, issues, string.Empty);
+        data.AutoAttackEnabled = JsonFields.Flag(obj, "autoAttackEnabled", true, issues, string.Empty);
         data.AttackArmorPenetrationPercent = JsonFields.Number(obj, "attackArmorPenetrationPercent", 0, issues, string.Empty);
         data.ResistanceProfiles.AddRange(JsonFields.TextList(obj, "resistanceProfiles", issues, string.Empty));
         data.DefenseRules.AddRange(JsonFields.TextList(obj, "defenseRules", issues, string.Empty));
@@ -427,6 +450,11 @@ public sealed class UnitData : IContentData
             yield return new ContentRef("resistance_profile", p);
         }
 
+        if (BasicAttack.Length > 0)
+        {
+            yield return new ContentRef("basic_attack", BasicAttack);
+        }
+
         foreach (var r in DefenseRules)
         {
             yield return new ContentRef("defense_rule", r);
@@ -515,6 +543,11 @@ public sealed class UnitData : IContentData
         foreach (var p in Passives)
         {
             p.RemapReferences(newIds);
+        }
+
+        if (newIds.TryGetValue(new ContentRef("basic_attack", BasicAttack), out var basicAttack))
+        {
+            BasicAttack = basicAttack;
         }
 
         if (newIds.TryGetValue(new ContentRef("species", Species), out var species))
@@ -686,6 +719,7 @@ public sealed class UnitData : IContentData
             AttackRange = AttackRange, Side = Side, Color = Color, Scale = Scale,
             AttackDamageType = AttackDamageType, AttackAreaRadius = AttackAreaRadius, AttackAreaSplit = AttackAreaSplit,
             AttackArmorPenetration = AttackArmorPenetration, AttackArmorPenetrationPercent = AttackArmorPenetrationPercent, CritChance = CritChance,
+            BasicAttack = BasicAttack, AutoAttackEnabled = AutoAttackEnabled,
         };
         foreach (var (key, value) in Armor)
         {

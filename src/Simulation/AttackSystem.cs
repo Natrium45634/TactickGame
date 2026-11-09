@@ -60,8 +60,11 @@ internal sealed class AttackSystem : ISimulationSystem
                 combat.Reset();
             }
 
+            AutoAttack(unit, tick, dt);
             return;
         }
+
+        combat.AutoTimer = 0; // an explicit order owns the cadence: no free extra hit (spec part 7 §8.3 p.3, M7-47)
 
         var target = _state.FindUnit(targetId);
         if (target is null || !target.IsAlive)
@@ -166,6 +169,60 @@ internal sealed class AttackSystem : ISimulationSystem
                 armorPenetration: stats.AttackArmorPenetration, armorPenetrationPercent: stats.AttackArmorPenetrationPercent,
                 canCrit: true, canSurprise: true, rollKey: $"atk:{unit.Id.Value}:{unit.Combat.HitsDelivered}:{t.Id.Value}"), tick);
         }
+    }
+
+    /// <summary>
+    /// The automatic base attack (spec part 7 §8): only enemies in the unit's own area, turned with its logical facing; the unit
+    /// never turns to them and never walks after them. One hit per attack interval of game time while an enemy is in the area
+    /// (the first one interval after it entered); no enemy — the timer resets, nothing is spent. While walking only if allowed.
+    /// </summary>
+    private void AutoAttack(UnitState unit, long tick, double dt)
+    {
+        var combat = unit.Combat;
+        var stats = unit.Stats;
+        if (!_settings.AutoAttacks || !stats.AutoAttackEnabled || stats.BasicAttack is not { } basic || unit.Facing is not { } facing
+            || (!basic.WhileMoving && unit.Motion.IsStepping))
+        {
+            combat.AutoTimer = 0;
+            return;
+        }
+
+        var targets = AutoTargets(unit, basic, facing);
+        if (targets.Count == 0)
+        {
+            combat.AutoTimer = 0;
+            return;
+        }
+
+        combat.AutoTimer += dt;
+        var interval = stats.AttackInterval;
+        for (var n = 0; n < BasicAttackDefinition.MaxHitsPerTick && combat.AutoTimer + 1e-9 >= interval && targets.Count > 0; n++)
+        {
+            combat.AutoTimer -= interval;
+            combat.AutoHits++;
+            var amount = stats.AttackPower * System.Math.Max(0, basic.PowerPercent) / 100;
+            var type = basic.DamageTypeId is { Length: > 0 } own ? own : stats.AttackDamageTypeId;
+            foreach (var t in targets)
+            {
+                _damage.Resolve(_damage.Create(unit.Id, t.Id, type, amount, DamageOrigin.NormalAttack,
+                    armorPenetration: stats.AttackArmorPenetration, armorPenetrationPercent: stats.AttackArmorPenetrationPercent,
+                    canCrit: basic.CanCrit, canSurprise: basic.CanSurprise, rollKey: $"auto:{unit.Id.Value}:{combat.AutoHits}:{t.Id.Value}"), tick);
+            }
+
+            targets = AutoTargets(unit, basic, facing); // a target may have died: no hit into the void
+        }
+
+        if (combat.AutoTimer > interval)
+        {
+            combat.AutoTimer = interval; // the safety limit caps a backlog, never a burst after it
+        }
+    }
+
+    private List<UnitState> AutoTargets(UnitState unit, BasicAttackDefinition basic, HexDirection facing)
+    {
+        var area = new HashSet<HexCoord>(basic.Area(unit.Cell, facing));
+        var candidates = _state.Units.Where(u => u.IsAlive && u.IsActive && u.Side != unit.Side && area.Contains(u.Cell));
+        return basic.Choose(unit.Cell, facing, candidates, u => u.Cell, u => u.CurrentHealth, u => u.Id.Value).ToList();
     }
 
     /// <summary>Chooses the nearest free reachable hex within range of the target and walks there (a detour step).</summary>

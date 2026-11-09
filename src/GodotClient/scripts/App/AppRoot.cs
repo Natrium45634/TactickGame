@@ -308,10 +308,22 @@ public partial class AppRoot : Node
             case "row":
                 {
                     var id = arg.StartsWith("name=", StringComparison.Ordinal) ? _developer?.IdByName(arg[5..]) : arg;
-                    if (id is not null && _developer?.RowScreenPoint(id) is { } point)
+                    if (id is not null && _developer is { } developer)
                     {
-                        AutomationInput.Click(point);
-                        return 3;
+                        // A row below the fold is scrolled into view first; the click comes a frame later at its new place (D-169).
+                        var point = developer.RowScreenPoint(id, allowScroll: _rowScrolledFor != id, out var scrolled);
+                        if (scrolled)
+                        {
+                            _rowScrolledFor = id;
+                            return AutomationRunner.Repeat;
+                        }
+
+                        _rowScrolledFor = null;
+                        if (point is { } p)
+                        {
+                            AutomationInput.Click(p);
+                            return 3;
+                        }
                     }
 
                     _automation.ReportCheck(false, $"row:{arg} (no such row)");
@@ -349,6 +361,7 @@ public partial class AppRoot : Node
     }
 
     private string? _scrolledFor;
+    private string? _rowScrolledFor;
     private string? _revealedFor;
     private object? _settledEditor;
     private int _settleFrames;

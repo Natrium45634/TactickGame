@@ -172,6 +172,7 @@ public partial class GameMode : Node3D
                 TileEffects = _content.TileEffects,
                 DamageTypes = _content.DamageTypes,
                 CombatRules = _content.CombatRules,
+                AutoAttacks = _content.AutoAttacks,
             },
             _content.Squad.Count > 0
                 ? new RosterState(System.Linq.Enumerable.Select(_content.Squad, s => (s.Name, (HexTactics.Core.Units.UnitProfile?)s.Profile)))

@@ -23,8 +23,8 @@ public class LibraryBrowserTests
         });
         var browser = new LibraryBrowser(ContentTestKit.Library(null, registry));
         var categories = browser.Categories();
-        Assert.Equal(new[] { "Карты", "Юниты", "Дерево видов", "Теги", "Навыки", "Гексы", "Типы урона", "Статусы", "Правила защиты", "Профили защиты и сопротивлений", "Правила боя", "Характеристики" }, categories.Select(c => c.Kind.Title));
-        Assert.Equal(new[] { 1, 1, 0, 0, 1, 7, 9, 0, 1, 2, 2, 1 }, categories.Select(c => c.Count));
+        Assert.Equal(new[] { "Карты", "Юниты", "Дерево видов", "Теги", "Навыки", "Гексы", "Типы урона", "Статусы", "Правила защиты", "Профили защиты и сопротивлений", "Правила боя", "Базовые атаки", "Характеристики" }, categories.Select(c => c.Kind.Title));
+        Assert.Equal(new[] { 1, 1, 0, 0, 1, 7, 9, 0, 1, 2, 2, 1, 1 }, categories.Select(c => c.Count));
     }
 
     [Fact]

@@ -31,6 +31,15 @@ public sealed record UnitStats
     public string AttackDamageTypeId { get; init; } = DamageTypes.Untyped;
 
     /// <summary>
+    /// The automatic base attack (spec part 7 §8): its own area and choice of targets; null — none. It acts only when
+    /// <see cref="AutoAttackEnabled"/> and the match allows automatic attacks.
+    /// </summary>
+    public BasicAttackDefinition? BasicAttack { get; init; }
+
+    /// <summary>Spec part 7 §8.2 <c>AutoAttackEnabled</c>: false for units without one (and in tests that do not ask for it).</summary>
+    public bool AutoAttackEnabled { get; init; }
+
+    /// <summary>
     /// Area of the normal attack (spec part 5 §2.1, §8.3): 0 — the target only; N — every enemy of the attacker within N
     /// hexes of the target's hex (the target included).
     /// </summary>
@@ -137,6 +146,12 @@ public sealed class CombatState
 
     /// <summary>Game time accumulated towards the next hit while the target is in range.</summary>
     public double AttackTimer { get; internal set; }
+
+    /// <summary>Game time accumulated towards the next automatic base attack while an enemy stands in its area (spec part 7 §8.4).</summary>
+    public double AutoTimer { get; internal set; }
+
+    /// <summary>Automatic base attacks delivered by this unit (their roll keys).</summary>
+    public int AutoHits { get; internal set; }
 
     /// <summary>The hex the unit is approaching to attack from, if any.</summary>
     public HexTactics.Core.Hex.HexCoord? ApproachCell { get; internal set; }

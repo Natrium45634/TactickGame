@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 8,
+  "schemaVersion": 9,
   "id": "core.unit.operative",
   "kind": "unit",
   "name": "Оперативник",
@@ -17,6 +17,10 @@
     {
       "kind": "damage_type",
       "id": "core.damage.physical"
+    },
+    {
+      "kind": "basic_attack",
+      "id": "core.basic_attack.front"
     }
   ],
   "data": {
@@ -37,6 +41,8 @@
     "resistances": {},
     "armor": {},
     "critChance": 0,
+    "basicAttack": "core.basic_attack.front",
+    "autoAttackEnabled": true,
     "attackArmorPenetration": 0,
     "attackArmorPenetrationPercent": 0,
     "defenseRules": [],

@@ -39,6 +39,12 @@ public sealed record SimulationSettings
     /// <summary>Combat constants of the match's ruleset (spec part 6 §3.2: K of the defense formula).</summary>
     public HexTactics.Core.Combat.CombatRules CombatRules { get; init; } = HexTactics.Core.Combat.CombatRules.Default;
 
+    /// <summary>
+    /// Spec part 7 §8: units with an enabled base attack hit enemies in its area on their own. Off for maps made before
+    /// v0.32.0 and until the author turns it on, so old matches keep their numbers (D-170).
+    /// </summary>
+    public bool AutoAttacks { get; init; }
+
     /// <summary>Damage types by id (spec part 5 §2): the content catalog; the built-in one if no content is loaded.</summary>
     public IReadOnlyDictionary<string, HexTactics.Core.Combat.DamageTypeDefinition> DamageTypes { get; init; } = HexTactics.Core.Combat.DamageTypes.BuiltIn;
 

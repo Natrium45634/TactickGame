@@ -53,6 +53,9 @@ public sealed record GameContent(
     /// <summary>Id of the ruleset the rules come from.</summary>
     public string CombatRulesetId { get; init; } = CombatRulesetData.Legacy;
 
+    /// <summary>The map allows automatic base attacks (spec part 7 §8, D-170) for <c>SimulationSettings.AutoAttacks</c>.</summary>
+    public bool AutoAttacks { get; init; }
+
     /// <summary>Names of the five roster operatives (spec part 2 §1).</summary>
     public static IReadOnlyList<string> OperativeNames { get; } = new[] { "Альфа", "Браво", "Чарли", "Дельта", "Эхо" };
 }
@@ -287,6 +290,24 @@ public static class RuntimeFactory
             .Select(s => new ShieldDefinition(s.Name, s.Capacity, s.DamageType == ShieldData.AnyType ? null : s.DamageType, s.Order))
             .ToArray();
 
+        // Spec part 7 §8.2: the base attack by its reference; a missing or broken one means no automatic attack (never a guess).
+        BasicAttackDefinition? basic = null;
+        if (unit.BasicAttack.Length > 0)
+        {
+            if (library?.Find(ContentTypeRegistry.BasicAttack, unit.BasicAttack) is { Data: BasicAttackData basicData } basicItem && !basicItem.HasErrors)
+            {
+                basic = basicData.ToDefinition(basicItem.Id, basicItem.Name);
+            }
+            else if (library is null && unit.BasicAttack == BasicAttackDefinition.DefaultId)
+            {
+                basic = BasicAttackDefinition.Front;
+            }
+            else
+            {
+                issues?.Warning(unitItem.Id, $"у юнита «{unitItem.Name}» базовая атака «{unit.BasicAttack}» не найдена или с ошибками — автоатаки нет");
+            }
+        }
+
         // Spec part 6 §4: the passives change the characteristics, R and A here, once — the battle sees only the results.
         var stats = new UnitStats
         {
@@ -306,6 +327,8 @@ public static class RuntimeFactory
             CritImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.CritImmunity),
             SurpriseImmune = PassiveEffects.Active(unit, library).Any(x => x.Passive.Operation == PassiveOperations.SurpriseImmunity),
             SurpriseChanceBonus = PassiveEffects.SurpriseChanceBonus(unit, library),
+            BasicAttack = basic,
+            AutoAttackEnabled = unit.AutoAttackEnabled && basic is not null,
             Species = PassiveEffects.SpeciesChain(library, unit.Species).Select(i => i.Id).ToArray(),
             PackId = unit.PackId,
             AttackArmorPenetration = unit.AttackArmorPenetration,
@@ -455,6 +478,7 @@ public static class RuntimeFactory
         {
             Units = units, Squad = roster, TileEffects = tileEffects, DamageTypes = damageTypes,
             CombatRules = BuildCombatRules(library, rulesetId), CombatRulesetId = rulesetId,
+            AutoAttacks = mapItem.Data is MapData { AutoAttacks: true },
         };
     }
 

@@ -95,6 +95,12 @@ public sealed class MapData : IContentData
     /// <summary>The ruleset the map plays with.</summary>
     public string EffectiveRuleset => CombatRuleset.Length == 0 ? CombatRulesetData.Legacy : CombatRuleset;
 
+    /// <summary>
+    /// Spec part 7 §8: units hit enemies in their base attack area on their own. Optional since v0.32.0 and written only when on:
+    /// maps without it (all made before) keep their matches unchanged until the author turns it on (D-170).
+    /// </summary>
+    public bool AutoAttacks { get; set; }
+
     public MapTileData? TileAt(int col, int row) => Tiles.Find(t => t.Col == col && t.Row == row);
 
     public MapPointData? PointAt(int col, int row) => TestPoints.Find(p => p.Col == col && p.Row == row);
@@ -162,6 +168,11 @@ public sealed class MapData : IContentData
             result["testPoints"] = points;
         }
 
+        if (AutoAttacks)
+        {
+            result["autoAttacks"] = true;
+        }
+
         if (CombatRuleset.Length > 0)
         {
             result["combatRuleset"] = CombatRuleset;
@@ -179,6 +190,7 @@ public sealed class MapData : IContentData
             Rows = JsonFields.Integer(obj, "rows", 10, issues, string.Empty),
             BaseName = JsonFields.Text(obj, "baseName", "База игрока", issues, string.Empty),
             CombatRuleset = JsonFields.Text(obj, "combatRuleset", string.Empty, issues, string.Empty),
+            AutoAttacks = JsonFields.Flag(obj, "autoAttacks", false, issues, string.Empty),
         };
         if (JsonFields.Array(obj, "zones", issues, string.Empty) is { } zones)
         {
@@ -355,7 +367,7 @@ public sealed class MapData : IContentData
 
     public IContentData Clone()
     {
-        var copy = new MapData { Layout = Layout, Columns = Columns, Rows = Rows, BaseName = BaseName, CombatRuleset = CombatRuleset };
+        var copy = new MapData { Layout = Layout, Columns = Columns, Rows = Rows, BaseName = BaseName, CombatRuleset = CombatRuleset, AutoAttacks = AutoAttacks };
         foreach (var z in Zones)
         {
             copy.Zones.Add(z.Clone());

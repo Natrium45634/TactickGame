@@ -1,6 +1,7 @@
 {
   "comment": "Built-in content of the game (read-only). The client loads exactly these files; Content.Tests checks the list against the folders.",
   "files": [
+    "basic_attacks/core.basic_attack.front.json",
     "combat_rulesets/core.ruleset.legacy.json",
     "combat_rulesets/core.ruleset.standard.json",
     "damage_types/core.damage.blunt.json",

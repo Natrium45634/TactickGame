@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "core.basic_attack.front",
+  "kind": "basic_attack",
+  "name": "Передний гекс",
+  "description": "Встроенная базовая атака (ТЗ ч.7 §8.2): один гекс прямо перед юнитом, ближайший враг, один удар силой атаки юнита (PROTOTYPE_DEFAULT). Поворачивается вместе со взглядом юнита.",
+  "revision": 1,
+  "modified": "2026-11-09T00:00:00Z",
+  "tags": [
+    "встроенный"
+  ],
+  "references": [],
+  "data": {
+    "cells": [
+      {
+        "q": 0,
+        "r": -1
+      }
+    ],
+    "targetPriority": "nearest",
+    "maxTargets": 1,
+    "powerPercent": 100,
+    "damageType": "",
+    "canCrit": true,
+    "canSurprise": true,
+    "whileMoving": true
+  }
+}
