@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.35.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.36.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой, маршруты врагов). Формат контента —
+зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой, маршруты врагов, волны и Tower Defense). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -488,6 +488,13 @@ tests/*  ──► соответствующие сборки
   `MapEditorModel.Routes.cs` — черновик (`RouteClickAt`, `RouteHover`, `RemoveLastVisit`, `CancelRouteDraft`, `RedrawRoute`),
   карточка, проверка; событие `DraftChanged` перерисовывает только линии. Клиент: `RouteLayer` (полосы с шевронами и
   номерами, без теста глубины), «〰 Маршруты» в `MapEditor` (след курсора `TraceRoute`), раздел «Маршруты врагов» в отладке боя.
+- **Волны и Tower Defense (с v0.36.0, ТЗ ч.7 §4.5–4.7, D-182–D-184).** Core: `WaveDefinition`, `SpawnGroupDefinition`,
+  `BaseLives`, `DefeatPolicy`, поля Tower Defense в `ScenarioRules`, `GameState.RemoveFromMap`. Simulation: `WaveSystem` — первая
+  система тика (`Waves, Packs, Blocks, Movement, Skills, Attack, Tiles, Statuses, Objectives`): старт волн, очереди входов,
+  один враг за тик на вход, разрешение волн; `ObjectiveSystem` — утечки (`EnemyLeaked`), жизни баз, политика поражения,
+  победа после волн. Content: `WaveData`, `SpawnGroupData`, `BaseLivesData`, `RuntimeFactory.CheckWaves` и `ScenarioRulesOf`.
+  Editor: волны, группы, базы, суммы и расписание в `ScenarioEditorModel`. Клиент: разделы «Базы игрока» и «Волны» в
+  `ScenarioEditor` (линии маршрутов на поле), строка волн и жизней баз в `GameMode`.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -634,7 +641,12 @@ crit|surprise|moving`, `battack.turn.left|right`, `cell:q,r` (гекс поля 
 `expect:route-mode:on|off`, `expect:routes:<N>`, `expect:route:<id>:<c,r c,r …>`, `expect:route-ends:<id>:<база врага>><база игрока>`,
 `expect:route-draft:<N>`, `expect:route-error:<текст>|none`, `expect:route-selected:<id>|none`, `expect:route-check:<id>:ok|<N>`,
 `expect:route-name:<id>:<название>`; в игре — `game.routes.show`, `game.route.<id>`, шаг `route:<id>`, проверки
-`expect:routes-visible:yes|no`, `expect:route-index:<ID>:<индекс>|done|none`. В бою: `advance:N` — ровно N
+`expect:routes-visible:yes|no`, `expect:route-index:<ID>:<индекс>|done|none`. С v0.36.0: редактор сценария —
+`scenario.base.<N>.lives|critical`, `scenario.wave.add`, `scenario.wave.pick.<n>`, `scenario.wave.name|start|delay|enabled|copy|up|down|delete`,
+`scenario.group.<n>.route|unit|count|delay|interval|offset|enabled|remove`, `scenario.group.add`, `scenario.defeat`; проверки
+`expect:scenario-waves:<N>`, `expect:scenario-wave-total:<n>:<N>`, `expect:scenario-wave-enemies:<N>`, `expect:scenario-route-total:<id>:<N>`,
+`expect:scenario-base-lives:<база>:<N>`; в бою `expect:wave:<начато>/<всего>`, `expect:upcoming:<N>`, `expect:base-lives:<база>:<N>`.
+В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -691,11 +703,13 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV34` = V33 + сценарий «Засада» в редакторе (враг щелчком, поворот, отмена, отряд из одного), его тест от
 «Подготовки» до «Победы» и «Учебный бой» из меню для v0.34.0,
 `$RegressionScenarioV35` = V34 + «Две линии»: базы 1 и 2, две красные линии курсором (повторы, ошибка на препятствии, Backspace,
-Esc, скачок мыши), «Петля», враги по обеим линиям в тесте карты для v0.35.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
+Esc, скачок мыши), «Петля», враги по обеим линиям в тесте карты для v0.35.0,
+`$RegressionScenarioV36` = V35 + Tower Defense «Оборона двух линий»: волна из двух групп, копия выключена, жизни баз, утечки по
+своим базам и «Победа» в тесте для v0.36.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
 30 урона в тесте юнита; `$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34/V35` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34/V35/V36` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Сценарий длиннее 32 000 символов (предел командной строки Windows) идёт несколькими запусками `smoke`, `smoke-2`, … с одной папкой пользователя, разрезанный по концам сценариев прежних версий (D-164). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
