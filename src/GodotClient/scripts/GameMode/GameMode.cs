@@ -176,6 +176,10 @@ public partial class GameMode : Node3D
         AddChild(_fillLayer);
         _fillLayer.Build(_map.Grid, _layout);
 
+        // Spec part 7 §4.2 p.10: the red route lines are hidden in the game by default; the debug panel shows them.
+        _routeLayer = new RouteLayer { Name = "Routes", Visible = false };
+        AddChild(_routeLayer);
+
         _hoverLayer = new HexFillLayer { Name = "HoverLayer", RenderPriority = 3, ExtraLift = 0.002f };
         AddChild(_hoverLayer);
         _hoverLayer.Build(_map.Grid, _layout);
@@ -581,6 +585,46 @@ public partial class GameMode : Node3D
     }
 
     // ------------------------------------------------------------------ actions
+
+    private RouteLayer _routeLayer = null!;
+    private Button? _routesButton;
+
+    private void SetRoutesVisible(bool on)
+    {
+        _routeLayer.Visible = on;
+        _routesButton?.SetPressedNoSignal(on);
+        if (on)
+        {
+            var list = new System.Collections.Generic.List<RouteDrawing>();
+            for (var i = 0; i < _map.Routes.Count; i++)
+            {
+                var r = _map.Routes[i];
+                list.Add(new RouteDrawing(r.Id, (i + 1).ToString(CultureInfo.InvariantCulture), r.Cells, r.Enabled, false));
+            }
+
+            _routeLayer.Show(list, _layout, c => TilePalette.Current.HeightOf(_map.Grid, c));
+        }
+    }
+
+    /// <summary>Debug: an enemy appears on the first hex of the route and walks it exactly (spec part 7 §4.4).</summary>
+    private void SpawnOnRoute(string routeId)
+    {
+        if (_map.FindRoute(routeId) is not { } route)
+        {
+            return;
+        }
+
+        if (RouteCheck.Check(_map, route) is { Count: > 0 } problems)
+        {
+            ShowMessage($"Маршрут «{route.Name}» требует проверки: {problems[0].Message}.", true);
+            return;
+        }
+
+        var result = _sim.SpawnOnRoute(route);
+        ShowMessage(result.Unit is { } unit
+            ? $"Враг {unit} идёт по маршруту «{route.Name}» ({route.Cells.Count} гекс.)."
+            : $"Начало маршрута «{route.Name}» {UiText.Cell(route.Cells[0])} занято — враг не появился.", result.Unit is null);
+    }
 
     private void SpawnFromPanel(SpawnRequest request)
     {
@@ -1030,6 +1074,21 @@ public partial class GameMode : Node3D
         _messageLabel = _hud.AddLabel("—", fontSize: 13);
         _hud.AddSeparator();
 
+        if (_map.Routes.Count > 0)
+        {
+            _hud.AddHeader("Маршруты врагов");
+            var show = AutomationIds.Register(_hud.AddButton("Показать линии маршрутов", () => SetRoutesVisible(!_routeLayer.Visible)), "game.routes.show");
+            show.ToggleMode = true;
+            _routesButton = show;
+            foreach (var route in _map.Routes)
+            {
+                var id = route.Id;
+                AutomationIds.Register(_hud.AddButton($"▶ Враг: «{route.Name}»", () => SpawnOnRoute(id)), "game.route." + id);
+            }
+
+            _hud.AddSeparator();
+        }
+
         _hud.AddHeader("Карта");
         _cellLabel = _hud.AddLabel("Клетка: —", fontSize: 13);
         _hud.AddLegendItem(VisualConfig.TileWalkable, "Проходимая");
@@ -1190,6 +1249,10 @@ public partial class GameMode : Node3D
 
             case "place":
                 _fsm.TogglePlacementMode();
+                return 2;
+            case "route":
+                // route:<id> — the debug button «▶ Враг: …» of that route
+                SpawnOnRoute(arg);
                 return 2;
             case "obstacle":
                 {
@@ -1449,6 +1512,18 @@ public partial class GameMode : Node3D
                 actual = _sim.EnemiesLeft.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];
                 break;
+            case "routes-visible":
+                actual = _routeLayer.Visible ? "yes" : "no";
+                ok = actual == a[1];
+                break;
+            case "route-index":
+                {
+                    // expect:route-index:<unit>:<visit index>|done|none — the walker's place along its route
+                    var walker = Unit(1);
+                    actual = walker?.Route is { } r ? (r.Finished ? "done" : r.Index.ToString(CultureInfo.InvariantCulture)) : "none";
+                    ok = actual == a[2];
+                    break;
+                }
             case "draft":
                 actual = _fsm.Draft is null ? "none" : _fsm.Draft.Waypoints.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];

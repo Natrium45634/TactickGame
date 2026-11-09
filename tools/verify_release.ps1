@@ -813,6 +813,35 @@ $script:PersistenceScenarioV34 = (@(
     'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=свободная игра на карте'
 ) -join ';') + ';' + $script:PersistenceScenarioV33
 
+# v0.35.0+ (spec part 7 §4.1–4.4; acceptance §12.2 M7-06…M7-13, M7-15, M7-16): the copy «Две линии» of the prototype gets an enemy base
+# 1 at (6,0), an enemy base 2 at (11,5) and a player base 2 at (5,9); «Маршруты»: a line from base 1 to the player base drawn by
+# moving the cursor over neighbouring hexes, a second one from base 2 to base 2 with a back-and-forth (two repeated visits); a draft
+# into an obstacle stops with the hex named, Backspace and Esc change only the draft, a far cursor jump adds only neighbours, RMB
+# cancels; the route is renamed «Петля» and saved. In the map test the lines are hidden until «Показать линии маршрутов»; an enemy on
+# each route walks it exactly to its player base.
+$script:RegressionScenarioV35 = $script:RegressionScenarioV34 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'row:name=Прототип 12×10', 'ui:dev.duplicate', 'row:name=Прототип 12×10 (копия)', 'ui:dev.rename',
+    'field:dialog.input=Две линии', 'ui:dialog.ok', 'row:name=Две линии', 'ui:dev.open', 'expect:editor:map',
+    'click:6,0', 'field:map.tile.type=База врага', 'expect:tile:6,0:core.tile.enemy_base', 'click:11,5', 'field:map.tile.type=База врага',
+    'field:map.tile.base=2', 'click:5,9', 'field:map.tile.type=База игрока', 'field:map.tile.base=2',
+    'ui:map.routes', 'expect:route-mode:on', 'routedraw:6,0>6,1>5,1>4,1>4,2>4,3>4,4>3,4>2,4>1,4', 'expect:routes:1',
+    'expect:route:route1:6,0 6,1 5,1 4,1 4,2 4,3 4,4 3,4 2,4 1,4', 'expect:route-ends:route1:1>1', 'expect:route-check:route1:ok', 'expect:route-selected:route1',
+    'routedraw:11,5>10,6>10,7>10,8>9,8>8,8>7,8>6,8>7,8>6,8>6,9>5,9', 'expect:routes:2', 'expect:route-ends:route2:2>2',
+    'expect:route:route2:11,5 10,6 10,7 10,8 9,8 8,8 7,8 6,8 7,8 6,8 6,9 5,9', 'expect:route-check:route2:ok',
+    'routedraw:6,0>6,1>6,2>5,2', 'expect:route-error:гекс (5,2) непроходим', 'expect:route-draft:3', 'key:Backspace', 'expect:route-draft:2',
+    'key:Escape', 'expect:route-draft:0', 'expect:routes:2', 'routedraw:6,0>6,1', 'hover:6,6', 'expect:route-draft:7', 'rclick:6,6', 'expect:route-draft:0',
+    'ui:map.route.pick.route2', 'field:map.route.name=Петля', 'expect:route-name:route2:Петля', 'ui:map.save', 'expect:dirty:no', 'expect:map-errors:0',
+    'ui:map.test', 'expect:screen:play', 'expect:routes-visible:no', 'ui:game.routes.show', 'expect:routes-visible:yes', 'route:route2', 'expect:units:1',
+    'route:route1', 'expect:units:2', 'advance:420', 'expect:route-index:1:done', 'expect:cell:1:5,9', 'expect:route-index:2:done', 'expect:cell:2:1,4',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV35 = (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'row:name=Две линии', 'ui:dev.open', 'expect:editor:map', 'ui:map.routes', 'expect:routes:2',
+    'expect:route:route2:11,5 10,6 10,7 10,8 9,8 8,8 7,8 6,8 7,8 6,8 6,9 5,9', 'expect:route-name:route2:Петля', 'expect:route-check:route1:ok',
+    'expect:route-check:route2:ok', 'ui:map.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV34
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -890,7 +919,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.34.0') { $script:RegressionScenarioV34 }
+            $scenario = if ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
+                        elseif ([version]$Version -ge [version]'0.34.0') { $script:RegressionScenarioV34 }
                         elseif ([version]$Version -ge [version]'0.33.0') { $script:RegressionScenarioV33 }
                         elseif ([version]$Version -ge [version]'0.32.0') { $script:RegressionScenarioV32 }
                         elseif ([version]$Version -ge [version]'0.31.0') { $script:RegressionScenarioV31 }
@@ -921,7 +951,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.34.0') { $persistence = $script:PersistenceScenarioV34 }
+            if ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
+            elseif ([version]$Version -ge [version]'0.34.0') { $persistence = $script:PersistenceScenarioV34 }
             elseif ([version]$Version -ge [version]'0.33.0') { $persistence = $script:PersistenceScenarioV33 }
             elseif ([version]$Version -ge [version]'0.32.0') { $persistence = $script:PersistenceScenarioV32 }
             elseif ([version]$Version -ge [version]'0.31.0') { $persistence = $script:PersistenceScenarioV31 }

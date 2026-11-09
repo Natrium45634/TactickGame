@@ -31,6 +31,9 @@ public sealed partial class MapEditorModel
     private readonly List<HexCoord> _draft = new();
     private string? _redraw;
 
+    /// <summary>Only the draft changed (cheap redraw of the lines; the map data is untouched).</summary>
+    public event Action? DraftChanged;
+
     /// <summary>The «Маршруты» tool is on: clicks and the cursor draw routes instead of placing hexes.</summary>
     public bool RouteMode { get; private set; }
 
@@ -78,7 +81,7 @@ public sealed partial class MapEditorModel
             DraftSource = source.Number;
             DraftError = null;
             DraftErrorCell = null;
-            Changed?.Invoke();
+            DraftChanged?.Invoke();
             return RouteClick.DraftStarted;
         }
 
@@ -116,7 +119,7 @@ public sealed partial class MapEditorModel
             {
                 DraftError = problem;
                 DraftErrorCell = next;
-                Changed?.Invoke();
+                DraftChanged?.Invoke();
                 return false;
             }
 
@@ -130,7 +133,7 @@ public sealed partial class MapEditorModel
             }
         }
 
-        Changed?.Invoke();
+        DraftChanged?.Invoke();
         return false;
     }
 
@@ -145,7 +148,7 @@ public sealed partial class MapEditorModel
         _draft.RemoveAt(_draft.Count - 1);
         DraftError = null;
         DraftErrorCell = null;
-        Changed?.Invoke();
+        DraftChanged?.Invoke();
         return true;
     }
 
@@ -161,7 +164,7 @@ public sealed partial class MapEditorModel
         _redraw = null;
         DraftError = null;
         DraftErrorCell = null;
-        Changed?.Invoke();
+        DraftChanged?.Invoke();
     }
 
     /// <summary>«Перерисовать»: the next draft replaces this route's visits; its id, name and the waves that use it stay.</summary>

@@ -148,6 +148,12 @@ public static class UiText
             text += $"\nнавык: удары {running.Next}/{running.Hits.Count}";
         }
 
+        if (u.Route is { } route)
+        {
+            // Spec part 7 §4.4: the index along the route is the truth about the walk.
+            text += route.Finished ? $"\nмаршрут «{route.Route.Name}» пройден" : $"\nидёт по маршруту «{route.Route.Name}»: гекс {route.Index + 1} из {route.Route.Cells.Count}";
+        }
+
         if (u.Orders.AttackTarget is { } target)
         {
             text += $"\nатака юнита {target}: " + u.Combat.Status switch
@@ -190,6 +196,7 @@ public static class UiText
             WaitReason.Yielding => "уступил проход своему",
             WaitReason.Blocked => "удержан блоком врага", // spec part 7 §7.2: the state only, never the capacity
             WaitReason.Skill => "применяет навык в ТД",
+            WaitReason.RouteAhead => "ждёт: следующий гекс маршрута занят",
             _ => "ждёт освобождения клетки",
         },
         MovementStatus.Blocked => u.Motion.BlockReason switch

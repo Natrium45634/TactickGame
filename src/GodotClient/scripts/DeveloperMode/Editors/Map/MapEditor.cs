@@ -40,6 +40,12 @@ public partial class MapEditor : Node3D, IContentEditor
     private MeshInstance3D _outlines = null!;
     private Node3D _labels = null!;
     private HexFillLayer _marks = null!;
+    private RouteLayer _routes = null!;
+    private Button _routeToggle = null!;
+    private int _draftStamp;
+    private int _shownDraftStamp;
+    private Vector2? _lastMotion;
+    private readonly Queue<Vector2> _scriptMotions = new();
     private HexGrid _grid = null!;
     private BoardPicker _picker = null!;
 
@@ -99,6 +105,7 @@ public partial class MapEditor : Node3D, IContentEditor
         }
 
         _model.Changed += () => _stamp++;
+        _model.DraftChanged += () => _draftStamp++;
     }
 
     public override void _Ready()
@@ -126,6 +133,8 @@ public partial class MapEditor : Node3D, IContentEditor
         AddChild(_labels);
         _marks = new HexFillLayer { Name = "Marks", RenderPriority = 2, ExtraLift = 0.003f };
         AddChild(_marks);
+        _routes = new RouteLayer { Name = "Routes" };
+        AddChild(_routes);
         _camera = new CameraRig { Name = "Camera" };
         AddChild(_camera);
 
@@ -159,10 +168,24 @@ public partial class MapEditor : Node3D, IContentEditor
 
     public override void _Process(double delta)
     {
+        if (_scriptMotions.Count > 0)
+        {
+            AutomationInput.Motion(_scriptMotions.Dequeue()); // routedraw: one cursor move per frame, as a hand would
+        }
+
         if (_stamp != _shownStamp)
         {
             _shownStamp = _stamp;
+            _shownDraftStamp = _draftStamp;
             Rebuild();
+        }
+        else if (_draftStamp != _shownDraftStamp)
+        {
+            // Only the route draft changed: redraw the lines and the panel, not the board.
+            _shownDraftStamp = _draftStamp;
+            UpdateRoutes();
+            UpdateMarks();
+            BuildInspector();
         }
 
         _draftTimer += delta;
@@ -232,6 +255,16 @@ public partial class MapEditor : Node3D, IContentEditor
                 }
 
                 SetHover(Pick(motion.Position));
+                if (_model.RouteMode && _model.IsDrafting)
+                {
+                    TraceRoute(_lastMotion ?? motion.Position, motion.Position);
+                }
+
+                _lastMotion = motion.Position;
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: false } when _model.RouteMode && _model.IsDrafting:
+                _model.CancelRouteDraft();
+                Message("Черновик маршрута отменён; сохранённые линии не тронуты.", null);
                 break;
             case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true } up:
                 _camera.Zoom(0.9f, up.Position, GetViewport().GetVisibleRect().Size);
@@ -281,6 +314,22 @@ public partial class MapEditor : Node3D, IContentEditor
         {
             Redo();
         }
+        else if (key.Keycode == Key.Backspace && _model.RouteMode)
+        {
+            _model.RemoveLastVisit();
+        }
+        else if (key.Keycode == Key.Escape && _model.RouteMode)
+        {
+            if (_model.IsDrafting || _model.RedrawTarget is not null)
+            {
+                _model.CancelRouteDraft();
+                Message("Черновик маршрута отменён; сохранённые линии не тронуты.", null);
+            }
+            else
+            {
+                _model.SelectRoute(null);
+            }
+        }
         else if (key.Keycode == Key.Escape)
         {
             if (_model.DeleteMode)
@@ -310,9 +359,51 @@ public partial class MapEditor : Node3D, IContentEditor
         }
     }
 
+    /// <summary>
+    /// Spec part 7 §4.2 p.3–4: the hexes the cursor really crossed between two mouse events, in order (sampled every few
+    /// pixels along the screen path), each offered to the draft — a fast move never becomes a jump between far hexes.
+    /// </summary>
+    private void TraceRoute(Vector2 from, Vector2 to)
+    {
+        var steps = Math.Max(1, (int)Math.Ceiling(from.DistanceTo(to) / 4f));
+        HexCoord? last = null;
+        for (var i = 1; i <= steps && _model.IsDrafting; i++)
+        {
+            if (Pick(from.Lerp(to, (float)i / steps)) is not { } hex || hex == last)
+            {
+                continue;
+            }
+
+            last = hex;
+            if (_model.RouteHover(hex))
+            {
+                Message($"Маршрут «{_model.Map.FindRoute(_model.SelectedRoute!)?.Name}» проложен до базы игрока. Ctrl+Z — отменить.", null);
+            }
+            else if (_model.DraftError is not null)
+            {
+                break; // stopped at a hex a route cannot use: the last correct part stays
+            }
+        }
+    }
+
     private void OnCanvasClick(HexCoord hex)
     {
         var o = hex.ToOffset();
+        if (_model.RouteMode)
+        {
+            switch (_model.RouteClickAt(hex))
+            {
+                case RouteClick.DraftStarted:
+                    Message("Ведите курсор по соседним гексам к базе игрока; Backspace — шаг назад, Esc — отмена.", null);
+                    break;
+                case RouteClick.NotABase:
+                    Message($"({o.Col},{o.Row}) — не база врага: маршрут начинается с гекса базы врага.", IssueSeverity.Warning);
+                    break;
+            }
+
+            return;
+        }
+
         switch (_model.Click(hex))
         {
             case MapClick.Created:
@@ -439,7 +530,31 @@ public partial class MapEditor : Node3D, IContentEditor
         _marks.Build(_grid, _layout);
         BuildWorkspace();
         UpdateMarks();
+        UpdateRoutes();
         UpdateUi();
+    }
+
+    /// <summary>The red lines of the routes (always visible in the editor) and the draft.</summary>
+    private void UpdateRoutes()
+    {
+        if (_routes is null || _grid is null)
+        {
+            return;
+        }
+
+        var list = new List<RouteDrawing>();
+        for (var i = 0; i < _model.Map.Routes.Count; i++)
+        {
+            var r = _model.Map.Routes[i];
+            list.Add(new RouteDrawing(r.Id, (i + 1).ToString(CultureInfo.InvariantCulture), r.Coords().ToList(), r.Enabled, _model.RouteMode && r.Id == _model.SelectedRoute));
+        }
+
+        if (_model.IsDrafting)
+        {
+            list.Add(new RouteDrawing("draft", "✎", _model.RouteDraft, true, false, IsDraft: true));
+        }
+
+        _routes.Show(list, _layout, c => TilePalette.Current.HeightOf(_grid, c));
     }
 
     /// <summary>Faint outlines of every place of the workspace and the coordinates of the empty ones.</summary>
@@ -541,6 +656,22 @@ public partial class MapEditor : Node3D, IContentEditor
             _marks.SetFill(s, new Color(1f, 0.85f, 0.35f, 0.34f));
         }
 
+        if (_model.RouteMode && _model.SelectedRoute is { } routeId)
+        {
+            foreach (var p in _model.RouteProblems(routeId))
+            {
+                if (_grid.Contains(p.Cell))
+                {
+                    _marks.SetFill(p.Cell, new Color(0.95f, 0.2f, 0.15f, 0.5f)); // the place to fix
+                }
+            }
+        }
+
+        if (_model.DraftErrorCell is { } bad && _grid.Contains(bad))
+        {
+            _marks.SetFill(bad, new Color(0.95f, 0.15f, 0.12f, 0.6f));
+        }
+
         foreach (var d in _model.DeleteSelection)
         {
             _marks.SetFill(d, new Color(0.92f, 0.16f, 0.14f, 0.55f));
@@ -594,6 +725,10 @@ public partial class MapEditor : Node3D, IContentEditor
         bar.AddChild(UiKit.Button("▶ Тест карты", Test, ButtonKind.Normal, "map.test", "Запустить временную копию в игровом режиме: юниты, ТД/КТД, пауза"));
         _view = UiKit.Button("Вид: 60°", ToggleView, ButtonKind.Normal, "map.view", "Переключить вид: как в игре (60°) / строго сверху");
         bar.AddChild(_view);
+        _routeToggle = UiKit.Button("〰 Маршруты", () => { _model.SetRouteMode(!_model.RouteMode); }, ButtonKind.Normal, "map.routes",
+            "Маршруты врагов: красные линии от баз врага к базам игрока (ТЗ ч.7 §4.2)");
+        _routeToggle.ToggleMode = true;
+        bar.AddChild(_routeToggle);
         bar.AddChild(UiKit.Button("← Каталог", RequestClose, ButtonKind.Flat, "map.back", "Вернуться в каталог (спросит про несохранённые изменения)"));
 
         _left = UiKit.Panel(UiKit.PanelColor, 14);
@@ -676,6 +811,8 @@ public partial class MapEditor : Node3D, IContentEditor
         _redo.Disabled = !_model.History.CanRedo;
         _undo.TooltipText = _model.History.UndoDescription is { } u ? $"Отменить: {u} (Ctrl+Z)" : "Нечего отменять";
         _redo.TooltipText = _model.History.RedoDescription is { } r ? $"Вернуть: {r} (Ctrl+Y)" : "Нечего возвращать";
+        _routeToggle.SetPressedNoSignal(_model.RouteMode);
+        _deletePanel.Visible = !_model.RouteMode;
         _delete.Text = _model.DeleteMode ? $"✕ Удалить выбранные: {_model.DeleteSelection.Count}" : "✕ Удалить гексы";
         _deleteCancel.Visible = _model.DeleteMode;
         _deleteHint.Text = _model.DeleteMode ? "клик — отметить/снять" : string.Empty;
@@ -687,6 +824,12 @@ public partial class MapEditor : Node3D, IContentEditor
     private void BuildInspector()
     {
         _inspector.Clear();
+        if (_model.RouteMode)
+        {
+            BuildRoutePanel();
+            return;
+        }
+
         var tabs = _inspector.Row();
         var hexTab = UiKit.Button("Гекс", () => { _showMapTab = false; _stamp++; }, ButtonKind.Flat, "map.tab.hex");
         var mapTab = UiKit.Button("Карта", () => { _showMapTab = true; _stamp++; }, ButtonKind.Flat, "map.tab.map");
@@ -767,6 +910,26 @@ public partial class MapEditor : Node3D, IContentEditor
             _inspector.LineText("map.zone.name", $"Название зоны {zone}", _model.Map.ZoneName(zone), v => _model.SetZoneName(zone, v));
         }
 
+        if (data.Category is TileData.EnemyBase or TileData.PlayerBase)
+        {
+            // Spec part 7 §4.1: several bases of each side; routes start at an enemy base and end at a player base by number.
+            var side = data.Category == TileData.EnemyBase ? MapBaseNameData.Enemy : MapBaseNameData.Player;
+            var number = tile.Base ?? 1;
+            _inspector.Number("map.tile.base", "Номер базы", number, 1, 9, 1, v => _model.SetTileBase(hex, (int)v), hint:
+                "Гексы базы одного номера — одна база; маршруты врагов идут от базы врага к базе игрока по номерам.");
+            _inspector.LineText("map.base.name", $"Название базы {number}", _model.Map.BaseTitle(side, number), v =>
+            {
+                if (side == MapBaseNameData.Player && number == 1)
+                {
+                    _model.SetBaseName(v);
+                }
+                else
+                {
+                    _model.SetBaseTitle(side, number, v);
+                }
+            });
+        }
+
         var point = _model.Map.PointAt(o.Col, o.Row);
         _inspector.Check("map.tile.testpoint", point is null ? "Тестовая точка маршрута" : $"Тестовая точка «{point.Label}»", point is not null, on => _model.SetTestPoint(hex, on),
             "Проверка ищет проходимый маршрут между тестовыми точками по порядку (A → B → …).");
@@ -805,6 +968,109 @@ public partial class MapEditor : Node3D, IContentEditor
         _inspector.ReadOnly("Типы", string.Join(", ", map.Tiles.GroupBy(t => t.Tile).Select(g => $"{_library.Find(ContentTypeRegistry.Tile, g.Key)?.Name ?? g.Key} × {g.Count()}")));
         _inspector.ReadOnly("Тестовые точки", map.TestPoints.Count == 0 ? "нет" : string.Join(" → ", map.TestPoints.Select(p => $"{p.Label} ({p.Col},{p.Row})")));
         _inspector.Hint("Выберите гекс на поле, чтобы открыть его настройки.");
+    }
+
+    // ------------------------------------------------------------------ routes (spec part 7 §4.2)
+
+    private void BuildRoutePanel()
+    {
+        var map = _model.Map;
+        _inspector.Section("Маршруты врагов");
+        _inspector.Hint("ЛКМ по базе врага — начать линию; ведите курсор по соседним гексам, база игрока завершает маршрут. Backspace — шаг назад, Esc / ПКМ — отменить черновик. ЛКМ по линии — выбрать её.");
+        if (_model.IsDrafting)
+        {
+            var target = _model.RedrawTarget is { } t ? $" — заменит «{map.FindRoute(t)?.Name}»" : string.Empty;
+            _inspector.Text($"Черновик: {_model.RouteDraft.Count} гекс. от «{map.BaseTitle(MapBaseNameData.Enemy, _model.DraftSource)}»{target}", size: 13);
+            if (_model.DraftError is { } error)
+            {
+                _inspector.Text("✗ " + error).AddThemeColorOverride("font_color", UiKit.Error);
+            }
+
+            var row = _inspector.Row();
+            row.AddChild(UiKit.Button("⌫ Последний сегмент", () => _model.RemoveLastVisit(), ButtonKind.Normal, "map.route.back", "Удалить последний сегмент (Backspace)"));
+            row.AddChild(UiKit.Button("Отменить черновик", () => _model.CancelRouteDraft(), ButtonKind.Flat, "map.route.cancel", "Esc / ПКМ"));
+        }
+        else if (_model.RedrawTarget is { } redraw)
+        {
+            _inspector.Text($"Перерисовка «{map.FindRoute(redraw)?.Name}»: щёлкните базу врага и ведите новую линию.", size: 12);
+            _inspector.Button("map.route.cancel", "Отменить перерисовку", () => _model.CancelRouteDraft(), ButtonKind.Flat);
+        }
+
+        if (map.Routes.Count == 0)
+        {
+            _inspector.Text("Маршрутов пока нет.", dim: true, size: 12);
+        }
+
+        for (var i = 0; i < map.Routes.Count; i++)
+        {
+            var r = map.Routes[i];
+            var id = r.Id;
+            var bad = _model.RouteProblems(id).Count > 0;
+            var pick = UiKit.Button($"{i + 1}. {r.Name}" + (bad ? "  ⚠" : string.Empty) + (r.Enabled ? string.Empty : "  (выкл.)"), () => _model.SelectRoute(id), ButtonKind.Flat, "map.route.pick." + id, _model.RouteSummary(r));
+            pick.ToggleMode = true;
+            pick.SetPressedNoSignal(id == _model.SelectedRoute);
+            pick.Alignment = HorizontalAlignment.Left;
+            _inspector.Add(pick);
+        }
+
+        if (_model.SelectedRoute is { } selected && map.FindRoute(selected) is { } route)
+        {
+            BuildRouteCard(route);
+        }
+
+        _inspector.Button("map.routes.check", "Проверить маршруты", CheckRoutes);
+    }
+
+    private void BuildRouteCard(MapRouteData r)
+    {
+        var map = _model.Map;
+        _inspector.Section($"Маршрут «{r.Name}»");
+        _inspector.ReadOnly("ID", r.Id);
+        _inspector.LineText("map.route.name", "Название", r.Name, v =>
+        {
+            if (_model.RenameRoute(r.Id, v) is { } refusal)
+            {
+                Message("✗ " + refusal, IssueSeverity.Error);
+                _stamp++;
+            }
+        });
+        _inspector.ReadOnly("Откуда → куда", $"{map.BaseTitle(MapBaseNameData.Enemy, r.Source)} → {map.BaseTitle(MapBaseNameData.Player, r.Target)}");
+        _inspector.ReadOnly("Посещений гексов", _model.RouteSummary(r).Split(" · ", 2)[1]);
+        _inspector.Check("map.route.enabled", "Включён", r.Enabled, on => _model.SetRouteEnabled(r.Id, on), "Выключенный маршрут остаётся на карте, но враги по нему не идут.");
+        var problems = _model.RouteProblems(r.Id);
+        if (problems.Count == 0)
+        {
+            _inspector.Text("✓ проходим от базы врага до базы игрока", size: 12).AddThemeColorOverride("font_color", UiKit.Ok);
+        }
+
+        foreach (var p in problems)
+        {
+            _inspector.Text("✗ " + p.Message, size: 12).AddThemeColorOverride("font_color", UiKit.Error);
+        }
+
+        var row = _inspector.Row();
+        row.AddChild(UiKit.Button("Перерисовать", () =>
+        {
+            _model.RedrawRoute(r.Id);
+            Message($"Перерисовка «{r.Name}»: щёлкните базу врага и ведите новую линию; ID и название останутся.", null);
+        }, ButtonKind.Normal, "map.route.redraw"));
+        row.AddChild(UiKit.Button("Копия", () => _model.CopyRoute(r.Id), ButtonKind.Normal, "map.route.copy"));
+        row.AddChild(UiKit.Button("Удалить", () => ModalDialog.Show(this, $"Удалить маршрут «{r.Name}»?", "Линия исчезнет с карты; Ctrl+Z вернёт её.", new[]
+        {
+            new DialogButton("Отмена", "dialog.cancel", ButtonKind.Flat, null, IsCancel: true),
+            new DialogButton("Удалить", "dialog.ok", ButtonKind.Danger, () => _model.DeleteRoute(r.Id)),
+        }), ButtonKind.Danger, "map.route.delete"));
+        _inspector.Hint("Проверить ходьбой: «▶ Тест карты» → «Маршруты врагов» → «▶ Враг: …».");
+    }
+
+    private void CheckRoutes()
+    {
+        var lines = _model.CheckRoutes();
+        Message(lines.Count == 0 ? "Маршрутов нет." : $"Проверка маршрутов: {lines.Count(l => l.StartsWith('✓'))} из {lines.Count} в порядке.", lines.Any(l => l.StartsWith('✗')) ? IssueSeverity.Warning : null);
+        foreach (var line in lines)
+        {
+            Message(line, line.StartsWith('✗') ? IssueSeverity.Warning : null);
+        }
     }
 
     private void Resize(int columns, int rows)
@@ -889,6 +1155,27 @@ public partial class MapEditor : Node3D, IContentEditor
             case "hover":
                 AutomationInput.Motion(HexScreen(ParseHex(arg)));
                 return 2;
+            case "rclick":
+                AutomationInput.Click(HexScreen(ParseHex(arg)), MouseButton.Right);
+                return 3;
+            case "routedraw":
+                {
+                    // routedraw:c,r>c,r>… — LMB on the first hex (an enemy base), then the cursor glides over the next hexes.
+                    var hexes = arg.Split('>').Select(ParseHex).ToList();
+                    AutomationInput.Motion(HexScreen(hexes[0]));
+                    AutomationInput.Click(HexScreen(hexes[0]));
+                    for (var i = 1; i < hexes.Count; i++)
+                    {
+                        var from = HexScreen(hexes[i - 1]);
+                        var to = HexScreen(hexes[i]);
+                        for (var k = 1; k <= 3; k++)
+                        {
+                            _scriptMotions.Enqueue(from.Lerp(to, k / 3f));
+                        }
+                    }
+
+                    return _scriptMotions.Count + 3;
+                }
             case "wheel":
                 {
                     var center = GetViewport().GetVisibleRect().Size * 0.5f;
@@ -972,6 +1259,52 @@ public partial class MapEditor : Node3D, IContentEditor
                 break;
             case "map-errors":
                 actual = _model.Validate().Count(i => i.IsError).ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "routes":
+                actual = _model.Map.Routes.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "route":
+                {
+                    // expect:route:<id>:<c,r c,r …> — the visits of the route in order
+                    actual = _model.Map.FindRoute(a[1]) is { } r ? string.Join(" ", r.Cells.Select(c => $"{c.Col},{c.Row}")) : "none";
+                    ok = actual == a[2];
+                    break;
+                }
+
+            case "route-ends":
+                {
+                    // expect:route-ends:<id>:<source>><target> — base numbers
+                    actual = _model.Map.FindRoute(a[1]) is { } r ? $"{r.Source}>{r.Target}" : "none";
+                    ok = actual == a[2];
+                    break;
+                }
+
+            case "route-draft":
+                actual = _model.RouteDraft.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "route-error":
+                // expect:route-error:<text>|none — why the draft stopped
+                actual = _model.DraftError ?? "none";
+                ok = a[1] == "none" ? actual == "none" : actual.Contains(a[1], StringComparison.Ordinal);
+                break;
+            case "route-selected":
+                actual = _model.SelectedRoute ?? "none";
+                ok = actual == a[1];
+                break;
+            case "route-check":
+                // expect:route-check:<id>:ok|<problems>
+                actual = _model.RouteProblems(a[1]) is { Count: > 0 } p ? p.Count.ToString(CultureInfo.InvariantCulture) : "ok";
+                ok = actual == a[2];
+                break;
+            case "route-name":
+                actual = _model.Map.FindRoute(a[1])?.Name ?? "none";
+                ok = actual == a[2];
+                break;
+            case "route-mode":
+                actual = _model.RouteMode ? "on" : "off";
                 ok = actual == a[1];
                 break;
             default:
