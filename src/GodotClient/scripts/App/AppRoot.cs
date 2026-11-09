@@ -91,6 +91,7 @@ public partial class AppRoot : Node
         _menu.PlayPressed += () => CallDeferred(MethodName.StartGame);
         _menu.DeveloperPressed += () => CallDeferred(MethodName.OpenDeveloper);
         _menu.QuitPressed += () => AppExit.Quit(GetTree());
+        _menu.ScenarioChanged += id => _scenarioId = id.Length > 0 ? id : null; // kept after «Разработчик» and back
         AddChild(_menu);
         Current = Screen.Menu;
     }

@@ -22,6 +22,9 @@ public partial class StartMenu : CanvasLayer
 
     public event Action? QuitPressed;
 
+    /// <summary>The scenario choice changed (empty — free play); the choice is kept when the menu is shown again.</summary>
+    public event Action<string>? ScenarioChanged;
+
     /// <summary>A line under the buttons (where user content is stored, load problems).</summary>
     public string Footer { get; set; } = string.Empty;
 
@@ -79,7 +82,11 @@ public partial class StartMenu : CanvasLayer
             }
         }
 
-        scenarios.ItemSelected += index => SelectedScenario = scenarios.GetItemMetadata((int)index).AsString();
+        scenarios.ItemSelected += index =>
+        {
+            SelectedScenario = scenarios.GetItemMetadata((int)index).AsString();
+            ScenarioChanged?.Invoke(SelectedScenario);
+        };
         scenarioRow.AddChild(scenarios);
         column.AddChild(scenarioRow);
         var mapRow = UiKit.Row(8);

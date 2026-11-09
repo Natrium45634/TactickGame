@@ -786,7 +786,8 @@ $script:PersistenceScenarioV33 = (@(
 # squad of one; its test run starts on «Подготовка»: the card is deployed and gets its route and facing while nothing moves, then
 # «Начать бой», the operative attacks the enemy and the battle ends with «Победа» on a pause. From the start menu the built-in
 # «Учебный бой» starts with three enemies and three cards; the menu goes back to free play for the next scenarios. The card of the
-# operative held by «Страж» now says «удержан блоком врага» (the state, never the capacity — no «Блок» line).
+# operative held by «Страж» now says «удержан блоком врага» (the state, never the capacity — no «Блок» line). The free-play choice
+# stays after «Разработчик» and back.
 $script:RegressionScenarioV34 = ($script:RegressionScenarioV33 -replace 'expect:info:1:блок:no', 'expect:info:1:удержан блоком врага:yes;expect:info:1:Блок:no') + ';' + (@(
     'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Засада', 'expect:scenario-errors:1',
     'cell:6,2', 'expect:scenario-enemies:1', 'expect:scenario-selected:6,2', 'ui:scenario.turn.right', 'ui:scenario.turn.right', 'ui:scenario.turn.right',
@@ -801,7 +802,8 @@ $script:RegressionScenarioV34 = ($script:RegressionScenarioV33 -replace 'expect:
     'ui:game.menu', 'ui:dialog.ok', 'expect:editor:scenario', 'ui:scenario.back', 'ui:dev.back', 'expect:screen:menu',
     'field:menu.scenario=Учебный бой', 'ui:menu.play', 'expect:screen:play', 'expect:phase:Preparing', 'expect:enemies-left:3', 'expect:units:3',
     'expect:roster:3:AvailableInRoster', 'roster:1>1,5', 'click:1,5@North:0.6', 'expect:lifecycle:4:Active', 'pause:off', 'wait:10', 'expect:phase:Running',
-    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=свободная игра на карте'
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=свободная игра на карте',
+    'ui:menu.dev', 'ui:dev.back', 'ui:menu.play', 'expect:screen:play', 'expect:units:0', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu'
 ) -join ';')
 
 $script:PersistenceScenarioV34 = (@(
