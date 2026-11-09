@@ -125,6 +125,7 @@ public sealed class EffectTypeRegistry
         new FieldOption(Stats.Resistance, "сопротивление (процентные пункты)"),
         new FieldOption(Stats.Armor, "защита A (очки)"),
         new FieldOption(Stats.HealingReceived, "получаемое лечение (дебафф 100 % — запрет лечения)"),
+        new FieldOption(Stats.Block, "блок (врагов, целые)"),
     };
 
     /// <summary>The built-in physical type: the default damage type of new damage effects (spec part 5 §8.1).</summary>
@@ -168,6 +169,9 @@ public sealed class EffectTypeRegistry
     };
 
     private static bool Layered(object o) => Is(o, "stat", Stats.Resistance) || Is(o, "stat", Stats.Armor);
+
+    /// <summary>Characteristics changed only by points: resistance, defense A and block (spec part 7 §7.1 — whole slots).</summary>
+    private static bool PointsOnly(object o) => Layered(o) || Is(o, "stat", Stats.Block);
 
     private static FieldSchema ResistanceOfField() => Param("resistanceOf", "Сопротивление к", FieldKind.Reference, "global") with
     {
@@ -325,9 +329,9 @@ public sealed class EffectTypeRegistry
         })
         {
             var stat = Param("stat", "Характеристика", FieldKind.Choice, Stats.MoveSpeed) with { Options = StatOptions };
-            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") }, VisibleWhen = o => !Layered(o) };
-            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => !Layered(o) && Is(o, "mode", "percent") };
-            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => Layered(o) || Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с, урон; для сопротивления — процентные пункты (итог R ограничен −500…+500); для защиты A — очки (итог A в расчёте не ниже 0)." };
+            var mode = Param("mode", "Величина", FieldKind.Choice, "percent") with { Options = new[] { new FieldOption("percent", "в процентах"), new FieldOption("fixed", "фиксированная") }, VisibleWhen = o => !PointsOnly(o) };
+            var percent = Param("percent", "Изменение", FieldKind.Number, 0.3) with { Min = 0, Max = 10, Percent = true, VisibleWhen = o => !PointsOnly(o) && Is(o, "mode", "percent") };
+            var delta = Param("delta", "Изменение", FieldKind.Number, 1.0) with { Min = 0, Max = 10000, VisibleWhen = o => PointsOnly(o) || Is(o, "mode", "fixed"), Hint = "В единицах характеристики: гекс/с, удар/с, урон; для сопротивления — процентные пункты (итог R ограничен −500…+500); для защиты A — очки (итог A в расчёте не ниже 0); для блока — целые слоты (итог не ниже 0)." };
             var resistanceOf = ResistanceOfField();
             var armorOf = ArmorOfField();
             registry.Register(new EffectTypeDescriptor(type, label, text, EffectContext.Skill | EffectContext.Tile, new[]

@@ -426,6 +426,7 @@ public static class EffectPreview
     internal static string StatSize(EffectSpec s) =>
         s.Text("stat", Stats.MoveSpeed) == Stats.Resistance ? N(s.Number("delta")) + " п.п."
         : s.Text("stat", Stats.MoveSpeed) == Stats.Armor ? N(s.Number("delta")) + " очк."
+        : s.Text("stat", Stats.MoveSpeed) == Stats.Block ? N(s.Number("delta")) + " слот."
         : s.Text("mode", "percent") == "percent" ? N(s.Number("percent") * 100) + " %" : N(s.Number("delta"));
 
     internal static string StatWord(string stat) => stat switch
@@ -434,6 +435,7 @@ public static class EffectPreview
         Stats.AttackRate => "скорости атак",
         Stats.Resistance => "сопротивления",
         Stats.Armor => "защиты A",
+        Stats.Block => "блока",
         Stats.HealingReceived => "получаемого лечения",
         _ => "скорости движения",
     };

@@ -26,6 +26,7 @@
     "tiles/core.tile.player_base.json",
     "tiles/core.tile.spawn.json",
     "unit_stats/core.stat.agility.json",
+    "unit_stats/core.stat.block.json",
     "units/core.unit.operative.json"
   ]
 }

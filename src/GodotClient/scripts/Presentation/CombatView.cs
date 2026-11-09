@@ -275,6 +275,9 @@ public partial class CombatFxView : Node3D
             case StatusBlocked blocked when positionOf(blocked.Target) is { } bp:
                 Note(blocked.Target, blocked.Tick, "невосприимчив", bp);
                 break;
+            case BlockStarted held when positionOf(held.Enemy) is { } hp0:
+                Note(held.Enemy, held.Tick, "блок", hp0); // spec part 7 §7.2: the held unit stays on its own hex
+                break;
             case DamageApplied pd when pd.Amount > 0 && pd.Kind is DamageKind.Periodic or DamageKind.Surface && positionOf(pd.Target) is { } pp:
                 Accumulate(pd.Target, false, pd.Amount, pd.Tick, pp);
                 break;

@@ -212,9 +212,9 @@ public partial class UnitEditor : DefinitionEditorShell
         }
 
         inspector.LineText(IdPrefix + "pack", "Стая (packId)", unit.PackId, v => Refuse(_model.SetPackId(v)), "Юниты одной стаи считаются вместе бонусами «за каждого союзника».");
-        foreach (var stat in Library.Items(ContentTypeRegistry.UnitStat))
+        foreach (var stat in Library.Items(ContentTypeRegistry.UnitStat).Where(s => s.Id != HexTactics.Content.Kinds.UnitStatData.Block))
         {
-            var id = stat.Id;
+            var id = stat.Id; // «Блок» is edited in «Атака и навыки» (spec part 7 §7.4), the same value — not a second system
             var final = HexTactics.Content.Runtime.PassiveEffects.Stat(unit, Library, id);
             inspector.LineText($"{IdPrefix}stat.{id}", $"{stat.Name} (своя база; итог {Inspector.Num(final.Final)})", unit.CustomStats.TryGetValue(id, out var own) ? Inspector.Num(own) : string.Empty,
                 v => { if (_model.SetCustomStat(id, v) is { } issue) { Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error); Stamp++; } },
@@ -274,6 +274,13 @@ public partial class UnitEditor : DefinitionEditorShell
         var unit = _model.Unit;
         Fields(inspector, AttackKeys);
         inspector.Hint("Сила атаки (Attack Power) — урон одного удара и база навыков «% от атаки».");
+
+        // Spec part 7 §7.4: one number — how many moving enemies the unit holds at once while it stands.
+        var block = HexTactics.Content.Runtime.PassiveEffects.Stat(unit, Library!, HexTactics.Content.Kinds.UnitStatData.Block);
+        inspector.LineText(IdPrefix + "block", $"Блок (итог {Inspector.Num(block.Final)})",
+            unit.CustomStats.TryGetValue(HexTactics.Content.Kinds.UnitStatData.Block, out var ownBlock) ? Inspector.Num(ownBlock) : "0",
+            v => { if (_model.SetCustomStat(HexTactics.Content.Kinds.UnitStatData.Block, v) is { } issue) { Message("✗ " + issue.Message, HexTactics.Content.Model.IssueSeverity.Error); Stamp++; } },
+            "Сколько двигающихся врагов юнит удерживает одновременно, пока стоит: 0 — никого, 1 — одного. Враг остаётся на своём гексе. Не защита и не урон.");
 
         inspector.Text("Навыки", size: 13);
         inspector.Hint("Ссылки на сохранённые навыки. Первый — кнопка R и меню ТД в бою; в одной ТД — одно применение.");
@@ -707,7 +714,7 @@ public partial class UnitEditor : DefinitionEditorShell
         {
             _section = SecMain;
         }
-        else if (AttackKeys.Contains(key) || key == "skill")
+        else if (AttackKeys.Contains(key) || key is "skill" or "block")
         {
             _section = SecAttack;
         }

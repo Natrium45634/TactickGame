@@ -329,6 +329,8 @@ public static class RuntimeFactory
             SurpriseChanceBonus = PassiveEffects.SurpriseChanceBonus(unit, library),
             BasicAttack = basic,
             AutoAttackEnabled = unit.AutoAttackEnabled && basic is not null,
+            // Spec part 7 §7.1: block is the characteristic «Блок» of the registry with the unit's own value, passives and tags.
+            BlockCapacity = (int)Math.Max(0, Math.Floor(PassiveEffects.Stat(unit, library, UnitStatData.Block).Final + 1e-9)),
             Species = PassiveEffects.SpeciesChain(library, unit.Species).Select(i => i.Id).ToArray(),
             PackId = unit.PackId,
             AttackArmorPenetration = unit.AttackArmorPenetration,

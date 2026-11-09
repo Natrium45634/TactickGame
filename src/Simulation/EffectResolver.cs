@@ -226,7 +226,7 @@ internal sealed class ModifierEffectHandler : IEffectHandler
         var e = invocation.Effect;
         var stat = e.Text("stat", Stats.MoveSpeed);
         var layered = stat is Stats.Resistance or Stats.Armor; // points on a layer (global / family / type), never percent
-        var percent = !layered && e.Text("mode", "percent") == "percent";
+        var percent = !layered && stat != Stats.Block && e.Text("mode", "percent") == "percent"; // block: whole slots only
         var key = stat == Stats.Resistance ? e.Text("resistanceOf", ResistanceSet.Global)
                 : stat == Stats.Armor ? e.Text("armorOf", ArmorSet.Global)
                 : ResistanceSet.Global;

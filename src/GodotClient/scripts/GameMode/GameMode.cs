@@ -1435,6 +1435,15 @@ public partial class GameMode : Node3D
                     break;
                 }
 
+            case "blocked":
+                {
+                    // expect:blocked:ID:yes|no — the unit is held by a blocker (spec part 7 §7.2)
+                    var held = Unit(1) is { } u && _sim.State.BlockOf(u.Id) is not null;
+                    actual = held ? "yes" : "no";
+                    ok = actual == a[2];
+                    break;
+                }
+
             case "hitword":
                 {
                     // expect:hitword:<word>:yes|no — a word over a hit («Крит!», «Внезапно!») was shown in this match

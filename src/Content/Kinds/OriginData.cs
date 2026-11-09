@@ -61,6 +61,9 @@ public sealed class UnitStatData : IContentData
 {
     public const string Agility = "core.stat.agility";
 
+    /// <summary>Spec part 7 §7.1 <c>BlockCapacity</c>: a registry characteristic the block system reads (base 0).</summary>
+    public const string Block = "core.stat.block";
+
     /// <summary>Unit label: «очки», «%», «гекс/с»…</summary>
     public string Unit { get; set; } = "очки";
 

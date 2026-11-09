@@ -929,6 +929,11 @@ public static class CombatPreviewText
         };
         // Spec part 7 §8.5: «Предпросмотр: 3 удара/с · передний гекс · 1 враг · 10 урона до защиты».
         lines.Add(BasicAttackPreview(unit, library, power, rate));
+        var block = PassiveEffects.Stat(unit, library, UnitStatData.Block).Final;
+        if (block >= 1)
+        {
+            lines.Add($"Блок: {N(Math.Floor(block))} — пока стоит, удерживает до {N(Math.Floor(block))} двигающихся врагов на их гексах.");
+        }
 
         // Spec part 6 §7.1, P6-41: the tiers of the unit's own chance (the base of the combat rules adds to it in battle).
         var crit = PassiveEffects.CritChance(unit, library);
