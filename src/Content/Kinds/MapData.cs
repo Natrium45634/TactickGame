@@ -26,12 +26,15 @@ public sealed class MapTileData
     /// <summary>Spawn zone number for tiles of the «край / зона появления» category.</summary>
     public int? Zone { get; set; }
 
+    /// <summary>Base number (1…9) for tiles of the «база врага» / «база игрока» categories; null — base 1 (spec part 7 §4.1).</summary>
+    public int? Base { get; set; }
+
     /// <summary>Developer comment.</summary>
     public string? Note { get; set; }
 
     public HexCoord Coord => HexCoord.FromOffset(Col, Row);
 
-    public MapTileData Clone() => new() { Col = Col, Row = Row, Tile = Tile, Level = Level, Zone = Zone, Note = Note };
+    public MapTileData Clone() => new() { Col = Col, Row = Row, Tile = Tile, Level = Level, Zone = Zone, Base = Base, Note = Note };
 }
 
 /// <summary>
@@ -49,6 +52,59 @@ public sealed class MapPointData
     public HexCoord Coord => HexCoord.FromOffset(Col, Row);
 
     public MapPointData Clone() => new() { Col = Col, Row = Row, Label = Label };
+}
+
+/// <summary>Display name of a numbered base of the map (spec part 7 §4.1); unnamed bases get «База врага 2» etc.</summary>
+public sealed class MapBaseNameData
+{
+    public const string Enemy = "enemy";
+
+    public const string Player = "player";
+
+    public string Side { get; set; } = Enemy;
+
+    public int Id { get; set; } = 1;
+
+    public string Name { get; set; } = string.Empty;
+
+    public MapBaseNameData Clone() => new() { Side = Side, Id = Id, Name = Name };
+}
+
+/// <summary>
+/// An enemy route of the map (spec part 7 §4.1, §10 <c>EnemyRouteDefinition</c>): a stable id (scenarios and waves refer to it), a
+/// name, the enemy base it starts from, the player base it ends on and the ordered hex visits (repeats allowed).
+/// </summary>
+public sealed class MapRouteData
+{
+    public const int MaxCells = 400;
+
+    public string Id { get; set; } = "route1";
+
+    public string Name { get; set; } = "Маршрут 1";
+
+    public int Source { get; set; } = 1;
+
+    public int Target { get; set; } = 1;
+
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Visits in order, odd-q offset coordinates.</summary>
+    public List<(int Col, int Row)> Cells { get; } = new();
+
+    public IEnumerable<HexCoord> Coords()
+    {
+        foreach (var (col, row) in Cells)
+        {
+            yield return HexCoord.FromOffset(col, row);
+        }
+    }
+
+    public MapRouteData Clone()
+    {
+        var copy = new MapRouteData { Id = Id, Name = Name, Source = Source, Target = Target, Enabled = Enabled };
+        copy.Cells.AddRange(Cells);
+        return copy;
+    }
 }
 
 /// <summary>Display name of a spawn zone of the map.</summary>
@@ -85,6 +141,28 @@ public sealed class MapData : IContentData
 
     /// <summary>Optional test points for the route check (none = no route check).</summary>
     public List<MapPointData> TestPoints { get; } = new();
+
+    /// <summary>Names of numbered bases (optional, since v0.35.0).</summary>
+    public List<MapBaseNameData> Bases { get; } = new();
+
+    /// <summary>Enemy routes (optional, since v0.35.0; spec part 7 §4, §9.2 — the geometry belongs to the map).</summary>
+    public List<MapRouteData> Routes { get; } = new();
+
+    /// <summary>«База врага 2» unless the author named it; base 1 of the player is <see cref="BaseName"/>.</summary>
+    public string BaseTitle(string side, int id)
+    {
+        foreach (var b in Bases)
+        {
+            if (b.Side == side && b.Id == id && b.Name.Length > 0)
+            {
+                return b.Name;
+            }
+        }
+
+        return side == MapBaseNameData.Player ? (id == 1 ? BaseName : $"База игрока {id}") : $"База врага {id}";
+    }
+
+    public MapRouteData? FindRoute(string id) => Routes.Find(r => r.Id == id);
 
     /// <summary>
     /// Combat rules of the map (spec part 6 §9.5, §10.3): a <c>combat_ruleset</c> id; empty — the compatible
@@ -140,6 +218,11 @@ public sealed class MapData : IContentData
                 tile["zone"] = zone;
             }
 
+            if (t.Base is { } baseNumber)
+            {
+                tile["base"] = baseNumber;
+            }
+
             if (!string.IsNullOrEmpty(t.Note))
             {
                 tile["note"] = t.Note;
@@ -171,6 +254,37 @@ public sealed class MapData : IContentData
         if (AutoAttacks)
         {
             result["autoAttacks"] = true;
+        }
+
+        if (Bases.Count > 0)
+        {
+            var bases = new JsonArray();
+            foreach (var b in Bases)
+            {
+                bases.Add(new JsonObject { ["side"] = b.Side, ["id"] = b.Id, ["name"] = b.Name });
+            }
+
+            result["bases"] = bases;
+        }
+
+        if (Routes.Count > 0)
+        {
+            var routes = new JsonArray();
+            foreach (var r in Routes)
+            {
+                var cells = new JsonArray();
+                foreach (var (col, row) in r.Cells)
+                {
+                    cells.Add(new JsonArray(col, row));
+                }
+
+                routes.Add(new JsonObject
+                {
+                    ["id"] = r.Id, ["name"] = r.Name, ["source"] = r.Source, ["target"] = r.Target, ["enabled"] = r.Enabled, ["cells"] = cells,
+                });
+            }
+
+            result["routes"] = routes;
         }
 
         if (CombatRuleset.Length > 0)
@@ -229,8 +343,67 @@ public sealed class MapData : IContentData
                     Tile = JsonFields.Text(t, "tile", string.Empty, issues, path),
                     Level = t.ContainsKey("level") ? JsonFields.Integer(t, "level", 0, issues, path) : null,
                     Zone = t.ContainsKey("zone") ? JsonFields.Integer(t, "zone", 1, issues, path) : null,
+                    Base = t.ContainsKey("base") ? JsonFields.Integer(t, "base", 1, issues, path) : null,
                     Note = t.ContainsKey("note") ? JsonFields.Text(t, "note", string.Empty, issues, path) : null,
                 });
+            }
+        }
+
+        if (obj["bases"] is JsonArray baseNames)
+        {
+            for (var i = 0; i < baseNames.Count; i++)
+            {
+                if (baseNames[i] is JsonObject b)
+                {
+                    data.Bases.Add(new MapBaseNameData
+                    {
+                        Side = JsonFields.Text(b, "side", MapBaseNameData.Enemy, issues, $"bases[{i}]"),
+                        Id = JsonFields.Integer(b, "id", 1, issues, $"bases[{i}]"),
+                        Name = JsonFields.Text(b, "name", string.Empty, issues, $"bases[{i}]"),
+                    });
+                }
+                else
+                {
+                    issues.Error($"bases[{i}]", "база должна быть объектом { side, id, name }");
+                }
+            }
+        }
+
+        if (obj["routes"] is JsonArray routes)
+        {
+            for (var i = 0; i < routes.Count; i++)
+            {
+                var path = $"routes[{i}]";
+                if (routes[i] is not JsonObject r)
+                {
+                    issues.Error(path, "маршрут должен быть объектом");
+                    continue;
+                }
+
+                var route = new MapRouteData
+                {
+                    Id = JsonFields.Text(r, "id", string.Empty, issues, path),
+                    Name = JsonFields.Text(r, "name", string.Empty, issues, path),
+                    Source = JsonFields.Integer(r, "source", 1, issues, path),
+                    Target = JsonFields.Integer(r, "target", 1, issues, path),
+                    Enabled = JsonFields.Flag(r, "enabled", true, issues, path),
+                };
+                if (r["cells"] is JsonArray cells)
+                {
+                    foreach (var cell in cells)
+                    {
+                        if (cell is JsonArray { Count: 2 } pair && pair[0] is JsonValue c && pair[1] is JsonValue w && c.TryGetValue<int>(out var col) && w.TryGetValue<int>(out var row))
+                        {
+                            route.Cells.Add((col, row));
+                        }
+                        else
+                        {
+                            issues.Error(path + ".cells", "гекс маршрута — пара [col, row]");
+                        }
+                    }
+                }
+
+                data.Routes.Add(route);
             }
         }
 
@@ -338,6 +511,11 @@ public sealed class MapData : IContentData
                 issues.Error(path + ".zone", "номер зоны появления — от 1 до 9");
             }
 
+            if (t.Base is { } baseNumber && (baseNumber < 1 || baseNumber > 9))
+            {
+                issues.Error(path + ".base", "номер базы — от 1 до 9");
+            }
+
             if (t.Note is { Length: > 0 } note && note.Length > context.Limits.MaxTextLength)
             {
                 issues.Error(path + ".note", "слишком длинный комментарий");
@@ -350,6 +528,51 @@ public sealed class MapData : IContentData
             if (TileAt(p.Col, p.Row) is null)
             {
                 issues.Error($"testPoints[{i}]", $"тестовая точка «{p.Label}» ({p.Col},{p.Row}) не на гексе карты");
+            }
+        }
+
+        var routeIds = new HashSet<string>();
+        for (var i = 0; i < Routes.Count; i++)
+        {
+            var r = Routes[i];
+            var path = $"routes[{i}]";
+            if (!ContentIds.IsValid(r.Id) || !routeIds.Add(r.Id))
+            {
+                issues.Error(path + ".id", $"ID маршрута «{r.Id}» пустой, неверный или повторяется — ID маршрутов карты разные");
+            }
+
+            if (r.Name.Trim().Length == 0)
+            {
+                issues.Error(path + ".name", "у маршрута нет названия");
+            }
+
+            if (r.Source is < 1 or > 9 || r.Target is < 1 or > 9)
+            {
+                issues.Error(path, "номера баз маршрута — от 1 до 9");
+            }
+
+            if (r.Cells.Count > MapRouteData.MaxCells)
+            {
+                issues.Error(path + ".cells", $"в маршруте не больше {MapRouteData.MaxCells} посещений гексов");
+            }
+
+            for (var k = 1; k < r.Cells.Count; k++)
+            {
+                var a = HexCoord.FromOffset(r.Cells[k - 1].Col, r.Cells[k - 1].Row);
+                var b = HexCoord.FromOffset(r.Cells[k].Col, r.Cells[k].Row);
+                if (a.DistanceTo(b) != 1)
+                {
+                    issues.Error(path + ".cells", $"маршрут «{r.Name}», шаг {k}: ({r.Cells[k - 1].Col},{r.Cells[k - 1].Row}) → ({r.Cells[k].Col},{r.Cells[k].Row}) — не соседние гексы");
+                    break;
+                }
+            }
+        }
+
+        for (var i = 0; i < Bases.Count; i++)
+        {
+            if (Bases[i].Side is not (MapBaseNameData.Enemy or MapBaseNameData.Player) || Bases[i].Id is < 1 or > 9)
+            {
+                issues.Error($"bases[{i}]", "база — сторона enemy или player и номер от 1 до 9");
             }
         }
 
@@ -381,6 +604,16 @@ public sealed class MapData : IContentData
         foreach (var p in TestPoints)
         {
             copy.TestPoints.Add(p.Clone());
+        }
+
+        foreach (var b in Bases)
+        {
+            copy.Bases.Add(b.Clone());
+        }
+
+        foreach (var r in Routes)
+        {
+            copy.Routes.Add(r.Clone());
         }
 
         return copy;

@@ -39,7 +39,7 @@ public sealed record MapRemovalImpact(int Tiles, IReadOnlyList<string> Links)
 /// the two-stage red deletion tool and every change as an undoable command. Pure C# — the Godot canvas and panels only
 /// display it and forward clicks.
 /// </summary>
-public sealed class MapEditorModel
+public sealed partial class MapEditorModel
 {
     private readonly HashSet<HexCoord> _deleteSelection = new();
 
@@ -362,6 +362,11 @@ public sealed class MapEditorModel
     {
         _deleteSelection.Clear();
         DeleteMode = false;
+        if (SelectedRoute is { } route && Map.FindRoute(route) is null)
+        {
+            SelectedRoute = null;
+        }
+
         Select(Selected);
     }
 
@@ -376,6 +381,11 @@ public sealed class MapEditorModel
             if (Map.PointAt(o.Col, o.Row) is { } p)
             {
                 links.Add($"тестовая точка «{p.Label}» на ({o.Col},{o.Row}) будет снята");
+            }
+
+            foreach (var r in RoutesThrough(c))
+            {
+                links.Add($"маршрут «{r.Name}» идёт через ({o.Col},{o.Row}) — потребует проверки (сам маршрут не удаляется)");
             }
         }
 

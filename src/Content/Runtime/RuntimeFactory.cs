@@ -153,6 +153,7 @@ public static class RuntimeFactory
         }
 
         var zoneCells = new SortedDictionary<int, List<HexCoord>>();
+        var numbered = new SortedDictionary<(BaseSide, int), List<HexCoord>>();
         var baseCells = new List<HexCoord>();
         var deployCells = new List<HexCoord>();
         foreach (var t in map.Tiles)
@@ -186,6 +187,10 @@ public static class RuntimeFactory
                     break;
                 case TileType.PlayerBase:
                     baseCells.Add(coord);
+                    AddToBase(numbered, BaseSide.Player, t.Base ?? 1, coord);
+                    break;
+                case TileType.EnemyBase:
+                    AddToBase(numbered, BaseSide.Enemy, t.Base ?? 1, coord);
                     break;
                 case TileType.DeployZone:
                     deployCells.Add(coord);
@@ -203,7 +208,43 @@ public static class RuntimeFactory
         }
 
         var playerBase = baseCells.Count > 0 ? new PlayerBaseDefinition(map.BaseName, baseCells) : null;
-        return new MapDefinition(mapItem.Name, grid, zones, playerBase, deployCells);
+        var bases = new List<MapBase>();
+        foreach (var ((side, number), cells) in numbered)
+        {
+            cells.Sort();
+            bases.Add(new MapBase(side, number, map.BaseTitle(side == BaseSide.Player ? MapBaseNameData.Player : MapBaseNameData.Enemy, number), cells));
+        }
+
+        var routes = map.Routes.Select(r => new EnemyRoute(r.Id, r.Name, r.Source, r.Target, r.Coords().ToList(), r.Enabled)).ToList();
+        return new MapDefinition(mapItem.Name, grid, zones, playerBase, deployCells) { Bases = bases, Routes = routes };
+    }
+
+    private static void AddToBase(SortedDictionary<(BaseSide, int), List<HexCoord>> bases, BaseSide side, int number, HexCoord cell)
+    {
+        if (!bases.TryGetValue((side, number), out var cells))
+        {
+            bases[(side, number)] = cells = new List<HexCoord>();
+        }
+
+        cells.Add(cell);
+    }
+
+    /// <summary>
+    /// Problems of the routes of a map against its real tiles (spec part 7 §4.3): a hex removed or closed under a route, a base
+    /// gone. They do not stop free play on the map; a scenario that uses such a route cannot start (v0.36.0).
+    /// </summary>
+    public static IReadOnlyList<(MapRouteData Route, RouteProblem Problem)> CheckRoutes(MapDefinition map, MapData data)
+    {
+        var problems = new List<(MapRouteData, RouteProblem)>();
+        foreach (var r in data.Routes)
+        {
+            foreach (var p in RouteCheck.Check(map, new EnemyRoute(r.Id, r.Name, r.Source, r.Target, r.Coords().ToList(), r.Enabled)))
+            {
+                problems.Add((r, p));
+            }
+        }
+
+        return problems;
     }
 
     /// <summary>The runtime skill: cells (offsets for a caster looking North) with their effective effects.</summary>

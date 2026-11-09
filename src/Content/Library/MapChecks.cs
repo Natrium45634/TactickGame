@@ -60,11 +60,26 @@ internal static class MapChecks
             {
                 issues.Warning($"data.tiles[{i}].zone", $"номер зоны у гекса ({t.Col},{t.Row}) не используется: тип не «зона появления»");
             }
+
+            if (t.Base is not null && type.Category is not (TileData.PlayerBase or TileData.EnemyBase))
+            {
+                issues.Warning($"data.tiles[{i}].base", $"номер базы у гекса ({t.Col},{t.Row}) не используется: тип не база");
+            }
         }
 
         if (map.Tiles.Count > 0 && deployPlaces == 0)
         {
             issues.Warning("data.tiles", "на карте нет мест выставления юнитов (база игрока или зона выставления)");
+        }
+
+        if (map.Routes.Count > 0)
+        {
+            // Spec part 7 §4.3 p.6: a route over a removed or closed hex needs revalidation — shown with the hex to fix.
+            var built = Runtime.RuntimeFactory.BuildMap(new ContentItem(library.Registry.Find(ContentTypeRegistry.Map)!, "map_routecheck", map, ContentOrigin.User), library, new IssueList());
+            foreach (var (route, problem) in Runtime.RuntimeFactory.CheckRoutes(built, map))
+            {
+                issues.Warning($"data.routes.{route.Id}", $"маршрут «{route.Name}» требует проверки: {problem.Message}");
+            }
         }
 
         if (map.TestPoints.Count >= 2 && map.Tiles.Count > 0)

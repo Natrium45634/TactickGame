@@ -140,7 +140,7 @@ public sealed class ContentTypeRegistry
             Description = "Поля из гексов: размер, типы местности, базы и зоны.",
             Read = (o, i) => MapData.Read(o, i), CreateDefault = () => new MapData { CombatRuleset = CombatRulesetData.Standard },
             SchemaVersion = 2, Migrate = Migrations.Map,
-            OptionalDataKeys = new[] { "testPoints", "combatRuleset", "autoAttacks" },
+            OptionalDataKeys = new[] { "testPoints", "combatRuleset", "autoAttacks", "bases", "routes" },
         });
         registry.Register(new ContentKind
         {
