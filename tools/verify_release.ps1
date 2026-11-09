@@ -785,8 +785,9 @@ $script:PersistenceScenarioV33 = (@(
 # placed by a click on the map and turned to the north, a click on an obstacle refused, a second enemy removed, undo and redo, a
 # squad of one; its test run starts on «Подготовка»: the card is deployed and gets its route and facing while nothing moves, then
 # «Начать бой», the operative attacks the enemy and the battle ends with «Победа» on a pause. From the start menu the built-in
-# «Учебный бой» starts with three enemies and three cards; the menu goes back to free play for the next scenarios.
-$script:RegressionScenarioV34 = $script:RegressionScenarioV33 + ';' + (@(
+# «Учебный бой» starts with three enemies and three cards; the menu goes back to free play for the next scenarios. The card of the
+# operative held by «Страж» now says «удержан блоком врага» (the state, never the capacity — no «Блок» line).
+$script:RegressionScenarioV34 = ($script:RegressionScenarioV33 -replace 'expect:info:1:блок:no', 'expect:info:1:удержан блоком врага:yes;expect:info:1:Блок:no') + ';' + (@(
     'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Засада', 'expect:scenario-errors:1',
     'cell:6,2', 'expect:scenario-enemies:1', 'expect:scenario-selected:6,2', 'ui:scenario.turn.right', 'ui:scenario.turn.right', 'ui:scenario.turn.right',
     'expect:scenario-enemy:6,2:core.unit.operative:North', 'cell:5,2', 'expect:scenario-enemies:1', 'cell:8,3', 'expect:scenario-enemies:2',
