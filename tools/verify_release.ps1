@@ -842,6 +842,28 @@ $script:PersistenceScenarioV35 = (@(
     'expect:route-check:route2:ok', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV34
 
+# v0.36.0+ (spec part 7 §4.5–4.7; acceptance §12.3 M7-17…M7-25): Tower Defense «Оборона двух линий» on «Две линии»: a wave with a
+# group of 2 on «Маршрут 1» and a group of 1 on «Петля» shifted by 2 s (the sums 3, 2 and 1 are computed), started at the first
+# second; its copy disabled (6 → 3); base lives 5 and 3. In the test nobody defends: three enemies leak, each into the base of its
+# own route (5 → 3, 3 → 2), the wave is resolved and the battle ends with «Победа».
+$script:RegressionScenarioV36 = $script:RegressionScenarioV35 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Оборона двух линий', 'ui:scenario.mode.tower_defense',
+    'field:scenario.map=Две линии (свой)', 'expect:scenario-errors:1', 'ui:scenario.wave.add', 'expect:scenario-waves:1', 'expect:scenario-wave-enemies:5',
+    'field:scenario.group.1.count=2', 'ui:scenario.group.add', 'field:scenario.group.2.route=Петля', 'field:scenario.group.2.count=1',
+    'field:scenario.group.2.offset=2', 'expect:scenario-wave-total:1:3', 'expect:scenario-route-total:route1:2', 'expect:scenario-route-total:route2:1',
+    'field:scenario.wave.start=в секунду боя', 'field:scenario.wave.delay=1', 'ui:scenario.wave.copy', 'expect:scenario-waves:2', 'expect:scenario-wave-enemies:6',
+    'ui:scenario.wave.enabled', 'expect:scenario-wave-enemies:3', 'field:scenario.base.1.lives=5', 'field:scenario.base.2.lives=3', 'expect:scenario-base-lives:1:5',
+    'expect:scenario-errors:0', 'ui:scenario.save', 'expect:errors:0',
+    'ui:scenario.test', 'expect:screen:play', 'expect:phase:Preparing', 'expect:wave:0/1', 'expect:upcoming:3', 'pause:off', 'advance:600',
+    'expect:phase:Victory', 'expect:base-lives:1:3', 'expect:base-lives:2:2', 'expect:wave:1/1', 'expect:upcoming:0',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:scenario', 'ui:scenario.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV36 = (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Оборона двух линий', 'ui:dev.open', 'expect:editor:scenario', 'expect:scenario-waves:2',
+    'expect:scenario-wave-enemies:3', 'expect:scenario-base-lives:2:3', 'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV35
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -919,7 +941,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
+            $scenario = if ([version]$Version -ge [version]'0.36.0') { $script:RegressionScenarioV36 }
+                        elseif ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
                         elseif ([version]$Version -ge [version]'0.34.0') { $script:RegressionScenarioV34 }
                         elseif ([version]$Version -ge [version]'0.33.0') { $script:RegressionScenarioV33 }
                         elseif ([version]$Version -ge [version]'0.32.0') { $script:RegressionScenarioV32 }
@@ -951,7 +974,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
+            if ([version]$Version -ge [version]'0.36.0') { $persistence = $script:PersistenceScenarioV36 }
+            elseif ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
             elseif ([version]$Version -ge [version]'0.34.0') { $persistence = $script:PersistenceScenarioV34 }
             elseif ([version]$Version -ge [version]'0.33.0') { $persistence = $script:PersistenceScenarioV33 }
             elseif ([version]$Version -ge [version]'0.32.0') { $persistence = $script:PersistenceScenarioV32 }
