@@ -1,11 +1,11 @@
 # Архитектура HexTactics
 
-Документ описывает фактическое устройство кода. Актуален для версии **v0.34.0** (ТЗ ч.1–3: flat-top, непрерывные
+Документ описывает фактическое устройство кода. Актуален для версии **v0.35.0** (ТЗ ч.1–3: flat-top, непрерывные
 черновики, ростер, команды, плавное движение 1 гекс/с, HP и обычная атака, «Линейный удар» с юнита и из ТД; ТЗ ч.4:
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой). Формат контента —
+зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой, маршруты врагов). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -480,6 +480,14 @@ tests/*  ──► соответствующие сборки
   `Preparing → Running → Victory | Defeat`, событие `ScenarioEnded`, после итога `GameSimulation` стоит на паузе
   (`IsScenarioOver`). Клиент: выбор «Сценарий» в стартовом меню, `ScenarioEditor` (карта сценария на `BoardView`, враги —
   цилиндры с указателем взгляда), цели и «Начать бой» в панели игры, название паузы `DebugHud.SetPaused(bool, string?)`.
+- **Маршруты врагов (с v0.35.0, ТЗ ч.7 §4, D-178–D-181).** Core: `EnemyRoute` (упорядоченные посещения), `MapBase`
+  (нумерованные базы сторон), `MapDefinition.Bases/Routes`, `RouteCheck` (та же проходимость, что у движения),
+  `RouteProgress` юнита (индекс посещения — источник истины). Simulation: `MovementSystem.TryStartRouteStep` — строго к
+  следующему посещению, ожидание `RouteAhead` без обхода, `RouteFinished`; `SpawnOnRoute`. Content: `MapData.Routes/Bases`,
+  `MapTileData.Base`, `RuntimeFactory.BuildMap` (базы и маршруты), `CheckRoutes`, предупреждения `MapChecks`. Editor:
+  `MapEditorModel.Routes.cs` — черновик (`RouteClickAt`, `RouteHover`, `RemoveLastVisit`, `CancelRouteDraft`, `RedrawRoute`),
+  карточка, проверка; событие `DraftChanged` перерисовывает только линии. Клиент: `RouteLayer` (полосы с шевронами и
+  номерами, без теста глубины), «〰 Маршруты» в `MapEditor` (след курсора `TraceRoute`), раздел «Маршруты врагов» в отладке боя.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -620,7 +628,13 @@ crit|surprise|moving`, `battack.turn.left|right`, `cell:q,r` (гекс поля 
 `scenario.startpaused|autoattacks|blocking|timelimit`, `scenario.test`, шаги `cell:c,r` (ЛКМ по гексу карты сценария) и
 `rcell:c,r` (ПКМ — убрать врага); проверки `expect:scenario-enemies:<N>`, `expect:scenario-enemy:c,r:<ID юнита>:<взгляд>`,
 `expect:scenario-squad:<N|ID,ID…>`, `expect:scenario-errors:<N>`, `expect:scenario-preview:<текст>`, `expect:scenario-selected:c,r|none`;
-в игре `expect:phase:Preparing|Running|Victory|Defeat`, `expect:enemies-left:<N>`. В бою: `advance:N` — ровно N
+в игре `expect:phase:Preparing|Running|Victory|Defeat`, `expect:enemies-left:<N>`. С v0.35.0: редактор карт — `map.routes`,
+`map.tile.base`, `map.base.name`, `map.route.pick.<id>`, `map.route.name|enabled|redraw|copy|delete|back|cancel`, `map.routes.check`,
+шаги `routedraw:c,r>c,r>…` (ЛКМ по первому гексу, затем курсор по следующим — одно движение за кадр), `rclick:c,r`; проверки
+`expect:route-mode:on|off`, `expect:routes:<N>`, `expect:route:<id>:<c,r c,r …>`, `expect:route-ends:<id>:<база врага>><база игрока>`,
+`expect:route-draft:<N>`, `expect:route-error:<текст>|none`, `expect:route-selected:<id>|none`, `expect:route-check:<id>:ok|<N>`,
+`expect:route-name:<id>:<название>`; в игре — `game.routes.show`, `game.route.<id>`, шаг `route:<id>`, проверки
+`expect:routes-visible:yes|no`, `expect:route-index:<ID>:<индекс>|done|none`. В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
 `export.json`, `export.hxp`, `export.folder`, `export.cancel`; импорт — `dialog.input` (путь или имя файла из `exports`),
@@ -675,11 +689,13 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV32` = V31 + базовая атака «Копьё», «Копейщик», автоатака на «Арене копий» (3 удара/с, поворот) для v0.32.0,
 `$RegressionScenarioV33` = V32 + «Страж» с блоком 1: один из двух проходящих удержан, второй дошёл, для v0.33.0,
 `$RegressionScenarioV34` = V33 + сценарий «Засада» в редакторе (враг щелчком, поворот, отмена, отряд из одного), его тест от
-«Подготовки» до «Победы» и «Учебный бой» из меню для v0.34.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
+«Подготовки» до «Победы» и «Учебный бой» из меню для v0.34.0,
+`$RegressionScenarioV35` = V34 + «Две линии»: базы 1 и 2, две красные линии курсором (повторы, ошибка на препятствии, Backspace,
+Esc, скачок мыши), «Петля», враги по обеим линиям в тесте карты для v0.35.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
 30 урона в тесте юнита; `$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34/V35` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Сценарий длиннее 32 000 символов (предел командной строки Windows) идёт несколькими запусками `smoke`, `smoke-2`, … с одной папкой пользователя, разрезанный по концам сценариев прежних версий (D-164). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
