@@ -765,6 +765,22 @@ $script:PersistenceScenarioV32 = (@(
     'field:dev.search=', 'ui:dev.cat.map', 'row:name=Арена копий', 'ui:dev.open', 'expect:map-autoattacks:yes', 'ui:map.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV31
 
+# v0.33.0+ (spec part 7 §7; acceptance §12.5 M7-36…M7-42, M7-57): the enemy unit «Страж» with «Блок» 1 — «Блок: 1 …» in «В бою»; in its
+# test run two operatives walk past it: the first is held on its own hex next to the guard, the second (no free slot) walks on to
+# its goal; never two units in one hex.
+$script:RegressionScenarioV33 = $script:RegressionScenarioV32 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Страж', 'field:unit.side=enemy', 'field:unit.block=1',
+    'expect:battle-preview:Блок: 1 — пока стоит, удерживает до 1', 'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5', 'spawn:enemy:3,4@Страж', 'spawn:cell:2,5', 'select:1', 'drag:3,5>3,1',
+    'click:3,1@North:0.6', 'select:3', 'drag:2,5>2,1', 'click:2,1@North:0.6', 'advance:200', 'expect:cell:1:3,5', 'expect:blocked:1:yes',
+    'expect:cell:2:3,4', 'expect:cell:3:2,1', 'expect:blocked:3:no', 'select:1', 'expect:info:1:блок:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV33 = (@(
+    'ui:menu.dev', 'ui:dev.cat.unit', 'row:name=Страж', 'ui:dev.open', 'expect:battle-preview:Блок: 1 — пока стоит', 'ui:unit.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV32
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -842,7 +858,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.32.0') { $script:RegressionScenarioV32 }
+            $scenario = if ([version]$Version -ge [version]'0.33.0') { $script:RegressionScenarioV33 }
+                        elseif ([version]$Version -ge [version]'0.32.0') { $script:RegressionScenarioV32 }
                         elseif ([version]$Version -ge [version]'0.31.0') { $script:RegressionScenarioV31 }
                         elseif ([version]$Version -ge [version]'0.30.0') { $script:RegressionScenarioV30 }
                         elseif ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
@@ -871,7 +888,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.32.0') { $persistence = $script:PersistenceScenarioV32 }
+            if ([version]$Version -ge [version]'0.33.0') { $persistence = $script:PersistenceScenarioV33 }
+            elseif ([version]$Version -ge [version]'0.32.0') { $persistence = $script:PersistenceScenarioV32 }
             elseif ([version]$Version -ge [version]'0.31.0') { $persistence = $script:PersistenceScenarioV31 }
             elseif ([version]$Version -ge [version]'0.30.0') { $persistence = $script:PersistenceScenarioV30 }
             elseif ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
