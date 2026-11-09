@@ -31,13 +31,33 @@ public sealed class SpawnGroupData
 
     public bool Enabled { get; set; } = true;
 
-    public SpawnGroupData Copy() => new() { Id = Id, Route = Route, Unit = Unit, Count = Count, FirstDelay = FirstDelay, Interval = Interval, Offset = Offset, Enabled = Enabled };
+    /// <summary>Defense (spec part 7 §5.1): «base:N» (an enemy base) or «zone:N» (a spawn zone) when the group has no route.</summary>
+    public string Source { get; set; } = string.Empty;
 
-    public JsonObject ToJson() => new()
+    /// <summary>The AI of the group's enemies (spec part 7 §5.2); route walkers keep «none».</summary>
+    public AiData Ai { get; set; } = new();
+
+    public SpawnGroupData Copy() => new() { Id = Id, Route = Route, Unit = Unit, Count = Count, FirstDelay = FirstDelay, Interval = Interval, Offset = Offset, Enabled = Enabled, Source = Source, Ai = Ai.Copy() };
+
+    public JsonObject ToJson()
     {
-        ["id"] = Id, ["route"] = Route, ["unit"] = Unit, ["count"] = Count, ["firstDelay"] = FirstDelay, ["interval"] = Interval,
-        ["offset"] = Offset, ["enabled"] = Enabled,
-    };
+        var json = new JsonObject
+        {
+            ["id"] = Id, ["route"] = Route, ["unit"] = Unit, ["count"] = Count, ["firstDelay"] = FirstDelay, ["interval"] = Interval,
+            ["offset"] = Offset, ["enabled"] = Enabled,
+        };
+        if (Source.Length > 0)
+        {
+            json["source"] = Source;
+        }
+
+        if (!Ai.IsNone)
+        {
+            json["ai"] = Ai.ToJson();
+        }
+
+        return json;
+    }
 
     public static SpawnGroupData Read(JsonObject o, IssueList issues, string path) => new()
     {
@@ -49,6 +69,8 @@ public sealed class SpawnGroupData
         Interval = JsonFields.Number(o, "interval", 1, issues, path),
         Offset = JsonFields.Number(o, "offset", 0, issues, path),
         Enabled = JsonFields.Flag(o, "enabled", true, issues, path),
+        Source = o.ContainsKey("source") ? JsonFields.Text(o, "source", string.Empty, issues, path) : string.Empty,
+        Ai = o["ai"] is JsonObject ai ? AiData.Read(ai, issues, path) : new AiData(),
     };
 }
 

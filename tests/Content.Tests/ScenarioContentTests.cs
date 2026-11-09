@@ -55,12 +55,12 @@ public class ScenarioContentTests
         var registry = ContentTypeRegistry.CreateDefault();
         Assert.Single(registry.All, k => k.Title == "Сценарии");
         Assert.Equal(new[] { "battle", "tower_defense", "defense", "exploration" }, ScenarioData.Modes.Select(m => m.Id));
-        Assert.Equal(new[] { "battle", "tower_defense" }, ScenarioData.Modes.Where(m => m.Available).Select(m => m.Id)); // v0.36.0
+        Assert.Equal(new[] { "battle", "tower_defense", "defense" }, ScenarioData.Modes.Where(m => m.Available).Select(m => m.Id)); // v0.37.0
 
         var library = ContentTestKit.Library(null);
-        var defense = Scenario(library, "Оборона", (6, 2));
-        ((ScenarioData)defense.Data).Mode = "defense";
-        Assert.Contains(library.Validate(defense), i => i.IsError && i.Message.Contains("появится в v0.37.0", StringComparison.Ordinal));
+        var trip = Scenario(library, "Поход", (6, 2));
+        ((ScenarioData)trip.Data).Mode = "exploration";
+        Assert.Contains(library.Validate(trip), i => i.IsError && i.Message.Contains("появится в v0.38.0", StringComparison.Ordinal));
     }
 
     [Fact]

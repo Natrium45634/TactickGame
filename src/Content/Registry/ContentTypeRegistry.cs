@@ -147,7 +147,7 @@ public sealed class ContentTypeRegistry
             Id = Scenario, Title = "Сценарии", Singular = "сценарий", Folder = "scenarios", Order = 12,
             Description = "Что играть: карта, режим (обычный бой; Tower Defense, оборона и исследование — следующими версиями), отряд игрока, враги на карте и цели.",
             Read = (o, i) => ScenarioData.Read(o, i), CreateDefault = () => new ScenarioData(),
-            OptionalDataKeys = new[] { "waves", "bases", "defeat" },
+            OptionalDataKeys = new[] { "waves", "bases", "defeat", "objects", "objectsPolicy", "survive", "squadLoss" },
         });
         registry.Register(new ContentKind
         {

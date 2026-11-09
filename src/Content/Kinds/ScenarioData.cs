@@ -26,7 +26,10 @@ public sealed class PlacedUnitData
 
     public HexCoord Cell => HexCoord.FromOffset(Col, Row);
 
-    public PlacedUnitData Copy() => new() { Unit = Unit, Col = Col, Row = Row, Facing = Facing };
+    /// <summary>Its simple AI (spec part 7 §3.3: «Охранник» in a battle; any preset in a defense); «none» — stands and hits.</summary>
+    public AiData Ai { get; set; } = new();
+
+    public PlacedUnitData Copy() => new() { Unit = Unit, Col = Col, Row = Row, Facing = Facing, Ai = Ai.Copy() };
 }
 
 /// <summary>
@@ -39,6 +42,10 @@ public sealed class ScenarioData : IContentData
     public const string Battle = "battle";
 
     public const string TowerDefense = "tower_defense";
+
+    public const string Defense = "defense";
+
+    public const int MaxObjects = 16;
 
     public const int MaxWaves = 50;
 
@@ -59,7 +66,7 @@ public sealed class ScenarioData : IContentData
     {
         new ScenarioMode(Battle, "Обычный бой", "Враги уже на карте; выставьте отряд и победите всех.", true, "v0.34.0"),
         new ScenarioMode(TowerDefense, "Tower Defense", "Враги идут волнами по красным маршрутам карты к базам игрока.", true, "v0.36.0"),
-        new ScenarioMode("defense", "Оборона", "Враги прибывают, своей базы нет; простой ИИ.", false, "v0.37.0"),
+        new ScenarioMode(Defense, "Оборона", "Враги прибывают волнами со своих баз и зон с простым ИИ; базы игрока нет — выстоять время или отбить все волны, сберечь объекты.", true, "v0.37.0"),
         new ScenarioMode("exploration", "Исследование", "От входа к выходу через бои.", false, "v0.38.0"),
     };
 
@@ -98,6 +105,20 @@ public sealed class ScenarioData : IContentData
 
     public bool IsTowerDefense => Mode == TowerDefense;
 
+    public bool IsDefense => Mode == Defense;
+
+    /// <summary>Defense: the defended objects (spec part 7 §5.1).</summary>
+    public List<MissionObjectData> Objects { get; } = new();
+
+    /// <summary>Defense: «all» — every critical object must survive (default), «any» — at least one.</summary>
+    public string ObjectsPolicy { get; set; } = "all";
+
+    /// <summary>Defense: game seconds to hold out; 0 — repel every wave (spec part 7 §5.3).</summary>
+    public double SurviveSeconds { get; set; }
+
+    /// <summary>Defense: the death of the whole squad (with an empty reserve) is a defeat.</summary>
+    public bool SquadLossDefeat { get; set; } = true;
+
     /// <summary>Enemies of the scenario's enabled waves — the sum of the groups.</summary>
     public int WaveEnemies => Waves.Where(w => w.Enabled).Sum(w => w.Total);
 
@@ -121,6 +142,26 @@ public sealed class ScenarioData : IContentData
             json["defeat"] = Defeat;
         }
 
+        if (Objects.Count > 0)
+        {
+            json["objects"] = new JsonArray(Objects.Select(o => (JsonNode)o.ToJson()).ToArray());
+        }
+
+        if (ObjectsPolicy != "all")
+        {
+            json["objectsPolicy"] = ObjectsPolicy;
+        }
+
+        if (SurviveSeconds > 0)
+        {
+            json["survive"] = SurviveSeconds;
+        }
+
+        if (!SquadLossDefeat)
+        {
+            json["squadLoss"] = false;
+        }
+
         return json;
     }
 
@@ -128,9 +169,20 @@ public sealed class ScenarioData : IContentData
     {
         ["mode"] = Mode, ["map"] = Map, ["ruleset"] = Ruleset, ["autoAttacks"] = AutoAttacks, ["blocking"] = Blocking,
         ["squad"] = new JsonArray(Squad.Select(s => (JsonNode)s).ToArray()),
-        ["enemies"] = new JsonArray(Enemies.Select(e => (JsonNode)new JsonObject { ["unit"] = e.Unit, ["col"] = e.Col, ["row"] = e.Row, ["facing"] = e.Facing.ToString() }).ToArray()),
+        ["enemies"] = new JsonArray(Enemies.Select(e => (JsonNode)EnemyJson(e)).ToArray()),
         ["timeLimit"] = TimeLimit, ["startPaused"] = StartPaused,
     };
+
+    private static JsonObject EnemyJson(PlacedUnitData e)
+    {
+        var json = new JsonObject { ["unit"] = e.Unit, ["col"] = e.Col, ["row"] = e.Row, ["facing"] = e.Facing.ToString() };
+        if (!e.Ai.IsNone)
+        {
+            json["ai"] = e.Ai.ToJson();
+        }
+
+        return json;
+    }
 
     public static ScenarioData Read(JsonObject obj, IssueList issues)
     {
@@ -144,7 +196,21 @@ public sealed class ScenarioData : IContentData
             TimeLimit = JsonFields.Number(obj, "timeLimit", 0, issues, string.Empty),
             StartPaused = JsonFields.Flag(obj, "startPaused", true, issues, string.Empty),
             Defeat = obj.ContainsKey("defeat") ? JsonFields.Text(obj, "defeat", "any_critical", issues, string.Empty) : "any_critical",
+            ObjectsPolicy = obj.ContainsKey("objectsPolicy") ? JsonFields.Text(obj, "objectsPolicy", "all", issues, string.Empty) : "all",
+            SurviveSeconds = obj.ContainsKey("survive") ? JsonFields.Number(obj, "survive", 0, issues, string.Empty) : 0,
+            SquadLossDefeat = !obj.ContainsKey("squadLoss") || JsonFields.Flag(obj, "squadLoss", true, issues, string.Empty),
         };
+        if (obj["objects"] is JsonArray objects)
+        {
+            for (var i = 0; i < objects.Count; i++)
+            {
+                if (objects[i] is JsonObject o)
+                {
+                    data.Objects.Add(MissionObjectData.Read(o, issues, $"objects[{i}]"));
+                }
+            }
+        }
+
         if (obj["waves"] is JsonArray waves)
         {
             for (var i = 0; i < waves.Count; i++)
@@ -205,6 +271,11 @@ public sealed class ScenarioData : IContentData
                 else
                 {
                     issues.Error("enemies", "направление взгляда врага — North, NorthEast, SouthEast, South, SouthWest или NorthWest");
+                }
+
+                if (e["ai"] is JsonObject ai)
+                {
+                    placed.Ai = AiData.Read(ai, issues, "enemies");
                 }
 
                 data.Enemies.Add(placed);
@@ -284,6 +355,58 @@ public sealed class ScenarioData : IContentData
             context.Issues.Error("waves", "в Tower Defense нужна хотя бы одна включённая волна с врагами");
         }
 
+        if (IsDefense)
+        {
+            // Spec part 7 §5.3: an end must be reachable — a time to hold out, or finite waves to repel.
+            if (SurviveSeconds <= 0 && WaveEnemies == 0)
+            {
+                context.Issues.Error("survive", "оборона без окончания: задайте «Выстоять, с» или хотя бы одну волну с врагами");
+            }
+
+            if (!double.IsFinite(SurviveSeconds) || SurviveSeconds < 0 || SurviveSeconds > 36000)
+            {
+                context.Issues.Error("survive", "«Выстоять» — от 0 до 36000 с");
+            }
+
+            if (ObjectsPolicy is not ("all" or "any"))
+            {
+                context.Issues.Error("objectsPolicy", $"неизвестное правило объектов «{ObjectsPolicy}»");
+            }
+        }
+
+        if (Objects.Count > MaxObjects)
+        {
+            context.Issues.Error("objects", $"не больше {MaxObjects} объектов");
+        }
+
+        var objectIds = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < Objects.Count; i++)
+        {
+            var o = Objects[i];
+            if (!ContentIds.IsValid(o.Id) || !objectIds.Add(o.Id))
+            {
+                context.Issues.Error($"objects[{i}].id", $"ID объекта «{o.Id}» пустой или повторяется");
+            }
+
+            if (o.Name.Trim().Length == 0)
+            {
+                context.Issues.Error($"objects[{i}].name", "у объекта нет названия");
+            }
+
+            if (!double.IsFinite(o.Health) || o.Health < 1 || o.Health > 99999)
+            {
+                context.Issues.Error($"objects[{i}].health", $"объект «{o.Name}»: здоровье — от 1 до 99999");
+            }
+        }
+
+        foreach (var (e, i) in Enemies.Select((e, i) => (e, i)))
+        {
+            foreach (var problem in e.Ai.Problems())
+            {
+                context.Issues.Error($"enemies[{i}].ai", $"враг на {e.Col},{e.Row}: {problem}");
+            }
+        }
+
         if (Waves.Count > MaxWaves)
         {
             context.Issues.Error("waves", $"не больше {MaxWaves} волн");
@@ -341,9 +464,14 @@ public sealed class ScenarioData : IContentData
                     }
                 }
 
-                if (g.Route.Length == 0 && g.Enabled)
+                if (g.Route.Length == 0 && g.Source.Length == 0 && g.Enabled)
                 {
-                    context.Issues.Error($"{path}.groups[{k}].route", $"{at}: не выбран маршрут");
+                    context.Issues.Error($"{path}.groups[{k}].route", IsDefense ? $"{at}: не выбран источник (база врага или зона) или маршрут" : $"{at}: не выбран маршрут");
+                }
+
+                foreach (var problem in g.Ai.Problems())
+                {
+                    context.Issues.Error($"{path}.groups[{k}].ai", $"{at}: {problem}");
                 }
 
                 if (g.Unit.Length == 0 && g.Enabled)
@@ -386,7 +514,8 @@ public sealed class ScenarioData : IContentData
 
     /// <summary>«Обычный бой · врагов 3 · отряд 3».</summary>
     public string Summary() =>
-        $"{Modes.FirstOrDefault(m => m.Id == Mode)?.Title ?? Mode} · " + (IsTowerDefense ? $"волн {Waves.Count(w => w.Enabled)} · врагов {WaveEnemies}" : $"врагов {Enemies.Count}") + $" · отряд {Squad.Count}" +
+        $"{Modes.FirstOrDefault(m => m.Id == Mode)?.Title ?? Mode} · " + (IsTowerDefense || IsDefense ? $"волн {Waves.Count(w => w.Enabled)} · врагов {WaveEnemies}" : $"врагов {Enemies.Count}")
+        + (IsDefense && Objects.Count > 0 ? $" · объектов {Objects.Count}" : string.Empty) + $" · отряд {Squad.Count}" +
         (TimeLimit > 0 ? $" · {TimeLimit.ToString("0.##", CultureInfo.InvariantCulture)} с" : string.Empty);
 
     public IContentData Clone()
@@ -398,6 +527,10 @@ public sealed class ScenarioData : IContentData
         copy.Waves.AddRange(Waves.Select(w => w.Copy()));
         copy.BaseLives.AddRange(BaseLives.Select(b => b.Copy()));
         copy.Defeat = Defeat;
+        copy.Objects.AddRange(Objects.Select(o => o.Copy()));
+        copy.ObjectsPolicy = ObjectsPolicy;
+        copy.SurviveSeconds = SurviveSeconds;
+        copy.SquadLossDefeat = SquadLossDefeat;
         return copy;
     }
 
@@ -407,6 +540,31 @@ public sealed class ScenarioData : IContentData
     /// </summary>
     public string GoalsText()
     {
+        if (IsDefense)
+        {
+            var critical = Objects.Where(o => o.Critical).Select(o => $"«{o.Name}»").ToList();
+            var win = SurviveSeconds > 0
+                ? $"Победа: продержаться {SurviveSeconds.ToString("0.##", CultureInfo.InvariantCulture)} с боя"
+                : $"Победа: отбить все волны ({Waves.Count(w => w.Enabled)}, врагов {WaveEnemies}) — на поле никого";
+            var loseParts = new List<string>();
+            if (critical.Count > 0)
+            {
+                loseParts.Add(ObjectsPolicy == "any" ? $"уничтожены все критические объекты ({string.Join(", ", critical)})" : $"уничтожен любой критический объект ({string.Join(", ", critical)})");
+            }
+
+            if (SquadLossDefeat)
+            {
+                loseParts.Add("все ваши юниты погибли и в резерве никого");
+            }
+
+            if (TimeLimit > 0 && SurviveSeconds <= 0)
+            {
+                loseParts.Add($"прошло {TimeLimit.ToString("0.##", CultureInfo.InvariantCulture)} с боя");
+            }
+
+            return win + ". " + (loseParts.Count == 0 ? "Поражения нет." : "Поражение: " + string.Join(" или ", loseParts) + ".");
+        }
+
         if (IsTowerDefense)
         {
             var waves = Waves.Count(w => w.Enabled);

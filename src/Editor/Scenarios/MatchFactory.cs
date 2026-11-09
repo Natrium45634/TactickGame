@@ -40,7 +40,10 @@ public static class MatchFactory
             // the player deploys and plans, nothing advances until «Начать бой».
             foreach (var placed in scenario.Placed)
             {
-                sim.Spawn(SpawnRequest.AtCell(placed.Cell, placed.Side, placed.Facing) with { Profile = placed.Profile });
+                if (sim.Spawn(SpawnRequest.AtCell(placed.Cell, placed.Side, placed.Facing) with { Profile = placed.Profile }).Unit is { } id)
+                {
+                    sim.State.SetAi(id, placed.Ai); // spec part 7 §3.3, §5.2: «Охранник» and the other presets
+                }
             }
 
             sim.SetPaused(scenario.StartPaused);
