@@ -278,27 +278,7 @@ public sealed class GameState
 
         foreach (var unit in dead)
         {
-            _units.Remove(unit.Id);
-            if (_occupancy.TryGetValue(unit.Cell, out var holder) && holder == unit.Id)
-            {
-                _occupancy.Remove(unit.Cell);
-            }
-
-            foreach (var cell in new List<HexCoord>(_reservations.Keys))
-            {
-                if (_reservations[cell] == unit.Id)
-                {
-                    _reservations.Remove(cell);
-                }
-            }
-
-            unit.Orders.Clear();
-            unit.Orders.SetAttackTarget(null);
-            unit.Orders.SetGroup(null);
-            unit.Motion.PathCells.Clear();
-            unit.Motion.StepFrom = null;
-            unit.Motion.StepTo = null;
-            unit.Motion.Plan = null;
+            Detach(unit);
             _fallen.Add(unit);
             if (unit.RosterEntryId is { } entry && Roster.Find(entry) is { } card)
             {
@@ -308,6 +288,47 @@ public sealed class GameState
 
         OccupancyVersion++;
         return dead;
+    }
+
+    /// <summary>
+    /// Takes a living unit off the map without a death (spec part 7 §4.6: an enemy that leaked into a player base stops being an
+    /// active unit): its hex, reservations and block links are freed at once. Returns false if there is no such unit.
+    /// </summary>
+    public bool RemoveFromMap(UnitId id)
+    {
+        if (!_units.TryGetValue(id, out var unit))
+        {
+            return false;
+        }
+
+        Detach(unit);
+        OccupancyVersion++;
+        return true;
+    }
+
+    private void Detach(UnitState unit)
+    {
+        _units.Remove(unit.Id);
+        if (_occupancy.TryGetValue(unit.Cell, out var holder) && holder == unit.Id)
+        {
+            _occupancy.Remove(unit.Cell);
+        }
+
+        foreach (var cell in new List<HexCoord>(_reservations.Keys))
+        {
+            if (_reservations[cell] == unit.Id)
+            {
+                _reservations.Remove(cell);
+            }
+        }
+
+        unit.Orders.Clear();
+        unit.Orders.SetAttackTarget(null);
+        unit.Orders.SetGroup(null);
+        unit.Motion.PathCells.Clear();
+        unit.Motion.StepFrom = null;
+        unit.Motion.StepTo = null;
+        unit.Motion.Plan = null;
     }
 
     /// <summary>Gives the unit its skill set.</summary>

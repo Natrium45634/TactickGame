@@ -94,7 +94,19 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
 /// <summary>The scenario was won or lost (spec part 7 §2.3, §3.2).</summary>
 public sealed record ScenarioEnded(long Tick, HexTactics.Core.Scenarios.ScenarioPhase Phase, HexTactics.Core.Scenarios.ScenarioEndReason Reason) : SimulationEvent(Tick);
 
-/// <summary>A unit reached the last visit of its enemy route (spec part 7 §4.4); the leak into the base comes with waves.</summary>
+/// <summary>A wave started (spec part 7 §4.5): its index, id and the number of its enemies.</summary>
+public sealed record WaveStarted(long Tick, int Wave, string WaveId, int Total) : SimulationEvent(Tick);
+
+/// <summary>Every enemy of the wave appeared and none of them is on the map any more.</summary>
+public sealed record WaveResolved(long Tick, int Wave, string WaveId) : SimulationEvent(Tick);
+
+/// <summary>An enemy of a wave came in from the queue of its route's entrance hex.</summary>
+public sealed record WaveEnemySpawned(long Tick, UnitId Unit, int Wave, string RouteId) : SimulationEvent(Tick);
+
+/// <summary>An enemy reached its player base (spec part 7 §4.6): it left the map, the base lost lives once.</summary>
+public sealed record EnemyLeaked(long Tick, UnitId Unit, string RouteId, int Base, int LivesLeft) : SimulationEvent(Tick);
+
+/// <summary>A unit reached the last visit of its enemy route (spec part 7 §4.4).</summary>
 public sealed record RouteFinished(long Tick, UnitId Unit, string RouteId, HexCoord Cell) : SimulationEvent(Tick);
 
 /// <summary>A standing unit started to hold an enemy on the neighbouring hex (spec part 7 §7.2).</summary>

@@ -28,6 +28,13 @@ public sealed class GameSimulation
         Settings = settings ?? SimulationSettings.Default;
         _clock = new SimulationClock(Settings.TickDuration);
         _context = new SimulationContext(State, _events);
+        if (Settings.Scenario is { Waves.Count: > 0 } scenario)
+        {
+            // Spec part 7 §11.1 p.2–3: timers and spawn queues of the waves first, so new enemies act in the same tick order.
+            _waves = new WaveSystem(State, _events, scenario.Waves, (route, profile) => SpawnOnRoute(route, profile).Unit);
+            AddSystem(_waves);
+        }
+
         _packs = new PackSystem(State);
         AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
         var blocks = new BlockSystem(State, _events, Settings.Blocking);
@@ -39,11 +46,32 @@ public sealed class GameSimulation
         AddSystem(new AttackSystem(State, _events, Settings, Damage));
         AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
-        _objectives = new ObjectiveSystem(State, _events, Settings.Scenario);
+        _objectives = new ObjectiveSystem(State, _events, Settings.Scenario, _waves);
         AddSystem(_objectives); // spec part 7 §11.1 p.9: victory and defeat once, from the confirmed state of the tick
     }
 
     private readonly ObjectiveSystem _objectives;
+
+    private readonly WaveSystem? _waves;
+
+    /// <summary>Waves of the scenario (0 without Tower Defense).</summary>
+    public int WaveCount => _waves?.WaveCount ?? 0;
+
+    /// <summary>Waves started so far.</summary>
+    public int WavesStarted => _waves?.StartedCount ?? 0;
+
+    /// <summary>Enemies of the waves still to come: planned and waiting in the entrance queues.</summary>
+    public int UpcomingEnemies => _waves?.Upcoming ?? 0;
+
+    /// <summary>Enemies waiting for a free entrance hex.</summary>
+    public int QueuedEnemies => _waves?.Queued ?? 0;
+
+    public bool AllWavesResolved => _waves?.AllResolved ?? true;
+
+    /// <summary>Lives left per player base (Tower Defense).</summary>
+    public IReadOnlyDictionary<int, int> BaseLives => _objectives.BaseLives;
+
+    public int SharedLives => _objectives.SharedLives;
 
     /// <summary>The scenario state (spec part 7 §2.3); free play stays «Preparing» without goals.</summary>
     public HexTactics.Core.Scenarios.ScenarioPhase ScenarioPhase => _objectives.Phase;

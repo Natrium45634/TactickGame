@@ -21,6 +21,12 @@ public enum ScenarioEndReason
     SquadLost = 1,
 
     TimeUp = 2,
+
+    /// <summary>Tower Defense: every wave resolved, no enemy left (spec part 7 §4.6).</summary>
+    AllWavesCleared = 3,
+
+    /// <summary>Tower Defense: the base lives ran out under the defeat policy.</summary>
+    BaseLost = 4,
 }
 
 /// <summary>
@@ -36,4 +42,18 @@ public sealed record ScenarioRules
 
     /// <summary>Game seconds of the running phase after which the scenario is lost; 0 — no limit.</summary>
     public double TimeLimitSeconds { get; init; }
+
+    /// <summary>Waves of enemies along routes (Tower Defense, spec part 7 §4.5); empty — no waves.</summary>
+    public System.Collections.Generic.IReadOnlyList<WaveDefinition> Waves { get; init; } = System.Array.Empty<WaveDefinition>();
+
+    /// <summary>Lives of the player bases; an enemy finishing its route on one takes one life of that base only.</summary>
+    public System.Collections.Generic.IReadOnlyList<BaseLives> Bases { get; init; } = System.Array.Empty<BaseLives>();
+
+    public DefeatPolicy Defeat { get; init; } = DefeatPolicy.AnyCriticalBase;
+
+    /// <summary>
+    /// Tower Defense goals instead of the ordinary ones: victory when every wave is resolved and no enemy is left, defeat by
+    /// the base lives (spec part 7 §4.6).
+    /// </summary>
+    public bool TowerDefense { get; init; }
 }
