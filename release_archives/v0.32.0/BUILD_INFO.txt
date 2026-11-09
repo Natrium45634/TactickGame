@@ -1,0 +1,14 @@
+product=HexTactics
+version=0.32.0
+tag=v0.32.0
+commit=5152730d87eba9f99dab8749acf5c1da395f0584
+build_date_utc=2026-11-09T03:44:39Z
+godot=4.7.2.stable.mono.official.ed1daf0bf
+dotnet_sdk=8.0.133
+target_framework=net8.0
+platform=windows-x86_64
+renderer=gl_compatibility
+run=HexTactics.exe
+zip=HexTactics_v0.32.0_windows_x64.zip
+sha256=c5d2c1a729a70611c34f36135ad3521329f2288093ffc02c1fb5ba072b878982
+size_bytes=75883215
