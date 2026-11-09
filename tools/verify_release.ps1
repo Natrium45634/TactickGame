@@ -737,6 +737,34 @@ $script:CleanImportScenarioV31 = $script:CleanImportScenarioV25 + ';' + (@(
     'expect:hp:2:70', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back', 'ui:dev.back', 'expect:screen:menu'
 ) -join ';')
 
+# v0.32.0+ (spec part 7 §8; acceptance §12.5 M7-43…M7-50): «Механики» → «Базовые атаки» → «Копьё» drawn on the hex board (front and
+# second front hex, turning the board does not move the stored area); the unit «Копейщик» (3 attacks/s) with it — «Базовая атака:
+# 3 удар/с · 2 гекс. …» without a test; in its test run on the prototype (no automatic attacks, D-170) nothing happens by itself; on
+# «Арена копий» with «Автоатака юнитов» it hits the enemy two hexes ahead 3 times a second, not the one behind, never turns or moves;
+# turned to the south it hits the one behind instead.
+$script:RegressionScenarioV32 = $script:RegressionScenarioV31 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.basic_attack', 'expect:category:basic_attack', 'expect:rows:1', 'ui:dev.create', 'expect:editor:basic_attack',
+    'field:battack.name=Копьё', 'expect:battack-cells:0,-1', 'cell:0,-2', 'expect:battack-cells:0,-1 0,-2', 'ui:battack.turn.right',
+    'expect:battack-facing:NorthEast', 'cell:0,0', 'expect:battack-cells:0,-1 0,-2', 'expect:battack-preview:2 гекс. (перед, второй перед)',
+    'ui:battack.save', 'expect:errors:0', 'ui:battack.back', 'expect:rows:2',
+    'ui:dev.cat.unit', 'ui:dev.create', 'expect:editor:unit', 'field:unit.name=Копейщик', 'field:unit.attackRate=3', 'field:unit.basicAttack=Копьё (свой)',
+    'expect:battle-preview:Базовая атака: 3 удар/с · 2 гекс. (перед, второй перед) · 1 враг · 10 урона до защиты', 'ui:unit.save', 'expect:errors:0',
+    'ui:unit.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Копейщик', 'select:1', 'face:North', 'spawn:enemy:3,4', 'advance:61',
+    'expect:hp:2:100', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:unit', 'ui:unit.back',
+    'ui:dev.cat.map', 'row:name=Прототип 12×10', 'ui:dev.duplicate', 'row:name=Прототип 12×10 (копия)', 'ui:dev.rename', 'field:dialog.input=Арена копий',
+    'ui:dialog.ok', 'row:name=Арена копий', 'ui:dev.open', 'expect:editor:map', 'expect:map-autoattacks:no', 'field:map.autoattacks=true',
+    'expect:map-autoattacks:yes', 'ui:map.save', 'expect:dirty:no', 'ui:map.test', 'expect:screen:play', 'pause:on', 'spawn:cell:3,5@Копейщик', 'select:1',
+    'face:North', 'spawn:enemy:3,3', 'spawn:enemy:3,6', 'advance:31', 'expect:hp:2:70', 'expect:hp:3:100', 'expect:facing:1:North', 'expect:cell:1:3,5',
+    'select:1', 'face:South', 'advance:31', 'expect:hp:2:70', 'expect:hp:3:70', 'expect:info:1:удар/с:no',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:map', 'ui:map.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV32 = (@(
+    'ui:menu.dev', 'ui:dev.cat.basic_attack', 'row:name=Копьё', 'ui:dev.open', 'expect:battack-cells:0,-1 0,-2', 'ui:battack.back',
+    'ui:dev.cat.unit', 'field:dev.search=Копейщик', 'row:name=Копейщик', 'ui:dev.open', 'expect:battle-preview:2 гекс. (перед, второй перед)', 'ui:unit.back',
+    'field:dev.search=', 'ui:dev.cat.map', 'row:name=Арена копий', 'ui:dev.open', 'expect:map-autoattacks:yes', 'ui:map.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV31
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -814,7 +842,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.31.0') { $script:RegressionScenarioV31 }
+            $scenario = if ([version]$Version -ge [version]'0.32.0') { $script:RegressionScenarioV32 }
+                        elseif ([version]$Version -ge [version]'0.31.0') { $script:RegressionScenarioV31 }
                         elseif ([version]$Version -ge [version]'0.30.0') { $script:RegressionScenarioV30 }
                         elseif ([version]$Version -ge [version]'0.29.0') { $script:RegressionScenarioV29 }
                         elseif ([version]$Version -ge [version]'0.28.0') { $script:RegressionScenarioV28 }
@@ -842,7 +871,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.31.0') { $persistence = $script:PersistenceScenarioV31 }
+            if ([version]$Version -ge [version]'0.32.0') { $persistence = $script:PersistenceScenarioV32 }
+            elseif ([version]$Version -ge [version]'0.31.0') { $persistence = $script:PersistenceScenarioV31 }
             elseif ([version]$Version -ge [version]'0.30.0') { $persistence = $script:PersistenceScenarioV30 }
             elseif ([version]$Version -ge [version]'0.29.0') { $persistence = $script:PersistenceScenarioV29 }
             elseif ([version]$Version -ge [version]'0.28.0') { $persistence = $script:PersistenceScenarioV28 }
