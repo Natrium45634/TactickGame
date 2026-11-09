@@ -49,7 +49,7 @@ internal sealed class BlockSystem : ISimulationSystem
             End(held, reason, tick);
         }
 
-        if (unit.Orders.OrderCount == 0)
+        if (!unit.WantsToMove)
         {
             return false;
         }
@@ -73,7 +73,7 @@ internal sealed class BlockSystem : ISimulationSystem
         && blocker.Cell.DistanceTo(enemy.Cell) == 1 && _state.BlockCount(blocker.Id) < BlockMath.Capacity(blocker);
 
     /// <summary>A blocker holds only while it stands: no step under way and no movement order (spec part 7 §7.2).</summary>
-    private static bool Standing(UnitState unit) => !unit.Motion.IsStepping && unit.Orders.OrderCount == 0;
+    private static bool Standing(UnitState unit) => !unit.Motion.IsStepping && !unit.WantsToMove;
 
     private void Release(long tick)
     {
@@ -126,7 +126,7 @@ internal sealed class BlockSystem : ISimulationSystem
             return BlockReleaseReason.NoLongerAdjacent;
         }
 
-        return enemy.Orders.OrderCount == 0 ? BlockReleaseReason.EnemyStopped : null;
+        return !enemy.WantsToMove ? BlockReleaseReason.EnemyStopped : null;
     }
 
     private void End(BlockLink link, BlockReleaseReason reason, long tick)

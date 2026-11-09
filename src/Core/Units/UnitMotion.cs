@@ -56,6 +56,9 @@ public enum WaitReason
 
     /// <summary>Held by a hostile blocker on a neighbouring hex (spec part 7 §7.2): stays on its own hex until released.</summary>
     Blocked = 6,
+
+    /// <summary>On an enemy route: the next visit is taken or closed; the unit waits on its hex and goes on from the same index.</summary>
+    RouteAhead = 7,
 }
 
 /// <summary>

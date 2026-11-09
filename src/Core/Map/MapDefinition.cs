@@ -32,6 +32,42 @@ public sealed class MapDefinition
 
     public PlayerBaseDefinition? PlayerBase { get; }
 
+    /// <summary>Numbered bases of both sides (spec part 7 §4.1); several of each side are allowed.</summary>
+    public IReadOnlyList<MapBase> Bases { get; init; } = System.Array.Empty<MapBase>();
+
+    /// <summary>Enemy routes of the map (spec part 7 §4.1, §9.2: the geometry belongs to the map).</summary>
+    public IReadOnlyList<EnemyRoute> Routes { get; init; } = System.Array.Empty<EnemyRoute>();
+
+    /// <summary>The base the hex belongs to, or null.</summary>
+    public MapBase? BaseAt(HexCoord cell)
+    {
+        foreach (var b in Bases)
+        {
+            foreach (var c in b.Cells)
+            {
+                if (c == cell)
+                {
+                    return b;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public EnemyRoute? FindRoute(string id)
+    {
+        foreach (var route in Routes)
+        {
+            if (route.Id == id)
+            {
+                return route;
+            }
+        }
+
+        return null;
+    }
+
     public SpawnZoneDefinition? FindZone(int id)
     {
         foreach (var zone in SpawnZones)

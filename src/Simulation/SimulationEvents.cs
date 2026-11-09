@@ -94,6 +94,9 @@ public sealed record DamageApplied(long Tick, UnitId Target, UnitId? Source, dou
 /// <summary>The scenario was won or lost (spec part 7 §2.3, §3.2).</summary>
 public sealed record ScenarioEnded(long Tick, HexTactics.Core.Scenarios.ScenarioPhase Phase, HexTactics.Core.Scenarios.ScenarioEndReason Reason) : SimulationEvent(Tick);
 
+/// <summary>A unit reached the last visit of its enemy route (spec part 7 §4.4); the leak into the base comes with waves.</summary>
+public sealed record RouteFinished(long Tick, UnitId Unit, string RouteId, HexCoord Cell) : SimulationEvent(Tick);
+
 /// <summary>A standing unit started to hold an enemy on the neighbouring hex (spec part 7 §7.2).</summary>
 public sealed record BlockStarted(long Tick, UnitId Blocker, UnitId Enemy) : SimulationEvent(Tick);
 

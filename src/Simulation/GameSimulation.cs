@@ -199,6 +199,28 @@ public sealed class GameSimulation
 
     private readonly PackSystem _packs;
 
+    /// <summary>
+    /// An enemy appears on the first visit of <paramref name="route"/> facing its second one and follows the route
+    /// (spec part 7 §4.4). The start hex must be free: a taken start is a refusal (queues come with waves).
+    /// </summary>
+    public SpawnResult SpawnOnRoute(EnemyRoute route, UnitProfile? profile = null, Side side = Side.Enemy)
+    {
+        if (route.Cells.Count < 2)
+        {
+            return new SpawnResult(null, null, SpawnError.MissingCell, null);
+        }
+
+        var start = route.Cells[0];
+        var facing = start.DirectionTo(route.Cells[1]) ?? HexDirection.South;
+        var result = Spawn(SpawnRequest.AtCell(start, side, facing) with { Profile = profile });
+        if (result.Unit is { } id)
+        {
+            State.AssignRoute(id, route);
+        }
+
+        return result;
+    }
+
     /// <summary>Recounts the «per matching ally» bonuses now (also on the pause); the simulation does it itself on changes.</summary>
     public void RefreshPacks() => _packs.Refresh(force: false);
 

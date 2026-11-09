@@ -122,5 +122,11 @@ public sealed class UnitState
     /// <summary>Current movement between hex centres (driven by the simulation).</summary>
     public UnitMotion Motion { get; } = new();
 
+    /// <summary>The enemy route the unit follows (spec part 7 §4.4), or null; explicit orders go first.</summary>
+    public RouteProgress? Route { get; internal set; }
+
+    /// <summary>The unit means to move on: it has waypoints or an unfinished route (blocks hold only such units).</summary>
+    public bool WantsToMove => Orders.OrderCount > 0 || Route is { Finished: false };
+
     public override string ToString() => $"Unit {Id} {Side} at {Cell} facing {Facing?.ShortName() ?? "-"} {Lifecycle} {CurrentHealth}/{MaxHealth} HP";
 }

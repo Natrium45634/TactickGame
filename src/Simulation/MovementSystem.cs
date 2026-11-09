@@ -124,7 +124,7 @@ internal sealed class MovementSystem : ISimulationSystem
         ArriveAtCentre(unit, tick);
         if (unit.Orders.Peek() is not { } target)
         {
-            return false;
+            return unit.Route is { Finished: false } && TryStartRouteStep(unit, tick);
         }
 
         if (unit.ActiveSkill is not null || (target.Cell == unit.Cell && target.Skill is { IsActive: true }))
@@ -236,6 +236,54 @@ internal sealed class MovementSystem : ISimulationSystem
             return false;
         }
 
+        // Smooth curve of this step (spec part 3 §2.2): it turns towards the next hex of the path unless the unit stops
+        // in `next` (a waypoint is a hard anchor — its centre is reached).
+        StartStep(unit, next, next != target.Cell && m.PathCells.Count >= 2 && m.PathCells[0] == next ? m.PathCells[1] : null, tick);
+        return true;
+    }
+
+    /// <summary>
+    /// One step along an enemy route (spec part 7 §4.4): strictly to the next visit — no A*, no detour, no switch to a crossing
+    /// line. A taken or closed next visit makes the unit wait on its hex; it goes on from the same index afterwards. A unit moved
+    /// off its route by an explicit order leaves the route.
+    /// </summary>
+    private bool TryStartRouteStep(UnitState unit, long tick)
+    {
+        var m = unit.Motion;
+        var route = unit.Route!;
+        if (unit.Cell != route.Route.Cells[route.Index] || route.Next!.Value.DistanceTo(unit.Cell) != 1)
+        {
+            // Off the line after an explicit order, or broken route data (the editor and the checks never let one through).
+            _state.ClearRoute(unit.Id);
+            return false;
+        }
+
+        if (_blocks is not null && _blocks.HoldsBack(unit, tick))
+        {
+            m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.Blocked;
+            return false;
+        }
+
+        var next = route.Next!.Value;
+        if (!_state.Grid.IsWalkable(next) || _state.IsOccupiedByOther(next, unit.Id) || _state.IsReservedByOther(next, unit.Id))
+        {
+            m.Status = MovementStatus.Waiting;
+            m.WaitReason = WaitReason.RouteAhead;
+            return false;
+        }
+
+        m.PathCells.Clear();
+        m.PathCells.Add(next);
+        m.PathWaypointId = null;
+        StartStep(unit, next, route.AfterNext, tick);
+        return true;
+    }
+
+    /// <summary>Reserves <paramref name="next"/> and starts the smooth step there (curve towards <paramref name="lookahead"/>).</summary>
+    private void StartStep(UnitState unit, HexCoord next, HexCoord? lookahead, long tick)
+    {
+        var m = unit.Motion;
         m.WaitReason = WaitReason.None;
 
         _state.Reserve(next, unit.Id);
@@ -245,9 +293,6 @@ internal sealed class MovementSystem : ISimulationSystem
         m.CellSwitched = false;
         m.Status = MovementStatus.Moving;
 
-        // Smooth curve of this step (spec part 3 §2.2): it turns towards the next hex of the path unless the unit stops
-        // in `next` (a waypoint is a hard anchor — its centre is reached).
-        var lookahead = next != target.Cell && m.PathCells.Count >= 2 && m.PathCells[0] == next ? m.PathCells[1] : (HexCoord?)null;
         var start = m.Position ?? _layout.HexToPlane(unit.Cell);
         var plan = StepGeometry.Build(_layout, unit.Cell, next, start, m.Heading, m.HeadingControl, lookahead);
         m.Plan = plan;
@@ -263,7 +308,6 @@ internal sealed class MovementSystem : ISimulationSystem
         }
 
         _events.Add(new StepStarted(tick, unit.Id, unit.Cell, next));
-        return true;
     }
 
     private void ArriveAtCentre(UnitState unit, long tick)
@@ -294,7 +338,17 @@ internal sealed class MovementSystem : ISimulationSystem
             _events.Add(new FinalFacingApplied(tick, unit.Id, finalFacing));
         }
 
-        if (unit.Orders.IsEmpty && m.Status != MovementStatus.Idle)
+        // A route: the visit reached moves the index on; the last one ends the route (spec part 7 §4.4).
+        if (unit.Orders.IsEmpty && unit.Route is { Finished: false } route && route.Next == unit.Cell)
+        {
+            _state.AdvanceRoute(unit.Id);
+            if (route.Finished)
+            {
+                _events.Add(new RouteFinished(tick, unit.Id, route.Route.Id, unit.Cell));
+            }
+        }
+
+        if (unit.Orders.IsEmpty && m.Status != MovementStatus.Idle && unit.Route is not { Finished: false })
         {
             m.Status = MovementStatus.Idle;
             m.BlockReason = BlockReason.None;

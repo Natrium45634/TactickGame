@@ -101,6 +101,25 @@ public readonly record struct HexCoord(int Q, int R) : IComparable<HexCoord>
         return new OffsetCoord(Q, row);
     }
 
+    /// <summary>
+    /// The hexes of a straight line from this hex to <paramref name="other"/>, both included, each next to the previous one
+    /// (cube interpolation with a tiny fixed nudge, so a line along a shared edge always picks the same side).
+    /// </summary>
+    public IReadOnlyList<HexCoord> LineTo(HexCoord other)
+    {
+        var n = DistanceTo(other);
+        var line = new List<HexCoord>(n + 1) { this };
+        for (var i = 1; i <= n; i++)
+        {
+            var t = (double)i / n;
+            var q = Q + 1e-6 + ((other.Q - Q) * t);
+            var r = R + 2e-6 + ((other.R - R) * t);
+            line.Add(Round(q, r));
+        }
+
+        return line;
+    }
+
     /// <summary>Rounds fractional cube coordinates to the nearest hex.</summary>
     public static HexCoord Round(double q, double r)
     {

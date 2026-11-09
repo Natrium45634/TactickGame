@@ -400,6 +400,30 @@ public sealed class GameState
         unit.Lifecycle = UnitLifecycle.Active;
     }
 
+    /// <summary>The unit follows <paramref name="route"/> from the visit <paramref name="index"/> (where it must stand).</summary>
+    public void AssignRoute(UnitId id, HexTactics.Core.Map.EnemyRoute route, int index = 0)
+    {
+        var unit = GetUnit(id);
+        if (index < 0 || index >= route.Cells.Count || route.Cells[index] != unit.Cell)
+        {
+            throw new System.ArgumentException("The unit must stand on the route visit it starts from.", nameof(index));
+        }
+
+        unit.Route = new RouteProgress(route, index);
+    }
+
+    /// <summary>The unit stops following its route.</summary>
+    public void ClearRoute(UnitId id) => GetUnit(id).Route = null;
+
+    /// <summary>The unit reached the next visit of its route.</summary>
+    public void AdvanceRoute(UnitId id)
+    {
+        if (GetUnit(id).Route is { Finished: false } route)
+        {
+            route.Index++;
+        }
+    }
+
     public void SetFacing(UnitId id, HexDirection facing)
     {
         if (!Enum.IsDefined(facing))
