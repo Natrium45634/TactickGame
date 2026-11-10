@@ -115,6 +115,46 @@ public class DefenseScenarioTests
     }
 
     [Fact]
+    public void M7_60_a_defense_is_made_in_the_editor_with_objects_sources_ai_and_a_guard_without_typing_data()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var model = new ScenarioEditorModel(library, library.Create(ContentTypeRegistry.Scenario, "Оборона двора"));
+        Assert.Null(model.SetMap(Yard(library).Id));
+        Assert.Null(model.SetMode(ScenarioData.Defense));
+        Assert.Contains(model.Validate(), i => i.IsError && i.Message.Contains("оборона без окончания", StringComparison.Ordinal));
+
+        model.PlaceObjects = true;
+        Assert.Null(model.Click(HexTactics.Core.Hex.HexCoord.FromOffset(4, 4)));
+        Assert.Null(model.SetObjectName("Генератор"));
+        Assert.Null(model.SetObjectHealth("80"));
+        Assert.NotNull(model.SetObjectHealth("0"));
+        Assert.Equal(("Генератор", 80.0, true), (model.Scenario.Objects[0].Name, model.Scenario.Objects[0].Health, model.Scenario.Objects[0].Critical));
+
+        model.PlaceObjects = false;
+        Assert.Null(model.Click(HexTactics.Core.Hex.HexCoord.FromOffset(6, 2)));
+        Assert.Contains("стоит объект миссии", model.Click(HexTactics.Core.Hex.HexCoord.FromOffset(4, 4)), StringComparison.Ordinal);
+        Assert.Null(model.SetEnemyAi("guard"));
+        Assert.Null(model.SetAiNumber(null, null, "guardRadius", "2"));
+        Assert.Equal(("guard", 2), (model.Scenario.Enemies[0].Ai.Preset, model.Scenario.Enemies[0].Ai.GuardRadius));
+
+        Assert.Equal(new[] { ("base:1", "База врага 1") }, model.Sources());
+        var wave = model.AddWave();
+        var group = model.Scenario.Waves[0].Groups[0];
+        Assert.Equal(("", "base:1", "attack_objective"), (group.Route, group.Source, group.Ai.Preset)); // a defense group: source + AI
+        Assert.Null(model.SetGroupAi(wave, group.Id, "units_then_objective"));
+        Assert.NotNull(model.SetGroupSource(wave, group.Id, "zone:9"));
+        Assert.Null(model.SetSurvive("45"));
+        Assert.Contains("из «База врага 1» (сначала юниты, потом объект)", string.Join(" | ", model.Preview()), StringComparison.Ordinal);
+        Assert.DoesNotContain(model.Validate(), i => i.IsError);
+        Assert.True(model.Save().Ok);
+
+        var sim = MatchFactory.Start(RuntimeFactory.BuildScenario(library, library.Find(model.Item.Ref)!));
+        Assert.Single(sim.Objects);
+        Assert.Equal(AiPreset.Guard, sim.State.Units.Single(u => u.Side == Side.Enemy).Ai!.Profile.Preset);
+    }
+
+    [Fact]
     public void M7_05_a_guard_placed_in_an_ordinary_battle_stays_on_its_post_while_the_player_is_outside_its_radius()
     {
         using var dir = new TempDirectory();
