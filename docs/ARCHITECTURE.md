@@ -5,7 +5,7 @@
 стартовое меню «Играть»/«Разработчик», библиотека контента, каталог разработчика, Undo/Redo, редакторы карт, юнитов,
 навыков и типов гексов, ядро эффектов, поверхности, импорт/экспорт объектов и пакетов; ТЗ ч.5: единый расчёт урона,
 типы урона, сопротивления, правила защиты, щиты и реакции, «Механики»; ТЗ ч.6: единый реестр определений, каталог ссылок,
-зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой, маршруты врагов, волны и Tower Defense). Формат контента —
+зависимости, защита A и правила боя, пассивы, виды, теги и стая; ТЗ ч.7: автоатака, блок, сценарии и обычный бой, маршруты врагов, волны и Tower Defense, простой ИИ и оборона). Формат контента —
 `docs/CONTENT_FORMAT.md`.
 Состояние документа для прошлых версий — в соответствующих Git-тегах.
 
@@ -495,6 +495,17 @@ tests/*  ──► соответствующие сборки
   победа после волн. Content: `WaveData`, `SpawnGroupData`, `BaseLivesData`, `RuntimeFactory.CheckWaves` и `ScenarioRulesOf`.
   Editor: волны, группы, базы, суммы и расписание в `ScenarioEditorModel`. Клиент: разделы «Базы игрока» и «Волны» в
   `ScenarioEditor` (линии маршрутов на поле), строка волн и жизней баз в `GameMode`.
+- **Простой ИИ и оборона (с v0.37.0, ТЗ ч.7 §5, D-185–D-188).** Core: `AiProfile` (`AiPreset`, `AiPriority`, дальность,
+  пересмотр, радиус охраны, реакция на блок), `AiState` юнита (дом, фаза, цель, следующий пересмотр, пропущенные недостижимые
+  цели), `UnitRole` (`Combatant` / `Objective`), `MissionObject`, `ObjectsPolicy`, поля обороны в `ScenarioRules`. Simulation:
+  `AiSystem` (`Waves, Packs, Ai, Blocks, Movement, Skills, Attack, Tiles, Statuses, Objectives`) отдаёт только обычные
+  приказы — атаку цели или путь домой; `WaveSystem` впускает группы из гексов источника (`SourceCells`) и вешает ИИ;
+  `GameSimulation.SpawnObjective` — объекты миссии без приказов и атаки; `ObjectiveSystem` — цели обороны (объекты, отряд,
+  время, волны). Content: `AiData`, `MissionObjectData`, поля обороны `ScenarioData`, `RuntimeFactory.AiOf/SourceCells` и
+  проверки. Editor: `ScenarioEditorModel.Defense.cs` — объекты, цели, шаблоны, источники и ИИ групп и врагов;
+  `MatchFactory` вешает ИИ на врагов карты. Interaction: черновики ТД не строятся для объектов. Клиент: разделы «Цель
+  обороны» и «Объекты миссии», «Откуда»/«Поведение»/«Дополнительно ▾» в `ScenarioEditor`, строка «Выстоять» и здоровье
+  объектов в `GameMode`.
 - **Импорт и экспорт (с v0.20.0, D-113–D-118).** `ContentExporter`: объект → JSON, пакет → ZIP с `manifest.json` и
   замыканием зависимостей. `ContentImporter.Inspect` проверяет файл и объекты без записи и строит `ImportPreview`
   (статус и решение каждого объекта); `Install` проверяет выбранный набор поверх библиотеки (`ContentLibrary.Overlay`) и
@@ -645,7 +656,13 @@ crit|surprise|moving`, `battack.turn.left|right`, `cell:q,r` (гекс поля 
 `scenario.base.<N>.lives|critical`, `scenario.wave.add`, `scenario.wave.pick.<n>`, `scenario.wave.name|start|delay|enabled|copy|up|down|delete`,
 `scenario.group.<n>.route|unit|count|delay|interval|offset|enabled|remove`, `scenario.group.add`, `scenario.defeat`; проверки
 `expect:scenario-waves:<N>`, `expect:scenario-wave-total:<n>:<N>`, `expect:scenario-wave-enemies:<N>`, `expect:scenario-route-total:<id>:<N>`,
-`expect:scenario-base-lives:<база>:<N>`; в бою `expect:wave:<начато>/<всего>`, `expect:upcoming:<N>`, `expect:base-lives:<база>:<N>`.
+`expect:scenario-base-lives:<база>:<N>`; в бою `expect:wave:<начато>/<всего>`, `expect:upcoming:<N>`, `expect:base-lives:<база>:<N>`. С v0.37.0:
+`scenario.template.survive|protect|waves`, `scenario.survive`, `scenario.objects.policy`, `scenario.squadloss`,
+`scenario.brush.enemies|objects`, `scenario.object.name|health|critical|remove|deselect`, `scenario.enemy.ai|guard|detect`,
+`scenario.group.<n>.source|ai|detect`, `scenario.<enemy|group.<n>>.ai.more|priority|reevaluate|switch`; проверки
+`expect:scenario-objects:<N>`, `expect:scenario-object:<c,r>:<название>:<HP>:yes|no`, `expect:scenario-enemy-ai:<c,r>:<пресет>`,
+`expect:scenario-group:<волна>:<группа>:<источник|route:id>:<пресет>`, `expect:scenario-ai-more:<c,r|в.г>:<приоритет>:<с>:yes|no`,
+`expect:scenario-preview:<текст>`; в бою `expect:object-hp:<название>:<HP>|dead`, `expect:ai-target:<ID>:<ID цели>|none`.
 В бою: `advance:N` — ровно N
 тиков симуляции за один кадр (пауза сохраняется), `expect:hp:ID:значение~допуск`.
 С v0.20.0: каталог — `dev.export`, `dev.import`; окно экспорта — `dialog.input` (название пакета), `export.pick.<название>`,
@@ -705,11 +722,14 @@ health|enemies|allies|run` (префикс `rule.`, `dtype.`, `unit.`), пров
 `$RegressionScenarioV35` = V34 + «Две линии»: базы 1 и 2, две красные линии курсором (повторы, ошибка на препятствии, Backspace,
 Esc, скачок мыши), «Петля», враги по обеим линиям в тесте карты для v0.35.0,
 `$RegressionScenarioV36` = V35 + Tower Defense «Оборона двух линий»: волна из двух групп, копия выключена, жизни баз, утечки по
-своим базам и «Победа» в тесте для v0.36.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
+своим базам и «Победа» в тесте для v0.36.0,
+`$RegressionScenarioV37` = V36 + «Двор» без базы игрока и оборона «Оборона двора» из шаблона «Защитить объект»: «Генератор»,
+охранник, волна из зоны к объекту, «Дополнительно» ИИ; поражение с критическим объектом и победа по времени с некритическим
+для v0.37.0+ (`$CleanImportScenarioV31` = V25 + импорт «Вода.hxp» и те же
 30 урона в тесте юнита; `$CleanImportScenarioV25` —
 чистая установка с двумя пакетами), `$CleanImportScenarioV20` — третий запуск с чистой
 папкой: импорт пакета первого запуска и игра на нём;
-`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34/V35/V36` — второй запуск с той же папкой пользователя:
+`$PersistenceScenarioV15/V16/V17/V18/V19/V20/V21/V22/V23/V24/V25/V26/V27/V28/V29/V30/V31/V32/V33/V34/V35/V36/V37` — второй запуск с той же папкой пользователя:
 сохранённое видно после перезапуска). Сценарий длиннее 32 000 символов (предел командной строки Windows) идёт несколькими запусками `smoke`, `smoke-2`, … с одной папкой пользователя, разрезанный по концам сценариев прежних версий (D-164). Точка `P` — `c,r` (центр гекса) или
 `c,r@Direction:dist` (смещение от центра в плоскости карты, в размерах гекса), например `drag:9,8>9,8@NorthWest:0.6`.
 
