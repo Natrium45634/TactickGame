@@ -128,6 +128,66 @@ public sealed partial class ScenarioEditorModel
 
     public void SetSquadLoss(bool on) => Apply(on ? "Гибель отряда — поражение" : "Гибель отряда — не поражение", (d, _) => ((ScenarioData)d).SquadLossDefeat = on);
 
+    /// <summary>The templates of «Сценарии → Оборона» (spec part 7 §5.4): the goal in one click, then the details by hand.</summary>
+    public static IReadOnlyList<(string Id, string Label, string Hint)> DefenseTemplates { get; } = new[]
+    {
+        ("survive", "Выстоять время", "Победа через 60 с боя; гибель всего отряда — поражение."),
+        ("protect", "Защитить объект", "Победа — все волны отбиты; враги идут к объектам; кисть «объекты» включена."),
+        ("waves", "Отбить все волны", "Победа — все волны отбиты и врагов нет; гибель всего отряда — поражение."),
+    };
+
+    /// <summary>
+    /// Sets the goal fields of a template in one undoable step and adds a first wave when there is none, so the defense has an end at
+    /// once. Objects, enemies and existing waves are kept; «Защитить объект» points the groups that come out of sources at the objects.
+    /// </summary>
+    public string? ApplyDefenseTemplate(string id)
+    {
+        if (!Scenario.IsDefense)
+        {
+            return "шаблоны — для режима «Оборона»";
+        }
+
+        if (DefenseTemplates.All(t => t.Id != id))
+        {
+            return $"неизвестный шаблон «{id}»";
+        }
+
+        var label = DefenseTemplates.First(t => t.Id == id).Label;
+        WaveData? first = null;
+        if (Scenario.Waves.Count == 0)
+        {
+            first = new WaveData { Id = NextId(Scenario.Waves.Select(w => w.Id), "wave"), Name = "Волна 1" };
+            first.Groups.Add(NewGroup("group1"));
+        }
+
+        Apply($"Шаблон «{label}»", (d, _) =>
+        {
+            var s = (ScenarioData)d;
+            if (first is not null)
+            {
+                s.Waves.Add(first.Copy());
+            }
+
+            s.SurviveSeconds = id == "survive" ? (s.SurviveSeconds > 0 ? s.SurviveSeconds : 60) : 0; // PROTOTYPE_DEFAULT 60 s
+            s.SquadLossDefeat = id != "protect";
+            if (id == "protect")
+            {
+                foreach (var g in s.Waves.SelectMany(w => w.Groups).Where(g => g.Route.Length == 0))
+                {
+                    g.Ai.Preset = "attack_objective";
+                }
+            }
+        });
+        if (first is not null)
+        {
+            SelectedWave = first.Id;
+        }
+
+        PlaceObjects = id == "protect";
+        RaiseChanged();
+        return null;
+    }
+
     /// <summary>Sources of the scenario's map: its enemy bases and spawn zones («base:N», «zone:N»).</summary>
     public IReadOnlyList<(string Value, string Label)> Sources()
     {
@@ -200,21 +260,36 @@ public sealed partial class ScenarioEditorModel
         return null;
     }
 
-    public void SetAiPriority(string? waveId, string? groupId, string priority)
+    /// <summary>The target priority of the AI of a group or (null wave) the selected enemy: «nearest» or «lowest_health».</summary>
+    public string? SetAiPriority(string? waveId, string? groupId, string priority)
     {
         if (AiData.Priorities.All(p => p.Value != priority))
         {
-            return;
+            return $"неизвестный приоритет «{priority}»";
         }
 
+        return EditAi(waveId, groupId, "Приоритет цели", ai => ai.Priority = priority);
+    }
+
+    /// <summary>Whether a blocked enemy turns on the unit that blocks it (spec part 7 §5.2 «переключение при блоке»).</summary>
+    public string? SetAiSwitch(string? waveId, string? groupId, bool on) =>
+        EditAi(waveId, groupId, on ? "Бить блокирующего" : "Не отвлекаться на блок", ai => ai.SwitchToBlocker = on);
+
+    private string? EditAi(string? waveId, string? groupId, string what, Action<AiData> change)
+    {
         if (waveId is not null && groupId is not null)
         {
-            EditGroup(waveId, groupId, "Приоритет цели", g => g.Ai.Priority = priority);
+            EditGroup(waveId, groupId, what, g => change(g.Ai));
+            return null;
         }
-        else if (Selected is { } i && i < Scenario.Enemies.Count)
+
+        if (Selected is not { } i || i >= Scenario.Enemies.Count)
         {
-            Apply("Приоритет цели", (d, _) => ((ScenarioData)d).Enemies[i].Ai.Priority = priority);
+            return "сначала выберите врага на поле";
         }
+
+        Apply(what, (d, _) => change(((ScenarioData)d).Enemies[i].Ai));
+        return null;
     }
 
     /// <summary>The AI preset of the selected placed enemy (spec part 7 §3.3: «Охранник» in a battle).</summary>

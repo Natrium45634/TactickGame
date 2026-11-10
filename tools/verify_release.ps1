@@ -865,8 +865,10 @@ $script:PersistenceScenarioV36 = (@(
 ) -join ';') + ';' + $script:PersistenceScenarioV35
 
 # v0.37.0+ (spec part 7 §3.3, §5; acceptance §12.4 M7-05, M7-26…M7-30, M7-60): the prototype copied as «Двор» without its player
-# base; the defense «Оборона двора» (no player base at all): survive 20 s, the loss of the squad is not a defeat, the object
-# «Генератор» 60 HP at 3,6, a guard with radius 2 at 9,1 and a wave of 2 from zone «Северный край» going for the object. In the
+# base; the defense «Оборона двора» (no player base at all) from the template «Защитить объект» (a first wave, the loss of the
+# squad is not a defeat, the object brush on), then survive 20 s, the object
+# «Генератор» 60 HP at 3,6, a guard with radius 2 at 9,1 and a wave of 2 from zone «Северный край» going for the object (in
+# «Дополнительно»: the weakest first, re-check every 2 s, no switch to a blocker). In the
 # first test nobody defends: the critical generator falls (Defeat) while the guard keeps its post; marked non-critical, the
 # same defense is held for 20 s (Victory).
 $script:RegressionScenarioV37 = $script:RegressionScenarioV36 + ';' + (@(
@@ -874,10 +876,12 @@ $script:RegressionScenarioV37 = $script:RegressionScenarioV36 + ';' + (@(
     'field:dialog.input=Двор', 'ui:dialog.ok', 'row:name=Двор', 'ui:dev.open', 'expect:editor:map', 'ui:map.delete', 'click:0,4',
     'click:1,4', 'click:0,5', 'ui:map.delete', 'expect:tiles:117', 'ui:map.save', 'expect:map-errors:0', 'ui:map.back', 'ui:dev.back',
     'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Оборона двора', 'ui:scenario.mode.defense',
-    'field:scenario.map=Двор (свой)', 'expect:scenario-errors:1', 'field:scenario.survive=20', 'ui:scenario.squadloss', 'ui:scenario.brush.objects',
-    'cell:3,6', 'field:scenario.object.name=Генератор', 'field:scenario.object.health=60', 'expect:scenario-objects:1', 'expect:scenario-object:3,6:Генератор:60:yes',
-    'ui:scenario.brush.enemies', 'cell:9,1', 'field:scenario.enemy.ai=охранник', 'field:scenario.enemy.guard=2', 'expect:scenario-enemy-ai:9,1:guard',
-    'ui:scenario.wave.add', 'expect:scenario-group:1:1:zone:1:attack_objective', 'field:scenario.group.1.count=2', 'expect:scenario-preview:зона «Северный край» — 2',
+    'field:scenario.map=Двор (свой)', 'expect:scenario-errors:1', 'ui:scenario.template.protect', 'expect:scenario-waves:1',
+    'expect:scenario-errors:0', 'field:scenario.survive=20', 'cell:3,6', 'field:scenario.object.name=Генератор', 'field:scenario.object.health=60',
+    'expect:scenario-objects:1', 'expect:scenario-object:3,6:Генератор:60:yes', 'ui:scenario.brush.enemies', 'cell:9,1', 'field:scenario.enemy.ai=охранник',
+    'field:scenario.enemy.guard=2', 'expect:scenario-enemy-ai:9,1:guard', 'expect:scenario-group:1:1:zone:1:attack_objective',
+    'field:scenario.group.1.count=2', 'ui:scenario.group.1.ai.more', 'field:scenario.group.1.priority=меньше здоровья', 'field:scenario.group.1.reevaluate=2',
+    'ui:scenario.group.1.switch', 'expect:scenario-ai-more:1.1:lowest_health:2:no', 'expect:scenario-preview:зона «Северный край» — 2',
     'expect:scenario-errors:0', 'ui:scenario.save', 'expect:errors:0', 'ui:scenario.test', 'expect:screen:play', 'expect:phase:Preparing',
     'expect:object-hp:Генератор:60', 'pause:off', 'advance:600', 'expect:phase:Defeat', 'expect:object-hp:Генератор:dead', 'expect:cell:2:9,1',
     'ui:game.menu', 'ui:dialog.ok', 'expect:editor:scenario', 'cell:3,6', 'ui:scenario.object.critical', 'expect:scenario-object:3,6:Генератор:60:no',
@@ -888,7 +892,7 @@ $script:RegressionScenarioV37 = $script:RegressionScenarioV36 + ';' + (@(
 $script:PersistenceScenarioV37 = (@(
     'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Оборона двора', 'ui:dev.open', 'expect:editor:scenario', 'expect:scenario-objects:1',
     'expect:scenario-object:3,6:Генератор:60:no', 'expect:scenario-enemy-ai:9,1:guard', 'expect:scenario-group:1:1:zone:1:attack_objective',
-    'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
+    'expect:scenario-ai-more:1.1:lowest_health:2:no', 'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV36
 
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the

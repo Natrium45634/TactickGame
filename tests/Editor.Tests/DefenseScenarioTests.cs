@@ -143,6 +143,16 @@ public class DefenseScenarioTests
         var group = model.Scenario.Waves[0].Groups[0];
         Assert.Equal(("", "base:1", "attack_objective"), (group.Route, group.Source, group.Ai.Preset)); // a defense group: source + AI
         Assert.Null(model.SetGroupAi(wave, group.Id, "units_then_objective"));
+        Assert.Null(model.SetAiPriority(wave, group.Id, "lowest_health"));
+        Assert.NotNull(model.SetAiPriority(wave, group.Id, "strongest"));
+        Assert.Null(model.SetAiNumber(wave, group.Id, "reevaluate", "2,5"));
+        Assert.NotNull(model.SetAiNumber(wave, group.Id, "reevaluate", "0"));
+        Assert.Null(model.SetAiSwitch(wave, group.Id, false));
+        var ai = model.Scenario.Waves[0].Groups[0].Ai; // edits replace the data: read it again
+        Assert.Equal(("lowest_health", 2.5, false), (ai.Priority, ai.Reevaluate, ai.SwitchToBlocker));
+        Assert.True(model.Undo());
+        Assert.True(model.Scenario.Waves[0].Groups[0].Ai.SwitchToBlocker);
+        Assert.True(model.Redo());
         Assert.NotNull(model.SetGroupSource(wave, group.Id, "zone:9"));
         Assert.Null(model.SetSurvive("45"));
         var preview = string.Join(" | ", model.Preview());
@@ -155,6 +165,38 @@ public class DefenseScenarioTests
         var sim = MatchFactory.Start(RuntimeFactory.BuildScenario(library, library.Find(model.Item.Ref)!));
         Assert.Single(sim.Objects);
         Assert.Equal(AiPreset.Guard, sim.State.Units.Single(u => u.Side == Side.Enemy).Ai!.Profile.Preset);
+        var profile = RuntimeFactory.AiOf(((ScenarioData)library.Find(model.Item.Ref)!.Data).Waves[0].Groups[0].Ai)!;
+        Assert.Equal((AiPreset.UnitsThenObjective, AiPriority.LowestHealth, 2.5, false), (profile.Preset, profile.Priority, profile.ReevaluateSeconds, profile.SwitchToBlocker));
+    }
+
+    [Fact]
+    public void The_three_defense_templates_set_the_goal_in_one_undoable_step_and_give_the_defense_an_end()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var model = new ScenarioEditorModel(library, library.Create(ContentTypeRegistry.Scenario, "Шаблоны"));
+        Assert.NotNull(model.ApplyDefenseTemplate("survive")); // an ordinary battle has no defense templates
+        Assert.Null(model.SetMap(Yard(library).Id));
+        Assert.Null(model.SetMode(ScenarioData.Defense));
+        Assert.NotNull(model.ApplyDefenseTemplate("hold_forever"));
+
+        Assert.Null(model.ApplyDefenseTemplate("survive"));
+        var s = model.Scenario;
+        Assert.Equal((60.0, true, 1), (s.SurviveSeconds, s.SquadLossDefeat, s.Waves.Count));
+        Assert.DoesNotContain(model.Validate(), i => i.IsError);
+        Assert.Equal("Победа: продержаться 60 с боя. Поражение: все ваши юниты погибли и в резерве никого.", s.GoalsText());
+
+        Assert.Null(model.ApplyDefenseTemplate("protect"));
+        s = model.Scenario;
+        Assert.Equal((0.0, false, 1, "attack_objective"), (s.SurviveSeconds, s.SquadLossDefeat, s.Waves.Count, s.Waves[0].Groups[0].Ai.Preset));
+        Assert.True(model.PlaceObjects);
+        Assert.Null(model.Click(HexTactics.Core.Hex.HexCoord.FromOffset(4, 4)));
+        Assert.Single(model.Scenario.Objects);
+
+        Assert.Null(model.ApplyDefenseTemplate("waves"));
+        Assert.Equal((0.0, true, 1, 1), (model.Scenario.SurviveSeconds, model.Scenario.SquadLossDefeat, model.Scenario.Waves.Count, model.Scenario.Objects.Count));
+        Assert.True(model.Undo()); // back to «Защитить объект», the object stays
+        Assert.Equal((false, 1), (model.Scenario.SquadLossDefeat, model.Scenario.Objects.Count));
     }
 
     [Fact]

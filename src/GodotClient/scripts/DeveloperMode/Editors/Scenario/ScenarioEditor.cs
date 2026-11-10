@@ -36,6 +36,7 @@ public partial class ScenarioEditor : DefinitionEditorShell
     private MapDefinition? _map;
     private string _builtFor = string.Empty;
     private HexCoord? _hover;
+    private bool _aiMore;
     private Vector2? _pressAt;
     private string _squadPick = string.Empty;
 
@@ -355,6 +356,11 @@ public partial class ScenarioEditor : DefinitionEditorShell
                 inspector.LineText(IdPrefix + "enemy.detect", "Замечает за, гексов (0 — всю карту)", selected.Ai.DetectRange.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetAiNumber(null, null, "detectRange", v)));
             }
 
+            if (!selected.Ai.IsNone)
+            {
+                AiMore(inspector, "enemy", selected.Ai, null, null);
+            }
+
             var actions = inspector.Row();
             actions.AddChild(UiKit.Button("Убрать врага", () => _model.RemoveEnemy(), ButtonKind.Danger, IdPrefix + "enemy.remove", "Delete"));
             actions.AddChild(UiKit.Button("Снять выбор", _model.Deselect, ButtonKind.Flat, IdPrefix + "enemy.deselect", "Esc"));
@@ -497,6 +503,7 @@ public partial class ScenarioEditor : DefinitionEditorShell
                     inspector.Choice(IdPrefix + $"group.{n}.ai", "Поведение", AiData.Presets.Where(p => p.Value != "none").Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), g.Ai.Preset,
                         v => Refuse(_model.SetGroupAi(id, gid, v)), "Простой ИИ: к объекту, атаковать юнитов, сначала одно — потом другое, охранник.");
                     inspector.LineText(IdPrefix + $"group.{n}.detect", "Замечает за, гексов (0 — всю карту)", g.Ai.DetectRange.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetAiNumber(id, gid, "detectRange", v)));
+                    AiMore(inspector, $"group.{n}", g.Ai, id, gid);
                 }
             }
             else
@@ -529,6 +536,12 @@ public partial class ScenarioEditor : DefinitionEditorShell
     {
         var s = _model.Scenario;
         inspector.Section("Цель обороны");
+        var templates = inspector.Row();
+        foreach (var (id, label, hint) in ScenarioEditorModel.DefenseTemplates)
+        {
+            templates.AddChild(UiKit.Button(label, () => { Refuse(_model.ApplyDefenseTemplate(id)); Stamp++; }, ButtonKind.Flat, IdPrefix + "template." + id, hint));
+        }
+
         inspector.LineText(IdPrefix + "survive", "Выстоять, с (0 — отбить все волны)", Inspector.Num(s.SurviveSeconds), v => Refuse(_model.SetSurvive(v)),
             "Победа, когда прошло столько секунд боя (без пауз); 0 — когда все волны отбиты и врагов нет.");
         inspector.Choice(IdPrefix + "objects.policy", "Объекты", new[] { new ChoiceOption("all", "все критические должны уцелеть"), new ChoiceOption("any", "хотя бы один критический") }, s.ObjectsPolicy,
@@ -619,6 +632,26 @@ public partial class ScenarioEditor : DefinitionEditorShell
         return base.RunAutomationStep(step, runner);
     }
 
+    /// <summary>
+    /// The rare settings of a simple AI behind «Дополнительно ▾» (spec part 7 §5.2): the target priority, the re-check period and
+    /// whether a blocked enemy turns on its blocker. One shared toggle for the editor, closed by default.
+    /// </summary>
+    private void AiMore(Inspector inspector, string key, AiData ai, string? waveId, string? groupId)
+    {
+        inspector.Button(IdPrefix + key + ".ai.more", _aiMore ? "Дополнительно ▴" : "Дополнительно ▾", () => { _aiMore = !_aiMore; Stamp++; }, ButtonKind.Flat,
+            "Приоритет цели, пересмотр выбора и реакция на блок.");
+        if (!_aiMore)
+        {
+            return;
+        }
+
+        inspector.Choice(IdPrefix + key + ".priority", "Цель — сначала", AiData.Priorities.Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), ai.Priority,
+            v => Refuse(_model.SetAiPriority(waveId, groupId, v)), "Среди равных кандидатов текущая цель сохраняется до пересмотра.");
+        inspector.LineText(IdPrefix + key + ".reevaluate", "Пересматривать цель раз в, с", Inspector.Num(ai.Reevaluate), v => Refuse(_model.SetAiNumber(waveId, groupId, "reevaluate", v)));
+        inspector.Check(IdPrefix + key + ".switch", "Бить того, кто держит блоком", ai.SwitchToBlocker, on => Refuse(_model.SetAiSwitch(waveId, groupId, on)),
+            "Враг в блоке переключается на блокирующего бойца.");
+    }
+
     protected override bool Expect(string[] a, out string actual, out bool ok)
     {
         var s = _model.Scenario;
@@ -679,6 +712,26 @@ public partial class ScenarioEditor : DefinitionEditorShell
                     var g = wi < s.Waves.Count && gi < s.Waves[wi].Groups.Count ? s.Waves[wi].Groups[gi] : null;
                     actual = g is null ? "none" : $"{(g.Route.Length > 0 ? "route:" + g.Route : g.Source)}:{g.Ai.Preset}";
                     ok = actual == string.Join(":", a.Skip(3));
+                    return true;
+                }
+
+            case "scenario-ai-more":
+                {
+                    // expect:scenario-ai-more:<c,r of an enemy | w.g of a group>:<priority>:<reevaluate>:yes|no
+                    AiData? ai = null;
+                    if (a[1].Contains(',', System.StringComparison.Ordinal))
+                    {
+                        var p = a[1].Split(',');
+                        ai = s.Enemies.FirstOrDefault(x => x.Col.ToString(CultureInfo.InvariantCulture) == p[0] && x.Row.ToString(CultureInfo.InvariantCulture) == p[1])?.Ai;
+                    }
+                    else if (a[1].Split('.') is [var ws, var gs] && int.Parse(ws, CultureInfo.InvariantCulture) - 1 is var wn && int.Parse(gs, CultureInfo.InvariantCulture) - 1 is var gn
+                             && wn < s.Waves.Count && gn < s.Waves[wn].Groups.Count)
+                    {
+                        ai = s.Waves[wn].Groups[gn].Ai;
+                    }
+
+                    actual = ai is null ? "none" : $"{ai.Priority}:{Inspector.Num(ai.Reevaluate)}:{(ai.SwitchToBlocker ? "yes" : "no")}";
+                    ok = actual == string.Join(":", a.Skip(2));
                     return true;
                 }
 
