@@ -168,6 +168,28 @@ public partial class ScenarioEditor : DefinitionEditorShell
                 _markers.AddChild(Marker(e.Cell, e.Facing, ok ? VisualConfig.UnitEnemy : new Color(0.5f, 0.5f, 0.5f)));
             }
         }
+
+        // Mission objects of a defense (spec part 7 §5.1): gold pillars.
+        for (var i = 0; i < scenario.Objects.Count; i++)
+        {
+            var o = scenario.Objects[i];
+            if (_model.SelectedObject == i)
+            {
+                _fills.SetFill(o.Cell, VisualConfig.SelectionRing);
+            }
+
+            if (_map.Grid.Contains(o.Cell))
+            {
+                var pillar = new Node3D { Position = Layout.HexToPlane(o.Cell).ToWorld(TilePalette.Current.HeightOf(_map.Grid, o.Cell)) };
+                pillar.AddChild(new MeshInstance3D
+                {
+                    Mesh = new CylinderMesh { TopRadius = UnitView.BodyRadius * 1.15f, BottomRadius = UnitView.BodyRadius * 1.3f, Height = UnitView.BodyHeight * 1.5f, RadialSegments = 6 },
+                    MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.86f, 0.70f, 0.25f), Roughness = 0.6f },
+                    Position = new Vector3(0, UnitView.BodyHeight * 0.75f, 0),
+                });
+                _markers.AddChild(pillar);
+            }
+        }
     }
 
     private Node3D Marker(HexCoord cell, HexDirection facing, Color color)
@@ -301,7 +323,12 @@ public partial class ScenarioEditor : DefinitionEditorShell
         inspector.Button(IdPrefix + "map.open", "✎ Открыть карту в редакторе", OpenMap, ButtonKind.Flat,
             "Гексы выставления, препятствия и уровни правятся в редакторе карт; карта общая для всех сценариев с ней.");
 
-        if (s.IsTowerDefense)
+        if (s.IsDefense)
+        {
+            BuildDefense(inspector);
+        }
+
+        if (s.IsTowerDefense || s.IsDefense)
         {
             BuildWaves(inspector);
         }
@@ -317,6 +344,17 @@ public partial class ScenarioEditor : DefinitionEditorShell
         if (selected is not null)
         {
             inspector.Text($"Выбран враг на {selected.Col},{selected.Row}: «{_model.UnitName(selected.Unit)}», взгляд — {FacingNames[(int)selected.Facing]}.", size: 12);
+            inspector.Choice(IdPrefix + "enemy.ai", "Поведение", AiData.Presets.Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), selected.Ai.Preset, v => Refuse(_model.SetEnemyAi(v)),
+                "Простой ИИ (ТЗ ч.7 §5.2): «охранник» бьёт только в радиусе вокруг своего гекса и возвращается.");
+            if (selected.Ai.Preset == "guard")
+            {
+                inspector.LineText(IdPrefix + "enemy.guard", "Радиус охраны, гексов", selected.Ai.GuardRadius.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetAiNumber(null, null, "guardRadius", v)));
+            }
+            else if (!selected.Ai.IsNone)
+            {
+                inspector.LineText(IdPrefix + "enemy.detect", "Замечает за, гексов (0 — всю карту)", selected.Ai.DetectRange.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetAiNumber(null, null, "detectRange", v)));
+            }
+
             var actions = inspector.Row();
             actions.AddChild(UiKit.Button("Убрать врага", () => _model.RemoveEnemy(), ButtonKind.Danger, IdPrefix + "enemy.remove", "Delete"));
             actions.AddChild(UiKit.Button("Снять выбор", _model.Deselect, ButtonKind.Flat, IdPrefix + "enemy.deselect", "Esc"));
@@ -379,23 +417,28 @@ public partial class ScenarioEditor : DefinitionEditorShell
     private void BuildWaves(Inspector inspector)
     {
         var s = _model.Scenario;
-        inspector.Section("Базы игрока");
-        var bases = _model.PlayerBases();
-        if (bases.Count == 0)
+        if (s.IsTowerDefense)
         {
-            inspector.Text("✗ на карте нет базы игрока — врагам некуда идти", size: 12).AddThemeColorOverride("font_color", UiKit.Error);
-        }
+            inspector.Section("Базы игрока");
+            var bases = _model.PlayerBases();
+            if (bases.Count == 0)
+            {
+                inspector.Text("✗ на карте нет базы игрока — врагам некуда идти", size: 12).AddThemeColorOverride("font_color", UiKit.Error);
+            }
 
-        foreach (var b in bases)
-        {
-            var number = b.Number;
-            inspector.LineText(IdPrefix + $"base.{number}.lives", $"«{b.Name}»: жизни", b.Lives.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetBaseLives(number, v)));
-            inspector.Check(IdPrefix + $"base.{number}.critical", "критическая — её падение = поражение", b.Critical, on => _model.SetBaseCritical(number, on));
+            foreach (var b in bases)
+            {
+                var number = b.Number;
+                inspector.LineText(IdPrefix + $"base.{number}.lives", $"«{b.Name}»: жизни", b.Lives.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetBaseLives(number, v)));
+                inspector.Check(IdPrefix + $"base.{number}.critical", "критическая — её падение = поражение", b.Critical, on => _model.SetBaseCritical(number, on));
+            }
         }
 
         inspector.Section($"Волны — врагов всего {s.WaveEnemies}");
-        inspector.Hint("Кто и когда идёт по маршрутам карты. Маршруты рисуются в редакторе карт («〰 Маршруты»).");
-        if (_model.MapRoutes().Count == 0)
+        inspector.Hint(s.IsDefense
+            ? "Кто и когда приходит: из базы врага или зоны появления карты с простым ИИ (или по маршруту)."
+            : "Кто и когда идёт по маршрутам карты. Маршруты рисуются в редакторе карт («〰 Маршруты»).");
+        if (s.IsTowerDefense && _model.MapRoutes().Count == 0)
         {
             inspector.Text("✗ на карте нет маршрутов врагов — откройте карту и нарисуйте их", size: 12).AddThemeColorOverride("font_color", UiKit.Error);
         }
@@ -441,8 +484,26 @@ public partial class ScenarioEditor : DefinitionEditorShell
             var g = wave.Groups[k];
             var gid = g.Id;
             var n = (k + 1).ToString(CultureInfo.InvariantCulture);
-            inspector.Text($"Группа {n}: {g.Count} × «{_model.UnitName(g.Unit)}» по «{_model.RouteName(g.Route)}»", size: 13);
-            inspector.Choice(IdPrefix + $"group.{n}.route", "Маршрут", routes, g.Route, v => Refuse(_model.SetGroupRoute(id, gid, v)));
+            inspector.Text($"Группа {n}: {g.Count} × «{_model.UnitName(g.Unit)}» " + (g.Route.Length > 0 ? $"по «{_model.RouteName(g.Route)}»" : $"из «{_model.SourceName(g.Source)}»"), size: 13);
+            if (_model.Scenario.IsDefense)
+            {
+                // Spec part 7 §5.1: a source of the map without a route, or a route — one «Откуда».
+                var from = _model.Sources().Select(o => new ChoiceOption(o.Value, o.Label))
+                    .Concat(_model.MapRoutes().Select(r => new ChoiceOption("route:" + r.Id, $"по маршруту «{r.Name}»"))).ToList();
+                inspector.Choice(IdPrefix + $"group.{n}.source", "Откуда", from, g.Route.Length > 0 ? "route:" + g.Route : g.Source,
+                    v => Refuse(v.StartsWith("route:", System.StringComparison.Ordinal) ? _model.SetGroupRoute(id, gid, v["route:".Length..]) : _model.SetGroupSource(id, gid, v)));
+                if (g.Route.Length == 0)
+                {
+                    inspector.Choice(IdPrefix + $"group.{n}.ai", "Поведение", AiData.Presets.Where(p => p.Value != "none").Select(p => new ChoiceOption(p.Value, p.Label)).ToList(), g.Ai.Preset,
+                        v => Refuse(_model.SetGroupAi(id, gid, v)), "Простой ИИ: к объекту, атаковать юнитов, сначала одно — потом другое, охранник.");
+                    inspector.LineText(IdPrefix + $"group.{n}.detect", "Замечает за, гексов (0 — всю карту)", g.Ai.DetectRange.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetAiNumber(id, gid, "detectRange", v)));
+                }
+            }
+            else
+            {
+                inspector.Choice(IdPrefix + $"group.{n}.route", "Маршрут", routes, g.Route, v => Refuse(_model.SetGroupRoute(id, gid, v)));
+            }
+
             inspector.Choice(IdPrefix + $"group.{n}.unit", "Юнит врага", units, g.Unit, v => Refuse(_model.SetGroupUnit(id, gid, v)));
             inspector.LineText(IdPrefix + $"group.{n}.count", "Врагов", g.Count.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetGroupCount(id, gid, v)));
             inspector.LineText(IdPrefix + $"group.{n}.delay", "Первый через, с", Inspector.Num(g.FirstDelay), v => Refuse(_model.SetGroupTime(id, gid, "firstDelay", v)));
@@ -460,6 +521,40 @@ public partial class ScenarioEditor : DefinitionEditorShell
         if (wave.Groups.Count < ScenarioData.MaxGroups)
         {
             inspector.Button(IdPrefix + "group.add", "＋ Группа", () => _model.AddGroup(id));
+        }
+    }
+
+    /// <summary>The goal of a defense and its mission objects (spec part 7 §5.1, §5.3).</summary>
+    private void BuildDefense(Inspector inspector)
+    {
+        var s = _model.Scenario;
+        inspector.Section("Цель обороны");
+        inspector.LineText(IdPrefix + "survive", "Выстоять, с (0 — отбить все волны)", Inspector.Num(s.SurviveSeconds), v => Refuse(_model.SetSurvive(v)),
+            "Победа, когда прошло столько секунд боя (без пауз); 0 — когда все волны отбиты и врагов нет.");
+        inspector.Choice(IdPrefix + "objects.policy", "Объекты", new[] { new ChoiceOption("all", "все критические должны уцелеть"), new ChoiceOption("any", "хотя бы один критический") }, s.ObjectsPolicy,
+            v => _model.SetObjectsPolicy(v));
+        inspector.Check(IdPrefix + "squadloss", "Гибель всего отряда — поражение", s.SquadLossDefeat, on => _model.SetSquadLoss(on));
+
+        inspector.Section($"Объекты миссии — {s.Objects.Count}");
+        inspector.Hint("Обороняемые точки: враги с ИИ «к объекту» идут к ним. Объект не двигается и не получает приказов.");
+        var brush = inspector.Row();
+        var enemies = UiKit.Button("Ставить: враги", () => { _model.PlaceObjects = false; Stamp++; }, _model.PlaceObjects ? ButtonKind.Normal : ButtonKind.Primary, IdPrefix + "brush.enemies");
+        var objects = UiKit.Button("Ставить: объекты", () => { _model.PlaceObjects = true; Stamp++; }, _model.PlaceObjects ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "brush.objects");
+        brush.AddChild(enemies);
+        brush.AddChild(objects);
+        foreach (var o in s.Objects)
+        {
+            inspector.Text(o.Describe(), dim: true, size: 12);
+        }
+
+        if (_model.SelectedObjectData is { } obj)
+        {
+            inspector.LineText(IdPrefix + "object.name", "Название объекта", obj.Name, v => Refuse(_model.SetObjectName(v)));
+            inspector.LineText(IdPrefix + "object.health", "Здоровье", Inspector.Num(obj.Health), v => Refuse(_model.SetObjectHealth(v)));
+            inspector.Check(IdPrefix + "object.critical", "Критический — его потеря = поражение", obj.Critical, on => _model.SetObjectCritical(on));
+            var row = inspector.Row();
+            row.AddChild(UiKit.Button("Убрать объект", () => _model.RemoveObject(), ButtonKind.Danger, IdPrefix + "object.remove"));
+            row.AddChild(UiKit.Button("Снять выбор", _model.DeselectObject, ButtonKind.Flat, IdPrefix + "object.deselect"));
         }
     }
 
@@ -552,6 +647,41 @@ public partial class ScenarioEditor : DefinitionEditorShell
                 actual = string.Join(" | ", _model.Preview());
                 ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
                 return true;
+            case "scenario-objects":
+                actual = s.Objects.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "scenario-object":
+                {
+                    // expect:scenario-object:c,r:<name>:<health>:yes|no (critical)
+                    var cr2 = a[1].Split(',');
+                    var o = s.Objects.FirstOrDefault(x => x.Col.ToString(CultureInfo.InvariantCulture) == cr2[0] && x.Row.ToString(CultureInfo.InvariantCulture) == cr2[1]);
+                    actual = o is null ? "none" : $"{o.Name}:{Inspector.Num(o.Health)}:{(o.Critical ? "yes" : "no")}";
+                    ok = actual == string.Join(":", a.Skip(2));
+                    return true;
+                }
+
+            case "scenario-enemy-ai":
+                {
+                    // expect:scenario-enemy-ai:c,r:<preset>
+                    var cr3 = a[1].Split(',');
+                    var e3 = s.Enemies.FirstOrDefault(x => x.Col.ToString(CultureInfo.InvariantCulture) == cr3[0] && x.Row.ToString(CultureInfo.InvariantCulture) == cr3[1]);
+                    actual = e3?.Ai.Preset ?? "none-enemy";
+                    ok = actual == a[2];
+                    return true;
+                }
+
+            case "scenario-group":
+                {
+                    // expect:scenario-group:<wave>:<group>:<source or route:id>:<ai preset>
+                    var wi = int.Parse(a[1], CultureInfo.InvariantCulture) - 1;
+                    var gi = int.Parse(a[2], CultureInfo.InvariantCulture) - 1;
+                    var g = wi < s.Waves.Count && gi < s.Waves[wi].Groups.Count ? s.Waves[wi].Groups[gi] : null;
+                    actual = g is null ? "none" : $"{(g.Route.Length > 0 ? "route:" + g.Route : g.Source)}:{g.Ai.Preset}";
+                    ok = actual == string.Join(":", a.Skip(3));
+                    return true;
+                }
+
             case "scenario-waves":
                 actual = s.Waves.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];

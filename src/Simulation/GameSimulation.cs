@@ -78,6 +78,9 @@ public sealed class GameSimulation
 
     public int SharedLives => _objectives.SharedLives;
 
+    /// <summary>The defended mission objects and their units (spec part 7 §5.1).</summary>
+    public IReadOnlyList<(HexTactics.Core.Scenarios.MissionObject Object, UnitId Unit)> Objects => _objectives.Objects;
+
     /// <summary>The scenario state (spec part 7 §2.3); free play stays «Preparing» without goals.</summary>
     public HexTactics.Core.Scenarios.ScenarioPhase ScenarioPhase => _objectives.Phase;
 

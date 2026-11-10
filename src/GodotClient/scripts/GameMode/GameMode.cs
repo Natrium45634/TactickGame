@@ -196,9 +196,11 @@ public partial class GameMode : Node3D
 
         _units = new UnitsView { Name = "Units" };
         _units.Initialize(_layout);
-        _units.LookOf = unit => unit.DefinitionId is { } def && _content.Units.TryGetValue(def, out var template) && unit.Side == HexTactics.Core.Units.Side.Player
-            ? (Color.FromHtml(template.Color), (float)template.Scale)
-            : (null, 1f);
+        _units.LookOf = unit => unit.Role == HexTactics.Core.Units.UnitRole.Objective
+            ? (new Color(0.86f, 0.70f, 0.25f), 1.35f) // spec part 7 §5.1: a defended mission object — gold, larger, never a fighter
+            : unit.DefinitionId is { } def && _content.Units.TryGetValue(def, out var template) && unit.Side == HexTactics.Core.Units.Side.Player
+                ? (Color.FromHtml(template.Color), (float)template.Scale)
+                : (null, 1f);
         AddChild(_units);
 
         _motionDebug = new MotionDebugView { Name = "MotionDebug" };
@@ -541,22 +543,35 @@ public partial class GameMode : Node3D
         if (_scenarioLabel is not null)
         {
             var td = _content.Scenario?.Rules.TowerDefense == true;
+            var defense = _content.Scenario?.Rules.Defense == true;
             _scenarioLabel.Text = _sim.ScenarioPhase switch
             {
                 HexTactics.Core.Scenarios.ScenarioPhase.Preparing => td
                     ? $"Подготовка: выставьте отряд у маршрутов и нажмите «Начать бой» (пробел). Волн: {_sim.WaveCount}, врагов впереди: {_sim.UpcomingEnemies}."
                     : $"Подготовка: выставьте отряд, задайте маршруты и нажмите «Начать бой» (пробел). Врагов: {_sim.EnemiesLeft}.",
-                HexTactics.Core.Scenarios.ScenarioPhase.Victory => td ? "ПОБЕДА: все волны пройдены, базы выстояли." : "ПОБЕДА: все враги побеждены.",
+                HexTactics.Core.Scenarios.ScenarioPhase.Victory => defense
+                    ? (_sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.Survived ? "ПОБЕДА: продержались." : "ПОБЕДА: все волны отбиты.")
+                    : td ? "ПОБЕДА: все волны пройдены, базы выстояли." : "ПОБЕДА: все враги побеждены.",
                 HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason switch
                 {
                     HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "ПОРАЖЕНИЕ: время вышло.",
                     HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "ПОРАЖЕНИЕ: база потеряла все жизни.",
+                    HexTactics.Core.Scenarios.ScenarioEndReason.ObjectLost => "ПОРАЖЕНИЕ: объект уничтожен.",
                     _ => "ПОРАЖЕНИЕ: отряд погиб, резерв пуст.",
                 },
-                _ => td
+                _ => defense && _content.Scenario!.Rules.SurviveSeconds > 0
+                    ? $"Выстоять: {_sim.ScenarioTime:0} из {_content.Scenario.Rules.SurviveSeconds:0} с · врагов на поле: {_sim.EnemiesLeft} · волна {_sim.WavesStarted} из {_sim.WaveCount}"
+                    : td || defense
                     ? $"Волна {_sim.WavesStarted} из {_sim.WaveCount} · впереди врагов: {_sim.UpcomingEnemies} · на поле: {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с"
                     : $"Бой: осталось врагов — {_sim.EnemiesLeft} · {_sim.ScenarioTime:0} с",
             };
+            if (defense && _sim.Objects.Count > 0)
+            {
+                // Spec part 7 §5.1: the health of every defended object.
+                _scenarioLabel.Text += "\n" + string.Join(" · ", _sim.Objects.Select(o => $"«{o.Object.Name}»: " +
+                    (_sim.State.FindUnit(o.Unit) is { IsAlive: true } u ? $"{u.CurrentHealth:0}/{o.Object.Health:0}" : "уничтожен") + (o.Object.Critical ? string.Empty : " (не крит.)")));
+            }
+
             if (td)
             {
                 // Spec part 7 §4.7: the lives of every base (or the shared pool) — what the player defends.
@@ -573,11 +588,14 @@ public partial class GameMode : Node3D
     private string? ScenarioBanner() => _content.Scenario is null ? null : _sim.ScenarioPhase switch
     {
         HexTactics.Core.Scenarios.ScenarioPhase.Preparing => "⏸  ПОДГОТОВКА  ·  пробел — начать бой",
-        HexTactics.Core.Scenarios.ScenarioPhase.Victory => _content.Scenario.Rules.TowerDefense ? "★  ПОБЕДА  ·  все волны пройдены" : "★  ПОБЕДА  ·  все враги побеждены",
+        HexTactics.Core.Scenarios.ScenarioPhase.Victory => _content.Scenario.Rules.Defense
+            ? (_sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.Survived ? "★  ПОБЕДА  ·  продержались" : "★  ПОБЕДА  ·  все волны отбиты")
+            : _content.Scenario.Rules.TowerDefense ? "★  ПОБЕДА  ·  все волны пройдены" : "★  ПОБЕДА  ·  все враги побеждены",
         HexTactics.Core.Scenarios.ScenarioPhase.Defeat => _sim.ScenarioEndReason switch
         {
             HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "✖  ПОРАЖЕНИЕ  ·  время вышло",
             HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "✖  ПОРАЖЕНИЕ  ·  база потеряла все жизни",
+            HexTactics.Core.Scenarios.ScenarioEndReason.ObjectLost => "✖  ПОРАЖЕНИЕ  ·  объект уничтожен",
             _ => "✖  ПОРАЖЕНИЕ  ·  отряд погиб, резерв пуст",
         },
         _ => null,
@@ -1545,6 +1563,24 @@ public partial class GameMode : Node3D
                 actual = $"{_sim.WavesStarted}/{_sim.WaveCount}";
                 ok = actual == a[1];
                 break;
+            case "object-hp":
+                {
+                    // expect:object-hp:<object name>:<health>|dead
+                    var obj = _sim.Objects.FirstOrDefault(o => o.Object.Name == a[1]);
+                    actual = obj.Object is null ? "none" : _sim.State.FindUnit(obj.Unit) is { IsAlive: true } u ? u.CurrentHealth.ToString("0", CultureInfo.InvariantCulture) : "dead";
+                    ok = actual == a[2];
+                    break;
+                }
+
+            case "ai-target":
+                {
+                    // expect:ai-target:<unit>:<target unit>|none
+                    var unit = Unit(1);
+                    actual = unit?.Ai?.Target?.Value.ToString(CultureInfo.InvariantCulture) ?? "none";
+                    ok = actual == a[2];
+                    break;
+                }
+
             case "upcoming":
                 actual = _sim.UpcomingEnemies.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];
