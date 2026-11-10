@@ -145,7 +145,10 @@ public class DefenseScenarioTests
         Assert.Null(model.SetGroupAi(wave, group.Id, "units_then_objective"));
         Assert.NotNull(model.SetGroupSource(wave, group.Id, "zone:9"));
         Assert.Null(model.SetSurvive("45"));
-        Assert.Contains("из «База врага 1» (сначала юниты, потом объект)", string.Join(" | ", model.Preview()), StringComparison.Ordinal);
+        var preview = string.Join(" | ", model.Preview());
+        Assert.Contains("из «База врага 1» (сначала юниты, потом объект)", preview, StringComparison.Ordinal);
+        Assert.Contains($"«База врага 1» — {group.Count}.", preview, StringComparison.Ordinal); // the per-source total names the source
+        Assert.DoesNotContain("нет на карте", preview, StringComparison.Ordinal);
         Assert.DoesNotContain(model.Validate(), i => i.IsError);
         Assert.True(model.Save().Ok);
 

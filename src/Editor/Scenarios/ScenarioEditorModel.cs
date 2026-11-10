@@ -328,7 +328,7 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
         {
             $"{mode?.Title ?? s.Mode} на карте «{map?.Name ?? s.Map}» · {ruleset}.",
             s.IsTowerDefense || s.IsDefense
-                ? $"Волн: {s.Waves.Count(w => w.Enabled)} · врагов по волнам: {s.WaveEnemies}" + (RouteTotals() is { Count: > 0 } totals ? " · " + string.Join(", ", totals.Select(t => $"«{RouteName(t.Route)}» — {t.Enemies}")) : string.Empty) + "."
+                ? $"Волн: {s.Waves.Count(w => w.Enabled)} · врагов по волнам: {s.WaveEnemies}" + (RouteTotals() is { Count: > 0 } totals ? " · " + string.Join(", ", totals.Select(t => $"{FromName(t.Route)} — {t.Enemies}")) : string.Empty) + "."
                     + (s.Enemies.Count > 0 ? $" Враги на карте с начала: {EnemiesText()}." : string.Empty)
                 : $"Враги на карте: {EnemiesText()}.",
             $"Отряд игрока (нижняя панель): {string.Join(", ", s.Squad.Select((u, i) => $"{i + 1}. {UnitName(u)}"))}.",
@@ -565,9 +565,16 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
         }
     }
 
-    /// <summary>Enemies per route over the enabled waves — computed, never stored (spec part 7 §4.5).</summary>
+    /// <summary>
+    /// Enemies per route (or, for groups without one, per source «base:N» / «zone:N») over the enabled waves — computed, never
+    /// stored (spec part 7 §4.5).
+    /// </summary>
     public IReadOnlyList<(string Route, int Enemies)> RouteTotals() => Scenario.Waves.Where(w => w.Enabled)
-        .SelectMany(w => w.Groups).Where(g => g.Enabled).GroupBy(g => g.Route).Select(g => (g.Key, g.Sum(x => Math.Max(0, x.Count)))).ToList();
+        .SelectMany(w => w.Groups).Where(g => g.Enabled).GroupBy(g => g.Route.Length > 0 ? g.Route : g.Source).Select(g => (g.Key, g.Sum(x => Math.Max(0, x.Count)))).ToList();
+
+    /// <summary>The quoted name of a route of the map, or of a source («base:N» → «База врага N», «zone:N» → зона «…»).</summary>
+    public string FromName(string routeOrSource) => !routeOrSource.Contains(':', StringComparison.Ordinal) ? $"«{RouteName(routeOrSource)}»"
+        : routeOrSource.StartsWith("zone:", StringComparison.Ordinal) ? SourceName(routeOrSource) : $"«{SourceName(routeOrSource)}»";
 
     /// <summary>The schedule in words: one line per wave with its groups, start and sum.</summary>
     public IReadOnlyList<string> WaveTimeline()

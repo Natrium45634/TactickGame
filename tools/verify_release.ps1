@@ -864,6 +864,33 @@ $script:PersistenceScenarioV36 = (@(
     'expect:scenario-wave-enemies:3', 'expect:scenario-base-lives:2:3', 'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV35
 
+# v0.37.0+ (spec part 7 §3.3, §5; acceptance §12.4 M7-05, M7-26…M7-30, M7-60): the prototype copied as «Двор» without its player
+# base; the defense «Оборона двора» (no player base at all): survive 20 s, the loss of the squad is not a defeat, the object
+# «Генератор» 60 HP at 3,6, a guard with radius 2 at 9,1 and a wave of 2 from zone «Северный край» going for the object. In the
+# first test nobody defends: the critical generator falls (Defeat) while the guard keeps its post; marked non-critical, the
+# same defense is held for 20 s (Victory).
+$script:RegressionScenarioV37 = $script:RegressionScenarioV36 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.map', 'row:name=Прототип 12×10', 'ui:dev.duplicate', 'row:name=Прототип 12×10 (копия)', 'ui:dev.rename',
+    'field:dialog.input=Двор', 'ui:dialog.ok', 'row:name=Двор', 'ui:dev.open', 'expect:editor:map', 'ui:map.delete', 'click:0,4',
+    'click:1,4', 'click:0,5', 'ui:map.delete', 'expect:tiles:117', 'ui:map.save', 'expect:map-errors:0', 'ui:map.back', 'ui:dev.back',
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Оборона двора', 'ui:scenario.mode.defense',
+    'field:scenario.map=Двор (свой)', 'expect:scenario-errors:1', 'field:scenario.survive=20', 'ui:scenario.squadloss', 'ui:scenario.brush.objects',
+    'cell:3,6', 'field:scenario.object.name=Генератор', 'field:scenario.object.health=60', 'expect:scenario-objects:1', 'expect:scenario-object:3,6:Генератор:60:yes',
+    'ui:scenario.brush.enemies', 'cell:9,1', 'field:scenario.enemy.ai=охранник', 'field:scenario.enemy.guard=2', 'expect:scenario-enemy-ai:9,1:guard',
+    'ui:scenario.wave.add', 'expect:scenario-group:1:1:zone:1:attack_objective', 'field:scenario.group.1.count=2', 'expect:scenario-preview:зона «Северный край» — 2',
+    'expect:scenario-errors:0', 'ui:scenario.save', 'expect:errors:0', 'ui:scenario.test', 'expect:screen:play', 'expect:phase:Preparing',
+    'expect:object-hp:Генератор:60', 'pause:off', 'advance:600', 'expect:phase:Defeat', 'expect:object-hp:Генератор:dead', 'expect:cell:2:9,1',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:editor:scenario', 'cell:3,6', 'ui:scenario.object.critical', 'expect:scenario-object:3,6:Генератор:60:no',
+    'ui:scenario.save', 'ui:scenario.test', 'expect:screen:play', 'pause:off', 'advance:620', 'expect:phase:Victory', 'ui:game.menu',
+    'ui:dialog.ok', 'expect:editor:scenario', 'ui:scenario.back', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV37 = (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Оборона двора', 'ui:dev.open', 'expect:editor:scenario', 'expect:scenario-objects:1',
+    'expect:scenario-object:3,6:Генератор:60:no', 'expect:scenario-enemy-ai:9,1:guard', 'expect:scenario-group:1:1:zone:1:attack_objective',
+    'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV36
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -941,7 +968,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.36.0') { $script:RegressionScenarioV36 }
+            $scenario = if ([version]$Version -ge [version]'0.37.0') { $script:RegressionScenarioV37 }
+                        elseif ([version]$Version -ge [version]'0.36.0') { $script:RegressionScenarioV36 }
                         elseif ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
                         elseif ([version]$Version -ge [version]'0.34.0') { $script:RegressionScenarioV34 }
                         elseif ([version]$Version -ge [version]'0.33.0') { $script:RegressionScenarioV33 }
@@ -974,7 +1002,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.36.0') { $persistence = $script:PersistenceScenarioV36 }
+            if ([version]$Version -ge [version]'0.37.0') { $persistence = $script:PersistenceScenarioV37 }
+            elseif ([version]$Version -ge [version]'0.36.0') { $persistence = $script:PersistenceScenarioV36 }
             elseif ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
             elseif ([version]$Version -ge [version]'0.34.0') { $persistence = $script:PersistenceScenarioV34 }
             elseif ([version]$Version -ge [version]'0.33.0') { $persistence = $script:PersistenceScenarioV33 }
