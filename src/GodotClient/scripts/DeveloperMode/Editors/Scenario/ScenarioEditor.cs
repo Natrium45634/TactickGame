@@ -1032,6 +1032,30 @@ public partial class ScenarioEditor : DefinitionEditorShell
                     return true;
                 }
 
+            case "wizard-step":
+                // expect:wizard-step:<type|map|forces|waves|goals|check|all>
+                actual = _step ?? "none";
+                ok = actual == a[1];
+                return true;
+            case "wizard-done":
+                // expect:wizard-done:<step>:yes|no, or expect:wizard-done:<done>/<steps>
+                if (a.Length > 2)
+                {
+                    actual = _model.WizardSteps().FirstOrDefault(st => st.Id == a[1]) is { } st ? (st.Done ? "yes" : "no") : "hidden";
+                    ok = actual == a[2];
+                }
+                else
+                {
+                    actual = $"{_model.WizardSteps().Count(st => st.Done)}/{_model.WizardSteps().Count}";
+                    ok = actual == a[1];
+                }
+
+                return true;
+            case "footer":
+                // expect:footer:<text contained in the bottom line>
+                actual = Footer ?? string.Empty;
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
+                return true;
             case "scenario-entry":
                 actual = s.Entry.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];

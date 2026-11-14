@@ -922,6 +922,46 @@ $script:PersistenceScenarioV38 = (@(
     'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV37
 
+# v0.39.0+ (spec part 7 §9.3, §13; acceptance §12.6 M7-52, M7-54, M7-58…M7-60): a battle «Мастер» through the wizard — a new
+# scenario opens on «Тип», «Далее» walks «Карта» and «Силы», the «Волны» step is hidden for a battle, «Проверка» → «Перейти и
+# исправить» leads back to «Силы», an enemy makes every step ✓ and the bottom line says the goal; «✎ Юнит в библиотеке» opens the
+# unit editor over the scenario and comes back; «Все разделы» shows everything. Then the four user scenarios (one of each type)
+# go into one package «Сценарии» with their two maps.
+$script:RegressionScenarioV39 = $script:RegressionScenarioV38 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'expect:wizard-step:type', 'field:scenario.name=Мастер',
+    'ui:scenario.mode.battle', 'ui:scenario.step.next', 'expect:wizard-step:map', 'ui:scenario.step.next', 'expect:wizard-step:forces',
+    'expect:wizard-done:forces:no', 'expect:wizard-done:waves:hidden', 'ui:scenario.step.check', 'expect:wizard-step:check',
+    'ui:scenario.fix.1', 'expect:wizard-step:forces', 'cell:6,2', 'expect:wizard-done:forces:yes', 'expect:wizard-done:5/5',
+    'expect:footer:Победа: все враги (1) побеждены', 'ui:scenario.step.next', 'expect:wizard-step:goals', 'ui:scenario.step.next',
+    'expect:wizard-step:check', 'ui:scenario.save', 'expect:errors:0', 'ui:scenario.enemy.unit.open', 'expect:editor:unit', 'ui:unit.back',
+    'expect:editor:scenario', 'expect:wizard-step:forces', 'ui:scenario.step.all', 'expect:wizard-step:all', 'ui:scenario.back',
+    'ui:dev.back', 'expect:screen:menu', 'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Засада', 'ui:dev.export', 'field:export.pick.Оборона двух линий=true',
+    'field:export.pick.Оборона двора=true', 'field:export.pick.Вылазка=true', 'field:dialog.input=Сценарии', 'ui:export.hxp',
+    'expect:message:Экспорт: пакет, объектов 6', 'ui:dev.back', 'expect:screen:menu'
+) -join ';')
+
+$script:PersistenceScenarioV39 = (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Мастер', 'ui:dev.open', 'expect:editor:scenario', 'expect:wizard-step:all',
+    'expect:scenario-enemies:1', 'expect:wizard-done:5/5', 'ui:scenario.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV38
+
+# v0.39.0+ clean installation: «Сценарии.hxp» brings the four scenarios and their maps; each starts from the start menu — the
+# battle on its preparation pause, the Tower Defense to «Победа» with the same leaks into the same bases (routes and waves kept),
+# the defense held for 20 s, the exploration walked to the exit and won after the marked enemy.
+$script:CleanImportScenarioV39 = $script:CleanImportScenarioV31 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.import', 'field:dialog.input={PACKAGE4}', 'ui:import.preview', 'expect:import:новых 6',
+    'ui:import.install', 'expect:message:Импорт: установлено', 'expect:rows:5', 'ui:dev.back', 'expect:screen:menu', 'field:menu.scenario=Засада (свой)',
+    'ui:menu.play', 'expect:screen:play', 'expect:phase:Preparing', 'expect:enemies-left:1', 'ui:game.menu', 'ui:dialog.ok',
+    'expect:screen:menu', 'field:menu.scenario=Оборона двух линий (свой)', 'ui:menu.play', 'expect:screen:play', 'expect:wave:0/1',
+    'expect:upcoming:3', 'pause:off', 'advance:600', 'expect:phase:Victory', 'expect:base-lives:1:3', 'expect:base-lives:2:2',
+    'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=Оборона двора (свой)', 'ui:menu.play', 'expect:screen:play',
+    'expect:object-hp:Генератор:60', 'pause:off', 'advance:620', 'expect:phase:Victory', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu',
+    'field:menu.scenario=Вылазка (свой)', 'ui:menu.play', 'expect:screen:play', 'expect:phase:Preparing', 'roster:1>3,3', 'expect:roster:3:AvailableInRoster',
+    'roster:1>1,5', 'click:10,1', 'click:10,1@North:0.6', 'roster:3>0,6', 'click:11,1', 'click:11,1@North:0.6', 'pause:off',
+    'advance:900', 'expect:exit-reached:2', 'expect:exploration-left:победить отмеченных врагов (1)', 'drag:10,1>10,4', 'drag:11,1>10,4',
+    'waitdead:1:8000', 'expect:phase:Victory', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=свободная игра на карте'
+) -join ';')
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -999,7 +1039,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.38.0') { $script:RegressionScenarioV38 }
+            $scenario = if ([version]$Version -ge [version]'0.39.0') { $script:RegressionScenarioV39 }
+                        elseif ([version]$Version -ge [version]'0.38.0') { $script:RegressionScenarioV38 }
                         elseif ([version]$Version -ge [version]'0.37.0') { $script:RegressionScenarioV37 }
                         elseif ([version]$Version -ge [version]'0.36.0') { $script:RegressionScenarioV36 }
                         elseif ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
@@ -1034,7 +1075,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.38.0') { $persistence = $script:PersistenceScenarioV38 }
+            if ([version]$Version -ge [version]'0.39.0') { $persistence = $script:PersistenceScenarioV39 }
+            elseif ([version]$Version -ge [version]'0.38.0') { $persistence = $script:PersistenceScenarioV38 }
             elseif ([version]$Version -ge [version]'0.37.0') { $persistence = $script:PersistenceScenarioV37 }
             elseif ([version]$Version -ge [version]'0.36.0') { $persistence = $script:PersistenceScenarioV36 }
             elseif ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
@@ -1092,6 +1134,10 @@ if ($Run -and $errors.Count -eq 0) {
                 if ([version]$Version -ge [version]'0.31.0') {
                     $package3 = Join-Path (Join-Path $userRoot 'exports') 'Вода.hxp'
                     $clean = $script:CleanImportScenarioV31.Replace('{PACKAGE2}', $(if ($Launcher) { 'Z:' + $package2 } else { $package2 })).Replace('{PACKAGE3}', $(if ($Launcher) { 'Z:' + $package3 } else { $package3 }))
+                    if ([version]$Version -ge [version]'0.39.0') {
+                        $package4 = Join-Path (Join-Path $userRoot 'exports') 'Сценарии.hxp'
+                        $clean = $script:CleanImportScenarioV39.Replace('{PACKAGE2}', $(if ($Launcher) { 'Z:' + $package2 } else { $package2 })).Replace('{PACKAGE3}', $(if ($Launcher) { 'Z:' + $package3 } else { $package3 })).Replace('{PACKAGE4}', $(if ($Launcher) { 'Z:' + $package4 } else { $package4 }))
+                    }
                 }
             }
             $runs += @{ Name = 'clean-import'; Script = $clean.Replace('{PACKAGE}', $packageArg); Root = $cleanArg }
