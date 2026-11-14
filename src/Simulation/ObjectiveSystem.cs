@@ -75,6 +75,8 @@ internal sealed class ObjectiveSystem : ISimulationSystem
     /// <summary>An enemy of the extra task «defeat the marked enemies» (spec part 7 §6.1).</summary>
     public void MarkTarget(UnitId unit) => _marked.Add(unit);
 
+    public bool IsMarked(UnitId unit) => _marked.Contains(unit);
+
     /// <summary>Exploration: the units that have reached the exit (remembered even if they leave it).</summary>
     public IReadOnlyCollection<UnitId> Arrived => _arrived;
 

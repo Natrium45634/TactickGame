@@ -170,6 +170,50 @@ public class DefenseScenarioTests
     }
 
     [Fact]
+    public void M7_58_the_same_scenario_and_the_same_actions_give_the_same_spawns_blocks_damage_and_result()
+    {
+        using var dir = new TempDirectory();
+        var library = ContentTestKit.Library(dir.Path);
+        var item = Siege(library, critical: true, survive: 30);
+        var s = (ScenarioData)item.Data;
+        s.Waves[0].Groups[0].Count = 4;
+        s.Waves[0].Groups[0].Ai.Preset = "units_then_objective";
+        s.Squad.Insert(0, "core.unit.operative");
+        Assert.True(library.Save(item).Ok);
+
+        string Run()
+        {
+            var sim = MatchFactory.Start(RuntimeFactory.BuildScenario(library, library.Find(item.Ref)!));
+            var log = new System.Text.StringBuilder();
+            var guard = sim.PlaceFromRoster(1, HexTactics.Core.Hex.HexCoord.FromOffset(0, 5)).Unit!.Value;
+            Assert.True(sim.SetFacing(guard, HexTactics.Core.Hex.HexDirection.North).Success);
+            Assert.True(sim.ApplyOrder(new HexTactics.Core.Orders.IndividualOrder(guard, new[] { HexTactics.Core.Hex.HexCoord.FromOffset(3, 4) }, HexTactics.Core.Hex.HexDirection.NorthEast)).Success);
+            sim.SetPaused(false);
+            for (var i = 0; i < 30 * 40 && !sim.IsScenarioOver; i++)
+            {
+                if (i == 150)
+                {
+                    sim.PlaceFromRoster(2, HexTactics.Core.Hex.HexCoord.FromOffset(0, 5)); // the same action at the same tick
+                }
+
+                sim.Advance(1.0 / 30);
+                foreach (var e in sim.DrainEvents())
+                {
+                    log.AppendLine(e.ToString());
+                }
+            }
+
+            log.AppendLine($"{sim.ScenarioPhase} {sim.ScenarioEndReason} {sim.Tick} " + string.Join(";", sim.State.Units.Select(u => $"{u.Id.Value}@{u.Cell}:{u.CurrentHealth:0.###}")));
+            return log.ToString();
+        }
+
+        var first = Run();
+        Assert.Contains("WaveEnemySpawned", first, StringComparison.Ordinal);
+        Assert.Contains("DamageApplied", first, StringComparison.Ordinal);
+        Assert.Equal(first, Run());
+    }
+
+    [Fact]
     public void The_three_defense_templates_set_the_goal_in_one_undoable_step_and_give_the_defense_an_end()
     {
         using var dir = new TempDirectory();

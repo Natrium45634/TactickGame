@@ -95,6 +95,9 @@ public sealed class GameSimulation
     /// <summary>Marks an enemy as a target of the extra task «defeat the marked enemies» (spec part 7 §6.1).</summary>
     public void MarkTarget(UnitId unit) => _objectives.MarkTarget(unit);
 
+    /// <summary>The enemy is a target of the extra task «defeat the marked enemies».</summary>
+    public bool IsMarkedTarget(UnitId unit) => _objectives.IsMarked(unit);
+
     /// <summary>The scenario state (spec part 7 §2.3); free play stays «Preparing» without goals.</summary>
     public HexTactics.Core.Scenarios.ScenarioPhase ScenarioPhase => _objectives.Phase;
 

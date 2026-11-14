@@ -320,6 +320,60 @@ public partial class ScenarioEditor : DefinitionEditorShell
     protected override void BuildProperties(Inspector inspector)
     {
         var s = _model.Scenario;
+        _step ??= _model.IsNew ? "type" : "all";
+        BuildStepBar(inspector);
+        if (Show("type"))
+        {
+            BuildTypeStep(inspector);
+        }
+
+        if (Show("map"))
+        {
+            BuildMapStep(inspector);
+        }
+
+        if (Show("forces"))
+        {
+            if (s.IsDefense)
+            {
+                BuildDefenseObjects(inspector);
+            }
+
+            BuildEnemies(inspector);
+            BuildSquad(inspector);
+        }
+
+        if (Show("waves") && (s.IsTowerDefense || s.IsDefense))
+        {
+            BuildWaves(inspector);
+        }
+
+        if (Show("goals"))
+        {
+            if (s.IsDefense)
+            {
+                BuildDefenseGoals(inspector);
+            }
+
+            if (s.IsExploration)
+            {
+                BuildExplorationRule(inspector);
+            }
+
+            BuildRules(inspector);
+        }
+
+        if (Show("check"))
+        {
+            BuildCheck(inspector);
+        }
+
+        BuildNext(inspector);
+    }
+
+    private void BuildTypeStep(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section("Тип сценария");
         foreach (var pair in ScenarioData.Modes.Chunk(2))
         {
@@ -336,25 +390,28 @@ public partial class ScenarioEditor : DefinitionEditorShell
         }
 
         inspector.Hint(ScenarioData.Modes.FirstOrDefault(m => m.Id == s.Mode)?.Summary ?? string.Empty);
+    }
 
+    private void BuildMapStep(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section("Карта");
         inspector.Choice(IdPrefix + "map", "Карта", ReferenceOptions(ContentTypeRegistry.Map, ReferenceFilter.Any, s.Map, allowCreate: false), s.Map, v => Refuse(_model.SetMap(v)));
         inspector.Button(IdPrefix + "map.open", "✎ Открыть карту в редакторе", OpenMap, ButtonKind.Flat,
             "Гексы выставления, препятствия и уровни правятся в редакторе карт; карта общая для всех сценариев с ней.");
-
-        if (s.IsDefense)
-        {
-            BuildDefense(inspector);
-        }
-
         if (s.IsExploration)
         {
-            BuildExploration(inspector);
+            BuildExplorationAreas(inspector);
         }
+    }
 
-        if (s.IsTowerDefense || s.IsDefense)
+    private void BuildEnemies(Inspector inspector)
+    {
+        var s = _model.Scenario;
+        if (s.IsExploration)
         {
-            BuildWaves(inspector);
+            inspector.Button(IdPrefix + "explore.brush.enemies", "Ставить: враги", () => { Refuse(_model.SetBrush("enemies")); Stamp++; },
+                _model.BoardBrush == "enemies" ? ButtonKind.Primary : ButtonKind.Normal, "Щелчок по полю ставит врага; вход и выход — на шаге «Карта».");
         }
 
         inspector.Section(s.IsTowerDefense ? "Враги на карте с начала (необязательно)" : "Враги на карте");
@@ -362,6 +419,11 @@ public partial class ScenarioEditor : DefinitionEditorShell
         var selected = _model.SelectedEnemy;
         var units = ReferenceOptions(ContentTypeRegistry.Unit, ReferenceFilter.Any, selected?.Unit ?? _model.Brush, allowCreate: false);
         inspector.Choice(IdPrefix + "brush", selected is null ? "Ставить" : "Юнит врага", units, selected?.Unit ?? _model.Brush, v => Refuse(_model.SetSelectedUnit(v)));
+        if (selected is not null)
+        {
+            inspector.Button(IdPrefix + "enemy.unit.open", "✎ Юнит в библиотеке", () => OpenUnit(selected.Unit, id => _model.SetSelectedUnit(id)), ButtonKind.Flat,
+                "Редактор юнита поверх сценария; сохранённые изменения сразу действуют здесь.");
+        }
         var turn = inspector.Row();
         turn.AddChild(UiKit.Button("↶ Повернуть", () => _model.Turn(-1), ButtonKind.Normal, IdPrefix + "turn.left", "Q"));
         turn.AddChild(UiKit.Button("Повернуть ↷", () => _model.Turn(1), ButtonKind.Normal, IdPrefix + "turn.right", "E"));
@@ -405,7 +467,11 @@ public partial class ScenarioEditor : DefinitionEditorShell
         {
             inspector.Button(IdPrefix + "enemies.fix", $"Убрать врагов вне проходимых гексов ({misplaced})", () => Message($"Убрано врагов: {_model.RemoveMisplaced()}.", null), ButtonKind.Danger);
         }
+    }
 
+    private void BuildSquad(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section("Отряд игрока");
         inspector.Hint("Карточки нижней панели в бою, по порядку; игрок выставляет их на гексы выставления карты.");
         for (var i = 0; i < s.Squad.Count; i++)
@@ -425,7 +491,11 @@ public partial class ScenarioEditor : DefinitionEditorShell
             inspector.Choice(IdPrefix + "squad.pick", "Добавить юнит", ReferenceOptions(ContentTypeRegistry.Unit, ReferenceFilter.Any, _squadPick, allowCreate: false), _squadPick, v => { _squadPick = v; Stamp++; });
             inspector.Button(IdPrefix + "squad.add", "＋ В отряд", () => Refuse(_model.AddToSquad(_squadPick)));
         }
+    }
 
+    private void BuildRules(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section("Правила боя");
         var rulesets = ReferenceOptions(ContentTypeRegistry.CombatRuleset, ReferenceFilter.Any, s.Ruleset.Length == 0 ? null : s.Ruleset, allowCreate: false).ToList();
         rulesets.Insert(0, new ChoiceOption(string.Empty, "как на карте"));
@@ -541,6 +611,8 @@ public partial class ScenarioEditor : DefinitionEditorShell
             }
 
             inspector.Choice(IdPrefix + $"group.{n}.unit", "Юнит врага", units, g.Unit, v => Refuse(_model.SetGroupUnit(id, gid, v)));
+            inspector.Button(IdPrefix + $"group.{n}.unit.open", "✎ Юнит в библиотеке", () => OpenUnit(g.Unit, unit => _model.SetGroupUnit(id, gid, unit)), ButtonKind.Flat,
+                "Редактор юнита поверх сценария — без копии редактора в волнах (ТЗ ч.7 §9.2).");
             inspector.LineText(IdPrefix + $"group.{n}.count", "Врагов", g.Count.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetGroupCount(id, gid, v)));
             inspector.LineText(IdPrefix + $"group.{n}.delay", "Первый через, с", Inspector.Num(g.FirstDelay), v => Refuse(_model.SetGroupTime(id, gid, "firstDelay", v)));
             inspector.LineText(IdPrefix + $"group.{n}.interval", "Интервал, с", Inspector.Num(g.Interval), v => Refuse(_model.SetGroupTime(id, gid, "interval", v)),
@@ -560,8 +632,8 @@ public partial class ScenarioEditor : DefinitionEditorShell
         }
     }
 
-    /// <summary>The goal of a defense and its mission objects (spec part 7 §5.1, §5.3).</summary>
-    private void BuildDefense(Inspector inspector)
+    /// <summary>The goal of a defense (spec part 7 §5.3, §5.4): the templates, the time to hold out, the objects policy, the squad.</summary>
+    private void BuildDefenseGoals(Inspector inspector)
     {
         var s = _model.Scenario;
         inspector.Section("Цель обороны");
@@ -574,9 +646,14 @@ public partial class ScenarioEditor : DefinitionEditorShell
         inspector.LineText(IdPrefix + "survive", "Выстоять, с (0 — отбить все волны)", Inspector.Num(s.SurviveSeconds), v => Refuse(_model.SetSurvive(v)),
             "Победа, когда прошло столько секунд боя (без пауз); 0 — когда все волны отбиты и врагов нет.");
         inspector.Choice(IdPrefix + "objects.policy", "Объекты", new[] { new ChoiceOption("all", "все критические должны уцелеть"), new ChoiceOption("any", "хотя бы один критический") }, s.ObjectsPolicy,
-            v => _model.SetObjectsPolicy(v));
+            v => _model.SetObjectsPolicy(v), "Логическая группа условий: «выполнить все» или «хотя бы одно».");
         inspector.Check(IdPrefix + "squadloss", "Гибель всего отряда — поражение", s.SquadLossDefeat, on => _model.SetSquadLoss(on));
+    }
 
+    /// <summary>The mission objects of a defense (spec part 7 §5.1): the brush and the card of the selected object.</summary>
+    private void BuildDefenseObjects(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section($"Объекты миссии — {s.Objects.Count}");
         inspector.Hint("Обороняемые точки: враги с ИИ «к объекту» идут к ним. Объект не двигается и не получает приказов.");
         var brush = inspector.Row();
@@ -600,27 +677,25 @@ public partial class ScenarioEditor : DefinitionEditorShell
         }
     }
 
-    /// <summary>
-    /// «Исследование» (spec part 7 §6.3): the steps «карта → вход → выход → отряд → враги → правило» as a check list, the brushes of
-    /// the board, the exit rule with the key or the required cards, the extra task. One section, no extra tabs.
-    /// </summary>
-    private void BuildExploration(Inspector inspector)
+    /// <summary>«Исследование» on the map step (spec part 7 §6.3): the entry and exit brushes.</summary>
+    private void BuildExplorationAreas(Inspector inspector)
     {
         var s = _model.Scenario;
-        inspector.Section("Исследование — шаги");
-        foreach (var (step, done) in _model.ExplorationSteps())
-        {
-            inspector.Text((done ? "✓ " : "○ ") + step, dim: done, size: 12);
-        }
-
+        inspector.Section($"Вход — {s.Entry.Count} гекс. · выход — {s.Exit.Count} гекс.");
         var brush = inspector.Row();
-        foreach (var (id, label) in new[] { ("enemies", "Ставить: враги"), ("entry", "Вход"), ("exit", "Выход") })
+        foreach (var (id, label) in new[] { ("entry", "Вход"), ("exit", "Выход") })
         {
             brush.AddChild(UiKit.Button(label, () => { Refuse(_model.SetBrush(id)); Stamp++; }, _model.BoardBrush == id ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "explore.brush." + id));
         }
 
         inspector.Hint("Кисть «Вход» / «Выход»: щелчок по гексу добавляет его к области, повторный щелчок — убирает. Зелёные — вход отряда, голубые — выход.");
+        inspector.Text(_model.ExitSteps() is { } n ? $"Путь от входа до выхода — {n} шаг. без врагов." : "Выход пока недостижим от входа.", dim: true, size: 12);
+    }
 
+    /// <summary>«Исследование» on the goals step: the exit rule with the key or the required cards, the extra task.</summary>
+    private void BuildExplorationRule(Inspector inspector)
+    {
+        var s = _model.Scenario;
         inspector.Section("Правило победы");
         inspector.Choice(IdPrefix + "explore.rule", "Победа, когда", ScenarioData.ExitRules.Select(r => new ChoiceOption(r.Value, r.Label)).ToList(), s.ExitRule,
             v => Refuse(_model.SetExitRule(v)), "Уничтожать всех врагов не нужно, если это не выбрано задачей ниже.");
@@ -641,6 +716,156 @@ public partial class ScenarioEditor : DefinitionEditorShell
 
         inspector.Choice(IdPrefix + "explore.extra", "Дополнительная задача", ScenarioData.ExtraGoals.Select(g => new ChoiceOption(g.Value, g.Label)).ToList(), s.ExtraGoal,
             v => Refuse(_model.SetExtraGoal(v)), "«Победить отмеченных»: выберите врага на поле и отметьте «Цель задачи».");
+    }
+
+    // ------------------------------------------------------------------ the wizard (spec part 7 §9.3)
+
+    /// <summary>The open step of the wizard («type», «map», «forces», «waves», «goals», «check») or «all» — every section at once.</summary>
+    private string? _step;
+
+    private bool Show(string step) => _step == "all" || _step == step;
+
+    private void SetStep(string step)
+    {
+        _step = step;
+        if (step == "forces" && _model.PlaceArea is not null)
+        {
+            _model.SetBrush("enemies"); // the forces are placed with the enemy brush
+        }
+        else if (step == "map" && _model.Scenario.IsExploration && _model.PlaceArea is null)
+        {
+            _model.SetBrush("entry"); // the map step of an exploration marks the entry and the exit
+        }
+
+        Stamp++;
+    }
+
+    /// <summary>The path «Тип → Карта → Силы → Волны/ИИ → Цели → Проверка»: ✓ — the step has no errors; «Все» — every section.</summary>
+    private void BuildStepBar(Inspector inspector)
+    {
+        var steps = _model.WizardSteps();
+        foreach (var chunk in steps.Select((st, i) => (st, i)).Chunk(3))
+        {
+            var row = inspector.Row();
+            foreach (var (st, i) in chunk)
+            {
+                var id = st.Id;
+                var button = UiKit.Button($"{(st.Done ? "✓" : "○")} {i + 1}. {st.Title}", () => SetStep(id), _step == id ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "step." + id, st.Hint);
+                button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                row.AddChild(button);
+            }
+        }
+
+        var all = inspector.Row();
+        var everything = UiKit.Button("Все разделы", () => SetStep("all"), _step == "all" ? ButtonKind.Primary : ButtonKind.Flat, IdPrefix + "step.all", "Все настройки сценария одним списком — для опытного автора.");
+        everything.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        all.AddChild(everything);
+        if (steps.FirstOrDefault(st => st.Id == _step) is { } current)
+        {
+            inspector.Hint(current.Hint);
+        }
+    }
+
+    /// <summary>«Далее →» to the next step of the path; on the last step — save and test.</summary>
+    private void BuildNext(Inspector inspector)
+    {
+        var steps = _model.WizardSteps();
+        var index = steps.ToList().FindIndex(st => st.Id == _step);
+        if (index < 0)
+        {
+            return;
+        }
+
+        if (index + 1 < steps.Count)
+        {
+            var next = steps[index + 1];
+            inspector.Button(IdPrefix + "step.next", $"Далее: {next.Title} →", () => SetStep(next.Id), ButtonKind.Primary);
+        }
+    }
+
+    /// <summary>The check step: every issue with «Перейти и исправить»; exploration — its own step list.</summary>
+    private void BuildCheck(Inspector inspector)
+    {
+        var s = _model.Scenario;
+        var issues = _model.Validate();
+        inspector.Section(issues.Any(i => i.IsError) ? $"Исправить — {issues.Count(i => i.IsError)}" : "Ошибок нет");
+        if (!issues.Any(i => i.IsError))
+        {
+            inspector.Hint("Сценарий можно сохранить и запустить: «Сохранить», затем «▶ Тест сценария».");
+        }
+
+        if (s.IsExploration)
+        {
+            foreach (var (step, done) in _model.ExplorationSteps())
+            {
+                inspector.Text((done ? "✓ " : "○ ") + step, dim: done, size: 12);
+            }
+        }
+    }
+
+    /// <summary>«Перейти и исправить» for every issue of the check list (spec part 7 §9.3): selects the object and opens its step.</summary>
+    protected override System.Action? FixAction(HexTactics.Content.Model.ContentIssue issue) =>
+        ScenarioEditorModel.StepOf(issue.Path) == "check" ? null : () => SetStep(_model.GoTo(issue.Path));
+
+    /// <summary>The goals in plain words, always in the bottom line of the editor (spec part 7 §9.3).</summary>
+    protected override string? Footer => _model.Scenario.GoalsText();
+
+    /// <summary>Opens the step that holds an automation control (the wizard shows one step at a time).</summary>
+    public override bool Reveal(string automationId)
+    {
+        if (!automationId.StartsWith(IdPrefix, System.StringComparison.Ordinal) || _step == "all")
+        {
+            return false;
+        }
+
+        var parts = automationId[IdPrefix.Length..].Split('.');
+        var step = parts[0] switch
+        {
+            "mode" => "type",
+            "map" => "map",
+            "explore" when parts.Length > 2 && parts[1] == "brush" => parts[2] == "enemies" ? "forces" : "map",
+            "explore" => "goals",
+            "brush" or "turn" or "enemy" or "enemies" or "squad" or "object" => "forces",
+            "wave" or "group" or "base" => "waves",
+            "template" or "survive" or "objects" or "squadloss" or "ruleset" or "startpaused" or "autoattacks" or "blocking" or "timelimit" or "defeat" => "goals",
+            "fix" => "check",
+            _ => null,
+        };
+        if (step is null || step == _step)
+        {
+            return false;
+        }
+
+        SetStep(step);
+        return true;
+    }
+
+    /// <summary>
+    /// «Редактировать в библиотеке» (spec part 7 §9.2): the unit editor over the scenario; a built-in unit is saved as a copy and the
+    /// enemy or group switches to it.
+    /// </summary>
+    private void OpenUnit(string unitId, System.Func<string, string?> reassign)
+    {
+        if (Library.Find(ContentTypeRegistry.Unit, unitId) is not { } unit)
+        {
+            Message($"✗ Юнит «{unitId}» не найден — выберите другой.", HexTactics.Content.Model.IssueSeverity.Error);
+            return;
+        }
+
+        RequestNested(unit.Clone(), saved =>
+        {
+            if (saved is not null && saved.Id != unitId)
+            {
+                Refuse(reassign(saved.Id));
+                Message($"Сценарий использует сохранённую копию юнита «{saved.Name}».", null);
+            }
+            else if (saved is not null)
+            {
+                Message($"Юнит «{saved.Name}» сохранён — изменения уже действуют в сценарии.", null);
+            }
+
+            Stamp++;
+        });
     }
 
     private void OpenMap()

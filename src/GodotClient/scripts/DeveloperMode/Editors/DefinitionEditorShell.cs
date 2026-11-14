@@ -248,6 +248,14 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
 
     protected virtual bool HandleKey(InputEventKey key) => false;
 
+    /// <summary>«Перейти и исправить» for an issue of the check list; null — the issue has no place to go (spec part 7 §9.3).</summary>
+    protected virtual Action? FixAction(ContentIssue issue) => null;
+
+    /// <summary>A line always shown at the bottom of the editor (the scenario's goals in words, spec part 7 §9.3); null — none.</summary>
+    protected virtual string? Footer => null;
+
+    private Label? _footer;
+
     /// <summary>Applies a schema field value from user input; refusals are explained in the message panel.</summary>
     protected void ApplyField(FieldSchema field, object? input)
     {
@@ -562,9 +570,21 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
             Preview.Text("ошибок нет").AddThemeColorOverride("font_color", UiKit.Ok);
         }
 
+        var fixes = 0;
         foreach (var issue in issues)
         {
             Preview.Text((issue.IsError ? "✗ " : "⚠ ") + issue).AddThemeColorOverride("font_color", issue.IsError ? UiKit.Error : UiKit.Warning);
+            if (issue.IsError && FixAction(issue) is { } fix)
+            {
+                // Spec part 7 §9.3: an error names its object and leads to it.
+                Preview.Button(IdPrefix + $"fix.{++fixes}", "→ Перейти и исправить", fix, ButtonKind.Flat);
+            }
+        }
+
+        if (_footer is not null)
+        {
+            _footer.Text = Footer ?? string.Empty;
+            _footer.Visible = _footer.Text.Length > 0;
         }
 
         UpdateCanvas();
@@ -615,8 +635,14 @@ public abstract partial class DefinitionEditorShell : Node3D, IContentEditor
 
         _bottom = UiKit.Panel(UiKit.PanelColor, 8);
         _root.AddChild(_bottom);
-        var messages = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
-        _bottom.AddChild(messages);
+        var bottom = UiKit.Column(2);
+        _bottom.AddChild(bottom);
+        _footer = UiKit.Label(string.Empty, 13, wrap: true);
+        _footer.AddThemeColorOverride("font_color", UiKit.Ok);
+        _footer.Visible = false;
+        bottom.AddChild(_footer);
+        var messages = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        bottom.AddChild(messages);
         _messageList = UiKit.Column(2);
         _messageList.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         messages.AddChild(_messageList);

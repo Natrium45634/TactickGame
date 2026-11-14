@@ -216,6 +216,8 @@ public partial class GameMode : Node3D
         _units.Initialize(_layout);
         _units.LookOf = unit => unit.Role == HexTactics.Core.Units.UnitRole.Objective
             ? (new Color(0.86f, 0.70f, 0.25f), 1.35f) // spec part 7 §5.1: a defended mission object — gold, larger, never a fighter
+            : _sim.IsMarkedTarget(unit.Id)
+            ? (new Color(1.0f, 0.50f, 0.08f), 1.15f) // spec part 7 §6.1: a marked enemy of the extra task — orange, a bit larger
             : unit.DefinitionId is { } def && _content.Units.TryGetValue(def, out var template) && unit.Side == HexTactics.Core.Units.Side.Player
                 ? (Color.FromHtml(template.Color), (float)template.Scale)
                 : (null, 1f);
