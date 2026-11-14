@@ -79,7 +79,7 @@ public class AiTests
         Player(sim, C(9, 4)); // farther
         var events = Run(sim, 300);
         Assert.Equal(near, sim.State.GetUnit(hunter).Ai!.Target);
-        Assert.Single(events.OfType<OrderApplied>().Where(o => o.Unit == hunter)); // one order, no switching between candidates
+        Assert.Single(events.OfType<OrderApplied>(), o => o.Unit == hunter); // one order, no switching between candidates
         Assert.True(sim.State.GetUnit(near).CurrentHealth < 1000);
 
         var siege = new GameSimulation(TestMaps.Empty(), new SimulationSettings

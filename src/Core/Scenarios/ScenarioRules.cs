@@ -33,6 +33,15 @@ public enum ScenarioEndReason
 
     /// <summary>Defense: a defended object was destroyed under the objects policy.</summary>
     ObjectLost = 6,
+
+    /// <summary>Exploration: the exit rule and the extra task are done (spec part 7 §6.1).</summary>
+    ExitReached = 7,
+
+    /// <summary>Exploration: the key unit died (spec part 7 §6.2).</summary>
+    KeyUnitLost = 8,
+
+    /// <summary>Exploration: a required member died — «all required reach the exit» can no longer be done.</summary>
+    RequiredLost = 9,
 }
 
 /// <summary>
@@ -76,4 +85,26 @@ public sealed record ScenarioRules
     public System.Collections.Generic.IReadOnlyList<MissionObject> Objects { get; init; } = System.Array.Empty<MissionObject>();
 
     public ObjectsPolicy ObjectsPolicy { get; init; } = ObjectsPolicy.AllMustSurvive;
+
+    /// <summary>
+    /// Exploration goals (spec part 7 §6): the squad deploys only on <see cref="EntryCells"/>; victory when <see cref="ExitRule"/>
+    /// is met on <see cref="ExitCells"/> and the <see cref="ExtraGoal"/> is done — killing every enemy is not a goal by itself.
+    /// </summary>
+    public bool Exploration { get; init; }
+
+    /// <summary>Exploration: the hexes where the roster may be deployed (instead of the map's deploy hexes).</summary>
+    public System.Collections.Generic.IReadOnlyList<HexTactics.Core.Hex.HexCoord> EntryCells { get; init; } = System.Array.Empty<HexTactics.Core.Hex.HexCoord>();
+
+    /// <summary>Exploration: the exit area; a unit standing on one of these hexes has reached the exit.</summary>
+    public System.Collections.Generic.IReadOnlyList<HexTactics.Core.Hex.HexCoord> ExitCells { get; init; } = System.Array.Empty<HexTactics.Core.Hex.HexCoord>();
+
+    public ExitRule ExitRule { get; init; } = ExitRule.KeyUnit;
+
+    /// <summary>Exploration: the roster entry (1-based card of the squad) of the key unit.</summary>
+    public int KeyEntry { get; init; } = 1;
+
+    /// <summary>Exploration with <see cref="ExitRule.AllRequired"/>: the roster entries that must all reach the exit.</summary>
+    public System.Collections.Generic.IReadOnlyList<int> RequiredEntries { get; init; } = System.Array.Empty<int>();
+
+    public ExtraGoal ExtraGoal { get; init; } = ExtraGoal.None;
 }

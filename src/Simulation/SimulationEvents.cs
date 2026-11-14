@@ -104,6 +104,9 @@ public sealed record WaveResolved(long Tick, int Wave, string WaveId) : Simulati
 public sealed record WaveEnemySpawned(long Tick, UnitId Unit, int Wave, string RouteId) : SimulationEvent(Tick);
 
 /// <summary>An enemy reached its player base (spec part 7 §4.6): it left the map, the base lost lives once.</summary>
+/// <summary>Exploration: a unit of the player reached the exit area for the first time (spec part 7 §6.1); <paramref name="Entry"/> — its roster card.</summary>
+public sealed record ExitReached(long Tick, UnitId Unit, int? Entry) : SimulationEvent(Tick);
+
 public sealed record EnemyLeaked(long Tick, UnitId Unit, string RouteId, int Base, int LivesLeft) : SimulationEvent(Tick);
 
 /// <summary>A unit reached the last visit of its enemy route (spec part 7 §4.4).</summary>

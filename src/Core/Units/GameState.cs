@@ -62,6 +62,14 @@ public sealed class GameState
     /// </summary>
     public bool IsReserved(HexCoord cell) => _reservations.ContainsKey(cell);
 
+    /// <summary>
+    /// The hexes where the roster may be deployed when a scenario names them (exploration entry, spec part 7 §6.1); null — the
+    /// map's deploy hexes (player base and deploy zones), as before.
+    /// </summary>
+    public IReadOnlySet<HexCoord>? EntryCells { get; private set; }
+
+    public void SetEntryCells(IEnumerable<HexCoord>? cells) => EntryCells = cells is null ? null : new HashSet<HexCoord>(cells);
+
     public UnitId? ReservedBy(HexCoord cell) => _reservations.TryGetValue(cell, out var id) ? id : null;
 
     public bool IsReservedByOther(HexCoord cell, UnitId except) => _reservations.TryGetValue(cell, out var id) && id != except;

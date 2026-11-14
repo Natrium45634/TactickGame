@@ -36,8 +36,8 @@ public sealed class GameSimulation
         }
 
         _packs = new PackSystem(State);
-        AddSystem(_packs);
-        AddSystem(new AiSystem(State, Settings, ApplyOrder)); // spec part 7 §5.2: targets chosen before blocks and movement // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
+        AddSystem(_packs); // spec part 6 §5.5: bonuses per matching ally before movement and attacks read the stats
+        AddSystem(new AiSystem(State, Settings, ApplyOrder)); // spec part 7 §5.2: targets chosen before blocks and movement
         var blocks = new BlockSystem(State, _events, Settings.Blocking);
         AddSystem(blocks); // spec part 7 §11.1 p.5: contacts are settled before the next movement segment
         AddSystem(new MovementSystem(State, _events, Settings, Layout, blocks));
@@ -48,6 +48,11 @@ public sealed class GameSimulation
         AddSystem(new TileEffectSystem(State, Settings, Effects));
         AddSystem(new StatusSystem(State, _events, Effects));
         _objectives = new ObjectiveSystem(State, _events, Settings.Scenario, _waves);
+        if (Settings.Scenario is { Exploration: true } exploration)
+        {
+            State.SetEntryCells(exploration.EntryCells); // spec part 7 §6.1: the squad comes in only through the entry
+        }
+
         foreach (var obj in Settings.Scenario?.Objects ?? Array.Empty<HexTactics.Core.Scenarios.MissionObject>())
         {
             SpawnObjective(obj);
@@ -80,6 +85,15 @@ public sealed class GameSimulation
 
     /// <summary>The defended mission objects and their units (spec part 7 §5.1).</summary>
     public IReadOnlyList<(HexTactics.Core.Scenarios.MissionObject Object, UnitId Unit)> Objects => _objectives.Objects;
+
+    /// <summary>Exploration: what is done and what is left (null outside an exploration).</summary>
+    public HexTactics.Core.Scenarios.ExplorationProgress? Exploration => _objectives.Progress;
+
+    /// <summary>Exploration: the units that have reached the exit.</summary>
+    public IReadOnlyCollection<UnitId> ExitArrived => _objectives.Arrived;
+
+    /// <summary>Marks an enemy as a target of the extra task «defeat the marked enemies» (spec part 7 §6.1).</summary>
+    public void MarkTarget(UnitId unit) => _objectives.MarkTarget(unit);
 
     /// <summary>The scenario state (spec part 7 §2.3); free play stays «Preparing» without goals.</summary>
     public HexTactics.Core.Scenarios.ScenarioPhase ScenarioPhase => _objectives.Phase;
