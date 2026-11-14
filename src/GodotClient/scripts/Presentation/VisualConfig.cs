@@ -120,6 +120,12 @@ public static class VisualConfig
     public static readonly Color FillPlacementAllowed = new(0.18f, 0.80f, 0.34f, 0.42f);
     public static readonly Color FillPlacementDenied = new(0.90f, 0.22f, 0.20f, 0.12f);
 
+    /// <summary>Exploration: the exit area (spec part 7 §6.3 «маркер выхода виден»).</summary>
+    public static readonly Color FillExit = new(0.16f, 0.62f, 0.90f, 0.45f);
+
+    /// <summary>Exploration: the entry area, where the squad comes in.</summary>
+    public static readonly Color FillEntry = new(0.30f, 0.80f, 0.40f, 0.28f);
+
     public static Color TileColor(TileType type) => type switch
     {
         TileType.Blocked => TileBlocked,

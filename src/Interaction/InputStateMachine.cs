@@ -469,7 +469,7 @@ public sealed partial class InputStateMachine
         }
 
         var error = sample.Hex is { } hex ? PlacementRules.ValidateCell(_sim.State, hex) : PlacementError.OutOfBounds;
-        Placement = new PlacementView(entry, sample.Hex, error, PlacementRules.AllowedCells(_sim.State.Map));
+        Placement = new PlacementView(entry, sample.Hex, error, PlacementRules.AllowedCells(_sim.State));
     }
 
     private void DropRosterCard(PointerSample sample)

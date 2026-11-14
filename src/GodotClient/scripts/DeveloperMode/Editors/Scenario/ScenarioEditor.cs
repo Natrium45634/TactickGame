@@ -145,12 +145,26 @@ public partial class ScenarioEditor : DefinitionEditorShell
 
         _routes?.Show(routes, Layout, c => TilePalette.Current.HeightOf(_map.Grid, c));
 
+        var scenario = _model.Scenario;
+        if (scenario.IsExploration)
+        {
+            // Spec part 7 §6.1: the entry (green) and the exit (blue) areas, as the game shows them.
+            foreach (var c in scenario.Entry.Where(c => _map.Grid.Contains(c.Cell)))
+            {
+                _fills.SetFill(c.Cell, VisualConfig.FillEntry);
+            }
+
+            foreach (var c in scenario.Exit.Where(c => _map.Grid.Contains(c.Cell)))
+            {
+                _fills.SetFill(c.Cell, VisualConfig.FillExit);
+            }
+        }
+
         if (_hover is { } h && _map.Grid.Exists(h))
         {
             _fills.SetFill(h, new Color(1, 1, 1, 0.16f));
         }
 
-        var scenario = _model.Scenario;
         for (var i = 0; i < scenario.Enemies.Count; i++)
         {
             var e = scenario.Enemies[i];
@@ -162,6 +176,10 @@ public partial class ScenarioEditor : DefinitionEditorShell
             else if (!ok)
             {
                 _fills.SetFill(e.Cell, new Color(0.95f, 0.25f, 0.2f, 0.55f));
+            }
+            else if (e.Target && scenario.IsExploration && scenario.ExtraGoal == "kill_marked")
+            {
+                _fills.SetFill(e.Cell, new Color(1.0f, 0.55f, 0.1f, 0.5f)); // a target of the extra task
             }
 
             if (_map.Grid.Contains(e.Cell))
@@ -329,6 +347,11 @@ public partial class ScenarioEditor : DefinitionEditorShell
             BuildDefense(inspector);
         }
 
+        if (s.IsExploration)
+        {
+            BuildExploration(inspector);
+        }
+
         if (s.IsTowerDefense || s.IsDefense)
         {
             BuildWaves(inspector);
@@ -359,6 +382,12 @@ public partial class ScenarioEditor : DefinitionEditorShell
             if (!selected.Ai.IsNone)
             {
                 AiMore(inspector, "enemy", selected.Ai, null, null);
+            }
+
+            if (s.IsExploration && s.ExtraGoal == "kill_marked")
+            {
+                inspector.Check(IdPrefix + "enemy.target", "Цель задачи — его нужно победить", selected.Target, on => Refuse(_model.SetEnemyTarget(on)),
+                    "Дополнительная задача «победить отмеченных врагов»: без отмеченных её не выполнить.");
             }
 
             var actions = inspector.Row();
@@ -551,8 +580,8 @@ public partial class ScenarioEditor : DefinitionEditorShell
         inspector.Section($"Объекты миссии — {s.Objects.Count}");
         inspector.Hint("Обороняемые точки: враги с ИИ «к объекту» идут к ним. Объект не двигается и не получает приказов.");
         var brush = inspector.Row();
-        var enemies = UiKit.Button("Ставить: враги", () => { _model.PlaceObjects = false; Stamp++; }, _model.PlaceObjects ? ButtonKind.Normal : ButtonKind.Primary, IdPrefix + "brush.enemies");
-        var objects = UiKit.Button("Ставить: объекты", () => { _model.PlaceObjects = true; Stamp++; }, _model.PlaceObjects ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "brush.objects");
+        var enemies = UiKit.Button("Ставить: враги", () => { _model.SetBrush("enemies"); Stamp++; }, _model.PlaceObjects ? ButtonKind.Normal : ButtonKind.Primary, IdPrefix + "brush.enemies");
+        var objects = UiKit.Button("Ставить: объекты", () => { _model.SetBrush("objects"); Stamp++; }, _model.PlaceObjects ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "brush.objects");
         brush.AddChild(enemies);
         brush.AddChild(objects);
         foreach (var o in s.Objects)
@@ -569,6 +598,49 @@ public partial class ScenarioEditor : DefinitionEditorShell
             row.AddChild(UiKit.Button("Убрать объект", () => _model.RemoveObject(), ButtonKind.Danger, IdPrefix + "object.remove"));
             row.AddChild(UiKit.Button("Снять выбор", _model.DeselectObject, ButtonKind.Flat, IdPrefix + "object.deselect"));
         }
+    }
+
+    /// <summary>
+    /// «Исследование» (spec part 7 §6.3): the steps «карта → вход → выход → отряд → враги → правило» as a check list, the brushes of
+    /// the board, the exit rule with the key or the required cards, the extra task. One section, no extra tabs.
+    /// </summary>
+    private void BuildExploration(Inspector inspector)
+    {
+        var s = _model.Scenario;
+        inspector.Section("Исследование — шаги");
+        foreach (var (step, done) in _model.ExplorationSteps())
+        {
+            inspector.Text((done ? "✓ " : "○ ") + step, dim: done, size: 12);
+        }
+
+        var brush = inspector.Row();
+        foreach (var (id, label) in new[] { ("enemies", "Ставить: враги"), ("entry", "Вход"), ("exit", "Выход") })
+        {
+            brush.AddChild(UiKit.Button(label, () => { Refuse(_model.SetBrush(id)); Stamp++; }, _model.BoardBrush == id ? ButtonKind.Primary : ButtonKind.Normal, IdPrefix + "explore.brush." + id));
+        }
+
+        inspector.Hint("Кисть «Вход» / «Выход»: щелчок по гексу добавляет его к области, повторный щелчок — убирает. Зелёные — вход отряда, голубые — выход.");
+
+        inspector.Section("Правило победы");
+        inspector.Choice(IdPrefix + "explore.rule", "Победа, когда", ScenarioData.ExitRules.Select(r => new ChoiceOption(r.Value, r.Label)).ToList(), s.ExitRule,
+            v => Refuse(_model.SetExitRule(v)), "Уничтожать всех врагов не нужно, если это не выбрано задачей ниже.");
+        var cards = _model.SquadCards();
+        if (s.ExitRule == "key")
+        {
+            inspector.Choice(IdPrefix + "explore.key", "Ключевой юнит", cards.Select(c => new ChoiceOption(c.Card.ToString(CultureInfo.InvariantCulture), $"{c.Card}. {c.Name}")).ToList(),
+                s.KeyUnit.ToString(CultureInfo.InvariantCulture), v => Refuse(_model.SetKeyUnit(int.Parse(v, CultureInfo.InvariantCulture))), "Его гибель — поражение.");
+        }
+        else if (s.ExitRule == "all")
+        {
+            foreach (var (card, name) in cards)
+            {
+                var n = card;
+                inspector.Check(IdPrefix + $"explore.required.{n}", $"{n}. {name} — обязателен", s.Required.Contains(n), on => Refuse(_model.SetRequired(n, on)));
+            }
+        }
+
+        inspector.Choice(IdPrefix + "explore.extra", "Дополнительная задача", ScenarioData.ExtraGoals.Select(g => new ChoiceOption(g.Value, g.Label)).ToList(), s.ExtraGoal,
+            v => Refuse(_model.SetExtraGoal(v)), "«Победить отмеченных»: выберите врага на поле и отметьте «Цель задачи».");
     }
 
     private void OpenMap()
@@ -735,6 +807,38 @@ public partial class ScenarioEditor : DefinitionEditorShell
                     return true;
                 }
 
+            case "scenario-entry":
+                actual = s.Entry.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "scenario-exit":
+                actual = s.Exit.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                return true;
+            case "scenario-exit-rule":
+                // expect:scenario-exit-rule:<rule>:<key card | required cards «1,3» | ->
+                actual = $"{s.ExitRule}:{(s.ExitRule == "key" ? s.KeyUnit.ToString(CultureInfo.InvariantCulture) : s.ExitRule == "all" ? string.Join(",", s.Required) : "-")}";
+                ok = actual == string.Join(":", a.Skip(1));
+                return true;
+            case "scenario-extra":
+                actual = s.ExtraGoal;
+                ok = actual == a[1];
+                return true;
+            case "scenario-enemy-target":
+                {
+                    // expect:scenario-enemy-target:c,r:yes|no
+                    var p4 = a[1].Split(',');
+                    var e4 = s.Enemies.FirstOrDefault(x => x.Col.ToString(CultureInfo.InvariantCulture) == p4[0] && x.Row.ToString(CultureInfo.InvariantCulture) == p4[1]);
+                    actual = e4 is null ? "none" : e4.Target ? "yes" : "no";
+                    ok = actual == a[2];
+                    return true;
+                }
+
+            case "scenario-steps":
+                // expect:scenario-steps:<done>/<total>
+                actual = $"{_model.ExplorationSteps().Count(x => x.Done)}/{_model.ExplorationSteps().Count}";
+                ok = actual == a[1];
+                return true;
             case "scenario-waves":
                 actual = s.Waves.Count.ToString(CultureInfo.InvariantCulture);
                 ok = actual == a[1];

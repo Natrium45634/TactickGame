@@ -43,6 +43,10 @@ public static class MatchFactory
                 if (sim.Spawn(SpawnRequest.AtCell(placed.Cell, placed.Side, placed.Facing) with { Profile = placed.Profile }).Unit is { } id)
                 {
                     sim.State.SetAi(id, placed.Ai); // spec part 7 §3.3, §5.2: «Охранник» and the other presets
+                    if (placed.Target)
+                    {
+                        sim.MarkTarget(id); // spec part 7 §6.1: an enemy of the extra task «defeat the marked enemies»
+                    }
                 }
             }
 

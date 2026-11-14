@@ -82,7 +82,7 @@ public class ScenarioEditorTests
         }
 
         Assert.Contains("хотя бы один", model.RemoveFromSquad(0), StringComparison.Ordinal);
-        Assert.Contains("появится в v0.38.0", model.SetMode("exploration"), StringComparison.Ordinal);
+        Assert.Contains("неизвестный режим", model.SetMode("siege"), StringComparison.Ordinal);
         Assert.Equal(ScenarioData.Battle, model.Scenario.Mode);
         Assert.NotNull(model.SetRuleset("ruleset_gone"));
         Assert.Null(model.SetRuleset(CombatRulesetData.Standard));

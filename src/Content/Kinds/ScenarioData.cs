@@ -29,7 +29,10 @@ public sealed class PlacedUnitData
     /// <summary>Its simple AI (spec part 7 §3.3: «Охранник» in a battle; any preset in a defense); «none» — stands and hits.</summary>
     public AiData Ai { get; set; } = new();
 
-    public PlacedUnitData Copy() => new() { Unit = Unit, Col = Col, Row = Row, Facing = Facing, Ai = Ai.Copy() };
+    /// <summary>Exploration: a target of the extra task «defeat the marked enemies» (spec part 7 §6.1).</summary>
+    public bool Target { get; set; }
+
+    public PlacedUnitData Copy() => new() { Unit = Unit, Col = Col, Row = Row, Facing = Facing, Ai = Ai.Copy(), Target = Target };
 }
 
 /// <summary>
@@ -37,7 +40,7 @@ public sealed class PlacedUnitData
 /// rules, the player's squad, the enemies already on the map, the switches of automatic attacks and blocking, and goals. In this
 /// edition the mode «Обычный бой» runs; the other modes are registered and become selectable with their executors (D-174).
 /// </summary>
-public sealed class ScenarioData : IContentData
+public sealed partial class ScenarioData : IContentData
 {
     public const string Battle = "battle";
 
@@ -67,7 +70,7 @@ public sealed class ScenarioData : IContentData
         new ScenarioMode(Battle, "Обычный бой", "Враги уже на карте; выставьте отряд и победите всех.", true, "v0.34.0"),
         new ScenarioMode(TowerDefense, "Tower Defense", "Враги идут волнами по красным маршрутам карты к базам игрока.", true, "v0.36.0"),
         new ScenarioMode(Defense, "Оборона", "Враги прибывают волнами со своих баз и зон с простым ИИ; базы игрока нет — выстоять время или отбить все волны, сберечь объекты.", true, "v0.37.0"),
-        new ScenarioMode("exploration", "Исследование", "От входа к выходу через бои.", false, "v0.38.0"),
+        new ScenarioMode(Exploration, "Исследование", "Отряд входит в отмеченном месте и идёт к выходу через бои; победа — дойти до выхода по выбранному правилу.", true, "v0.38.0"),
     };
 
     public string Mode { get; set; } = Battle;
@@ -162,6 +165,7 @@ public sealed class ScenarioData : IContentData
             json["squadLoss"] = false;
         }
 
+        WriteExploration(json);
         return json;
     }
 
@@ -179,6 +183,11 @@ public sealed class ScenarioData : IContentData
         if (!e.Ai.IsNone)
         {
             json["ai"] = e.Ai.ToJson();
+        }
+
+        if (e.Target)
+        {
+            json["target"] = true;
         }
 
         return json;
@@ -278,10 +287,13 @@ public sealed class ScenarioData : IContentData
                     placed.Ai = AiData.Read(ai, issues, "enemies");
                 }
 
+                placed.Target = e.ContainsKey("target") && JsonFields.Flag(e, "target", false, issues, "enemies");
+
                 data.Enemies.Add(placed);
             }
         }
 
+        data.ReadExploration(obj, issues);
         return data;
     }
 
@@ -348,6 +360,11 @@ public sealed class ScenarioData : IContentData
         if (Mode == Battle && Enemies.Count == 0)
         {
             context.Issues.Error("enemies", "в обычном бою нужен хотя бы один враг на карте — иначе нечего побеждать");
+        }
+
+        if (IsExploration)
+        {
+            ValidateExploration(context);
         }
 
         if (IsTowerDefense && WaveEnemies == 0)
@@ -515,7 +532,8 @@ public sealed class ScenarioData : IContentData
     /// <summary>«Обычный бой · врагов 3 · отряд 3».</summary>
     public string Summary() =>
         $"{Modes.FirstOrDefault(m => m.Id == Mode)?.Title ?? Mode} · " + (IsTowerDefense || IsDefense ? $"волн {Waves.Count(w => w.Enabled)} · врагов {WaveEnemies}" : $"врагов {Enemies.Count}")
-        + (IsDefense && Objects.Count > 0 ? $" · объектов {Objects.Count}" : string.Empty) + $" · отряд {Squad.Count}" +
+        + (IsDefense && Objects.Count > 0 ? $" · объектов {Objects.Count}" : string.Empty)
+        + (IsExploration ? $" · вход {Entry.Count} · выход {Exit.Count}" : string.Empty) + $" · отряд {Squad.Count}" +
         (TimeLimit > 0 ? $" · {TimeLimit.ToString("0.##", CultureInfo.InvariantCulture)} с" : string.Empty);
 
     public IContentData Clone()
@@ -531,6 +549,7 @@ public sealed class ScenarioData : IContentData
         copy.ObjectsPolicy = ObjectsPolicy;
         copy.SurviveSeconds = SurviveSeconds;
         copy.SquadLossDefeat = SquadLossDefeat;
+        CopyExplorationTo(copy);
         return copy;
     }
 
@@ -540,6 +559,11 @@ public sealed class ScenarioData : IContentData
     /// </summary>
     public string GoalsText()
     {
+        if (IsExploration)
+        {
+            return ExplorationGoals();
+        }
+
         if (IsDefense)
         {
             var critical = Objects.Where(o => o.Critical).Select(o => $"«{o.Name}»").ToList();

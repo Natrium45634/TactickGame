@@ -52,7 +52,14 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
     {
         var issues = Library.Validate(Item).Where(i => !i.IsError).ToList();
         issues.AddRange(RuntimeFactory.CheckScenario(Library, Item));
-        if (Map() is { } map)
+        if (Scenario.IsExploration)
+        {
+            if (Scenario.Entry.Count > 0 && Scenario.Entry.Count < Scenario.Squad.Count)
+            {
+                issues.Add(ContentIssue.Warning("entry", $"гексов входа {Scenario.Entry.Count}, а в отряде {Scenario.Squad.Count} — остальные выйдут, когда гексы освободятся"));
+            }
+        }
+        else if (Map() is { } map)
         {
             foreach (var e in Scenario.Enemies.Where(e => map.Grid.Exists(e.Cell) && PlacementRules.IsDeployTile(map.Grid[e.Cell].Type)))
             {
@@ -85,7 +92,12 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
     /// </summary>
     public string? Click(HexCoord cell)
     {
-        if (PlaceObjects)
+        if (PlaceArea is not null && Scenario.IsExploration)
+        {
+            return ClickArea(cell);
+        }
+
+        if (PlaceObjects && Scenario.IsDefense)
         {
             return ClickObject(cell);
         }
@@ -112,6 +124,12 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
         {
             var o = cell.ToOffset();
             return $"на {o.Col},{o.Row} нет проходимого гекса — враг ставится на землю карты";
+        }
+
+        if (Scenario.IsExploration && Scenario.Entry.Any(c => c.Cell == cell))
+        {
+            var o = cell.ToOffset();
+            return $"на {o.Col},{o.Row} вход отряда — враг ставится в другом месте";
         }
 
         if (Library.Find(ContentTypeRegistry.Unit, Brush) is not { } unit)
@@ -221,7 +239,13 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
             return $"режим «{m.Title}» появится в {m.AvailableFrom}; пока доступен «Обычный бой»";
         }
 
-        Apply($"Режим — «{m.Title}»", (d, _) => ((ScenarioData)d).Mode = mode);
+        var map = mode == ScenarioData.Exploration ? Map() : null;
+        Apply($"Режим — «{m.Title}»", (d, _) =>
+        {
+            var s = (ScenarioData)d;
+            s.Mode = mode;
+            DefaultEntry(s, map); // spec part 7 §6.1: the map's deploy hexes are a first entry
+        });
         return null;
     }
 
@@ -306,7 +330,17 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
             return "в отряде должен остаться хотя бы один юнит";
         }
 
-        Apply($"Убрать из отряда №{index + 1}", (d, _) => ((ScenarioData)d).Squad.RemoveAt(index));
+        Apply($"Убрать из отряда №{index + 1}", (d, _) =>
+        {
+            var s = (ScenarioData)d;
+            s.Squad.RemoveAt(index);
+            // The key unit and the required members are cards: the cards after the removed one move up by one.
+            var card = index + 1;
+            s.KeyUnit = s.KeyUnit == card ? 1 : s.KeyUnit > card ? s.KeyUnit - 1 : s.KeyUnit;
+            var required = s.Required.Where(r => r != card).Select(r => r > card ? r - 1 : r).ToList();
+            s.Required.Clear();
+            s.Required.AddRange(required);
+        });
         return null;
     }
 
@@ -336,7 +370,11 @@ public sealed partial class ScenarioEditorModel : DefinitionEditorModel
                 + " " + (s.AutoAttacks ? "Автоатака включена" : "Автоатака выключена") + " · " + (s.Blocking ? "блок действует." : "блок выключен."),
             s.GoalsText(),
         };
-        if (s.IsDefense)
+        if (s.IsExploration)
+        {
+            lines.AddRange(ExplorationPreview());
+        }
+        else if (s.IsDefense)
         {
             lines.AddRange(DefensePreview());
         }

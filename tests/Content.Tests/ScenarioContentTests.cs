@@ -50,17 +50,17 @@ public class ScenarioContentTests
     }
 
     [Fact]
-    public void M7_51_scenarios_is_one_new_category_and_holds_all_four_modes_the_ones_without_executor_are_refused()
+    public void M7_51_scenarios_is_one_new_category_and_holds_all_four_modes_each_with_its_executor()
     {
         var registry = ContentTypeRegistry.CreateDefault();
         Assert.Single(registry.All, k => k.Title == "Сценарии");
         Assert.Equal(new[] { "battle", "tower_defense", "defense", "exploration" }, ScenarioData.Modes.Select(m => m.Id));
-        Assert.Equal(new[] { "battle", "tower_defense", "defense" }, ScenarioData.Modes.Where(m => m.Available).Select(m => m.Id)); // v0.37.0
+        Assert.All(ScenarioData.Modes, m => Assert.True(m.Available)); // v0.38.0: all four modes have their executor
 
         var library = ContentTestKit.Library(null);
         var trip = Scenario(library, "Поход", (6, 2));
-        ((ScenarioData)trip.Data).Mode = "exploration";
-        Assert.Contains(library.Validate(trip), i => i.IsError && i.Message.Contains("появится в v0.38.0", StringComparison.Ordinal));
+        ((ScenarioData)trip.Data).Mode = "siege";
+        Assert.Contains(library.Validate(trip), i => i.IsError && i.Message.Contains("неизвестный режим сценария «siege»", StringComparison.Ordinal));
     }
 
     [Fact]

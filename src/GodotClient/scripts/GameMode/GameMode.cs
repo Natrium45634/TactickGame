@@ -43,6 +43,7 @@ public partial class GameMode : Node3D
     private CombatFxView _combatFx = null!;
     private Button _enemyButton = null!;
     private HexFillLayer _skillLayer = null!;
+    private HexFillLayer? _zoneLayer;
     private string _skillStamp = string.Empty;
     private PointerInput _input = null!;
     private DebugHud _hud = null!;
@@ -176,6 +177,23 @@ public partial class GameMode : Node3D
         _fillLayer = new HexFillLayer { Name = "PassabilityLayer", RenderPriority = 1 };
         AddChild(_fillLayer);
         _fillLayer.Build(_map.Grid, _layout);
+
+        if (_content.Scenario?.Rules is { Exploration: true } exploration)
+        {
+            // Spec part 7 §6.3: the exit is visible in the game; the entry shows where the squad comes in.
+            _zoneLayer = new HexFillLayer { Name = "ZoneLayer", RenderPriority = 0 };
+            AddChild(_zoneLayer);
+            _zoneLayer.Build(_map.Grid, _layout);
+            foreach (var cell in exploration.EntryCells)
+            {
+                _zoneLayer.SetFill(cell, VisualConfig.FillEntry);
+            }
+
+            foreach (var cell in exploration.ExitCells)
+            {
+                _zoneLayer.SetFill(cell, VisualConfig.FillExit);
+            }
+        }
 
         // Spec part 7 §4.2 p.10: the red route lines are hidden in the game by default; the debug panel shows them.
         _routeLayer = new RouteLayer { Name = "Routes", Visible = false };
@@ -338,7 +356,7 @@ public partial class GameMode : Node3D
         {
             // Allowed cells can be taken or freed by moving units while the card is held.
             var free = new System.Text.StringBuilder();
-            foreach (var cell in PlacementRules.AllowedCells(_map))
+            foreach (var cell in PlacementRules.AllowedCells(_sim.State))
             {
                 free.Append(PlacementRules.ValidateCell(_sim.State, cell) == PlacementError.None ? '1' : '0');
             }
@@ -544,8 +562,13 @@ public partial class GameMode : Node3D
         {
             var td = _content.Scenario?.Rules.TowerDefense == true;
             var defense = _content.Scenario?.Rules.Defense == true;
+            var explore = _content.Scenario?.Rules.Exploration == true;
             _scenarioLabel.Text = _sim.ScenarioPhase switch
             {
+                HexTactics.Core.Scenarios.ScenarioPhase.Preparing when explore =>
+                    "Подготовка: выставьте отряд на зелёные гексы входа, задайте путь к голубому выходу и нажмите «Начать бой» (пробел).",
+                HexTactics.Core.Scenarios.ScenarioPhase.Victory when explore => "ПОБЕДА: выход достигнут.",
+                HexTactics.Core.Scenarios.ScenarioPhase.Running when explore => $"Исследование · {_sim.ScenarioTime:0} с · осталось: {ExplorationLeft()}",
                 HexTactics.Core.Scenarios.ScenarioPhase.Preparing => td
                     ? $"Подготовка: выставьте отряд у маршрутов и нажмите «Начать бой» (пробел). Волн: {_sim.WaveCount}, врагов впереди: {_sim.UpcomingEnemies}."
                     : $"Подготовка: выставьте отряд, задайте маршруты и нажмите «Начать бой» (пробел). Врагов: {_sim.EnemiesLeft}.",
@@ -557,6 +580,8 @@ public partial class GameMode : Node3D
                     HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "ПОРАЖЕНИЕ: время вышло.",
                     HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "ПОРАЖЕНИЕ: база потеряла все жизни.",
                     HexTactics.Core.Scenarios.ScenarioEndReason.ObjectLost => "ПОРАЖЕНИЕ: объект уничтожен.",
+                    HexTactics.Core.Scenarios.ScenarioEndReason.KeyUnitLost => "ПОРАЖЕНИЕ: ключевой юнит погиб.",
+                    HexTactics.Core.Scenarios.ScenarioEndReason.RequiredLost => "ПОРАЖЕНИЕ: погиб обязательный юнит.",
                     _ => "ПОРАЖЕНИЕ: отряд погиб, резерв пуст.",
                 },
                 _ => defense && _content.Scenario!.Rules.SurviveSeconds > 0
@@ -584,10 +609,39 @@ public partial class GameMode : Node3D
 
     private Label? _scenarioLabel;
 
+    /// <summary>A roster card by name: «Альфа» (its number when the card is unknown).</summary>
+    private string CardName(int entry) =>
+        _sim.State.Roster.Entries.FirstOrDefault(e => e.Id == entry)?.Name is { } name ? $"«{name}»" : $"карточка {entry}";
+
+    /// <summary>What an exploration still needs, in words (spec part 7 §6.1 «показывать, что именно осталось сделать»).</summary>
+    private string ExplorationLeft()
+    {
+        if (_sim.Exploration is not { } p || _content.Scenario?.Rules is not { } rules)
+        {
+            return string.Empty;
+        }
+
+        var parts = new System.Collections.Generic.List<string>();
+        if (!p.ExitDone)
+        {
+            parts.Add(rules.ExitRule == HexTactics.Core.Scenarios.ExitRule.AnySurvivor
+                ? "дойти до выхода любым юнитом"
+                : (rules.ExitRule == HexTactics.Core.Scenarios.ExitRule.KeyUnit ? "ключевому " : "обязательным ") + "дойти до выхода: " + string.Join(", ", p.Waiting.Select(CardName)));
+        }
+
+        if (!p.ExtraDone)
+        {
+            parts.Add(rules.ExtraGoal == HexTactics.Core.Scenarios.ExtraGoal.KillMarked ? $"победить отмеченных врагов ({p.MarkedLeft})" : $"зачистить карту (врагов {p.EnemiesLeft})");
+        }
+
+        return parts.Count == 0 ? "ничего" : string.Join("; ", parts);
+    }
+
     /// <summary>The pause banner of a scenario: «Подготовка» before the start, the result after the end; null — the usual pause.</summary>
     private string? ScenarioBanner() => _content.Scenario is null ? null : _sim.ScenarioPhase switch
     {
         HexTactics.Core.Scenarios.ScenarioPhase.Preparing => "⏸  ПОДГОТОВКА  ·  пробел — начать бой",
+        HexTactics.Core.Scenarios.ScenarioPhase.Victory when _content.Scenario.Rules.Exploration => "★  ПОБЕДА  ·  выход достигнут",
         HexTactics.Core.Scenarios.ScenarioPhase.Victory => _content.Scenario.Rules.Defense
             ? (_sim.ScenarioEndReason == HexTactics.Core.Scenarios.ScenarioEndReason.Survived ? "★  ПОБЕДА  ·  продержались" : "★  ПОБЕДА  ·  все волны отбиты")
             : _content.Scenario.Rules.TowerDefense ? "★  ПОБЕДА  ·  все волны пройдены" : "★  ПОБЕДА  ·  все враги побеждены",
@@ -596,6 +650,8 @@ public partial class GameMode : Node3D
             HexTactics.Core.Scenarios.ScenarioEndReason.TimeUp => "✖  ПОРАЖЕНИЕ  ·  время вышло",
             HexTactics.Core.Scenarios.ScenarioEndReason.BaseLost => "✖  ПОРАЖЕНИЕ  ·  база потеряла все жизни",
             HexTactics.Core.Scenarios.ScenarioEndReason.ObjectLost => "✖  ПОРАЖЕНИЕ  ·  объект уничтожен",
+            HexTactics.Core.Scenarios.ScenarioEndReason.KeyUnitLost => "✖  ПОРАЖЕНИЕ  ·  ключевой юнит погиб",
+            HexTactics.Core.Scenarios.ScenarioEndReason.RequiredLost => "✖  ПОРАЖЕНИЕ  ·  погиб обязательный юнит",
             _ => "✖  ПОРАЖЕНИЕ  ·  отряд погиб, резерв пуст",
         },
         _ => null,
@@ -904,6 +960,10 @@ public partial class GameMode : Node3D
                     break;
                 case WaveStarted wave:
                     ShowMessage($"Волна {wave.Wave + 1} из {_sim.WaveCount}: врагов {wave.Total}.", false);
+                    break;
+                case ExitReached reached:
+                    // Spec part 7 §6.1: the exit is fixed; when the goal is not done yet, say what is left.
+                    ShowMessage($"{(reached.Entry is { } card ? CardName(card) : $"Юнит {reached.Unit}")} у выхода." + (_sim.IsScenarioOver ? string.Empty : $" Осталось: {ExplorationLeft()}."), false);
                     break;
                 case EnemyLeaked leak:
                     ShowMessage($"Враг прорвался к «{_map.Bases.FirstOrDefault(m => m.Side == BaseSide.Player && m.Number == leak.Base)?.Name ?? leak.Base.ToString(CultureInfo.InvariantCulture)}»: осталось жизней {leak.LivesLeft}.", true);
@@ -1562,6 +1622,16 @@ public partial class GameMode : Node3D
                 // expect:wave:<started>/<count>
                 actual = $"{_sim.WavesStarted}/{_sim.WaveCount}";
                 ok = actual == a[1];
+                break;
+            case "exit-reached":
+                // expect:exit-reached:<units that reached the exit>
+                actual = _sim.ExitArrived.Count.ToString(CultureInfo.InvariantCulture);
+                ok = actual == a[1];
+                break;
+            case "exploration-left":
+                // expect:exploration-left:<text contained in «осталось»>
+                actual = ExplorationLeft();
+                ok = actual.Contains(string.Join(":", a.Skip(1)), System.StringComparison.Ordinal);
                 break;
             case "object-hp":
                 {

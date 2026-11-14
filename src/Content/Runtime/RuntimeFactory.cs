@@ -25,7 +25,7 @@ public sealed record UnitTemplate(string Id, string Name, UnitStats Stats, IRead
 }
 
 /// <summary>A unit already on the map when a scenario starts (spec part 7 §3.1 p.2).</summary>
-public sealed record ScenarioUnit(UnitProfile Profile, HexCoord Cell, HexDirection Facing, Side Side, HexTactics.Core.Scenarios.AiProfile? Ai = null);
+public sealed record ScenarioUnit(UnitProfile Profile, HexCoord Cell, HexDirection Facing, Side Side, HexTactics.Core.Scenarios.AiProfile? Ai = null, bool Target = false);
 
 /// <summary>What the match needs of a scenario: its goals, the units already on the map and the goals in words.</summary>
 public sealed record ScenarioRuntime(string Id, string Name, HexTactics.Core.Scenarios.ScenarioRules Rules, IReadOnlyList<ScenarioUnit> Placed, string GoalsText, bool StartPaused = true);
@@ -586,7 +586,11 @@ public static class RuntimeFactory
             }
         }
 
-        if (!grid.Coords.Any(c => grid.Exists(c) && HexTactics.Core.Spawning.PlacementRules.IsDeployTile(grid[c].Type)))
+        if (s.IsExploration)
+        {
+            CheckExploration(s, grid, mapItem.Name, issues);
+        }
+        else if (!grid.Coords.Any(c => grid.Exists(c) && HexTactics.Core.Spawning.PlacementRules.IsDeployTile(grid[c].Type)))
         {
             issues.Error("map", $"на карте «{mapItem.Name}» нет гексов выставления (база игрока или зона выставления) — отряду некуда выйти");
         }
@@ -618,6 +622,56 @@ public static class RuntimeFactory
         }
 
         return issues.Items;
+    }
+
+    /// <summary>
+    /// Exploration checks with the map (spec part 7 §6.2; M7-31, M7-35): entry and exit hexes are real walkable hexes, no enemy stands
+    /// on the entry, and the exit can be reached from the entry over walkable hexes (units do not close the way — a fight may). A
+    /// passage «opened by an event» does not exist yet, so an exit behind obstacles is an error, never a promise.
+    /// </summary>
+    private static void CheckExploration(ScenarioData s, HexGrid grid, string mapName, IssueList issues)
+    {
+        foreach (var (area, key, cells) in new[] { ("входа", "entry", s.Entry), ("выхода", "exit", s.Exit) })
+        {
+            foreach (var c in cells.Where(c => !grid.Exists(c.Cell) || !grid.IsWalkable(c.Cell)))
+            {
+                issues.Error(key, $"гекс {area} {c} — там нет проходимого гекса карты «{mapName}»");
+            }
+        }
+
+        foreach (var e in s.Enemies.Where(e => s.Entry.Any(c => c.Cell == e.Cell)))
+        {
+            issues.Error("entry", $"враг стоит на гексе входа {e.Col},{e.Row} — отряду там не выйти");
+        }
+
+        var start = s.Entry.Select(c => c.Cell).Where(grid.IsWalkable).ToList();
+        var exits = s.Exit.Select(c => c.Cell).Where(grid.IsWalkable).ToHashSet();
+        if (start.Count > 0 && exits.Count > 0 && PathSteps(grid, start, exits) is null)
+        {
+            issues.Error("exit", $"выход недостижим от входа на карте «{mapName}»: нет пути по проходимым гексам — откройте проход в редакторе карт или перенесите вход/выход");
+        }
+    }
+
+    /// <summary>Steps of the shortest way over walkable hexes from any start hex to any goal hex (units ignored); null — no way.</summary>
+    public static int? PathSteps(HexGrid grid, IReadOnlyCollection<HexCoord> start, IReadOnlySet<HexCoord> goals)
+    {
+        var seen = new HashSet<HexCoord>(start);
+        var frontier = new Queue<(HexCoord Cell, int Steps)>(start.Select(c => (c, 0)));
+        while (frontier.Count > 0)
+        {
+            var (cell, steps) = frontier.Dequeue();
+            if (goals.Contains(cell))
+            {
+                return steps;
+            }
+
+            foreach (var next in cell.Neighbors().Where(n => grid.IsWalkable(n) && seen.Add(n)))
+            {
+                frontier.Enqueue((next, steps + 1));
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -693,7 +747,7 @@ public static class RuntimeFactory
         var units = s.Squad.Concat(s.Enemies.Select(e => e.Unit)).Concat(s.IsTowerDefense || s.IsDefense ? s.Waves.Where(w => w.Enabled).SelectMany(w => w.Groups).Where(g => g.Enabled).Select(g => g.Unit) : Enumerable.Empty<string>())
             .Distinct(StringComparer.Ordinal).Select(id => library.Find(ContentTypeRegistry.Unit, id)!).ToList();
         var content = BuildGame(library, library.Find(ContentTypeRegistry.Map, s.Map)!, squad: s.Squad, extraUnits: units);
-        var placed = s.Enemies.Select(e => new ScenarioUnit(content.Units[e.Unit].ToProfile(), e.Cell, e.Facing, Side.Enemy, AiOf(e.Ai))).ToList();
+        var placed = s.Enemies.Select(e => new ScenarioUnit(content.Units[e.Unit].ToProfile(), e.Cell, e.Facing, Side.Enemy, AiOf(e.Ai), s.IsExploration && s.ExtraGoal == "kill_marked" && e.Target)).ToList();
         var rulesetId = s.Ruleset.Length > 0 ? s.Ruleset : content.CombatRulesetId;
         return content with
         {
@@ -743,6 +797,22 @@ public static class RuntimeFactory
     /// <summary>The goals of the mode: the ordinary battle; Tower Defense waves, base lives and the defeat policy; or a defense.</summary>
     private static HexTactics.Core.Scenarios.ScenarioRules ScenarioRulesOf(ScenarioData s, GameContent content)
     {
+        if (s.IsExploration)
+        {
+            return new HexTactics.Core.Scenarios.ScenarioRules
+            {
+                Exploration = true,
+                EliminateAllEnemies = false,
+                TimeLimitSeconds = s.TimeLimit,
+                EntryCells = s.Entry.Select(c => c.Cell).Distinct().ToList(),
+                ExitCells = s.Exit.Select(c => c.Cell).Distinct().ToList(),
+                ExitRule = s.ExitRule switch { "any" => HexTactics.Core.Scenarios.ExitRule.AnySurvivor, "all" => HexTactics.Core.Scenarios.ExitRule.AllRequired, _ => HexTactics.Core.Scenarios.ExitRule.KeyUnit },
+                KeyEntry = s.KeyUnit,
+                RequiredEntries = s.Required.Distinct().ToList(),
+                ExtraGoal = s.ExtraGoal switch { "kill_marked" => HexTactics.Core.Scenarios.ExtraGoal.KillMarked, "clear_map" => HexTactics.Core.Scenarios.ExtraGoal.ClearMap, _ => HexTactics.Core.Scenarios.ExtraGoal.None },
+            };
+        }
+
         if (!s.IsTowerDefense && !s.IsDefense)
         {
             return new HexTactics.Core.Scenarios.ScenarioRules { TimeLimitSeconds = s.TimeLimit };

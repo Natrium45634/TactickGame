@@ -895,6 +895,33 @@ $script:PersistenceScenarioV37 = (@(
     'expect:scenario-ai-more:1.1:lowest_health:2:no', 'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
 ) -join ';') + ';' + $script:PersistenceScenarioV36
 
+# v0.38.0+ (spec part 7 §6; acceptance §12.4 M7-31…M7-35, M7-60): the exploration «Вылазка» on «Двор»: the map first, then the
+# mode (the entry starts on the two deploy hexes of the map), the exit painted with its brush (a second click takes a hex back),
+# an enemy at 10,4; «все обязательные» narrowed to cards 1 and 3; the extra task «победить отмеченных» is an error until the enemy
+# is marked; the step list is complete. In the test a card cannot come out off the entry; cards 1 and 3 walk to the exit — both
+# arrived, the battle goes on until the marked enemy falls, then «Победа». The scenario is then in the start menu.
+$script:RegressionScenarioV38 = $script:RegressionScenarioV37 + ';' + (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'ui:dev.create', 'expect:editor:scenario', 'field:scenario.name=Вылазка', 'field:scenario.map=Двор (свой)',
+    'ui:scenario.mode.exploration', 'expect:scenario-entry:2', 'expect:scenario-exit:0', 'expect:scenario-errors:1', 'expect:scenario-steps:4/6',
+    'ui:scenario.explore.brush.exit', 'cell:10,1', 'cell:11,1', 'cell:11,1', 'expect:scenario-exit:1', 'cell:11,1', 'expect:scenario-exit:2',
+    'ui:scenario.explore.brush.enemies', 'cell:10,4', 'expect:scenario-enemies:1', 'field:scenario.explore.rule=все обязательные дошли до выхода',
+    'expect:scenario-exit-rule:all:1,2,3', 'ui:scenario.explore.required.2', 'expect:scenario-exit-rule:all:1,3', 'field:scenario.explore.extra=победить отмеченных врагов',
+    'expect:scenario-errors:1', 'ui:scenario.enemy.target', 'expect:scenario-enemy-target:10,4:yes', 'expect:scenario-errors:0',
+    'expect:scenario-steps:6/6', 'expect:scenario-preview:путь от входа до выхода', 'ui:scenario.save', 'expect:errors:0', 'ui:scenario.test',
+    'expect:screen:play', 'expect:phase:Preparing', 'expect:roster:3:AvailableInRoster', 'roster:1>3,3', 'expect:roster:3:AvailableInRoster',
+    'roster:1>1,5', 'click:10,1', 'click:10,1@North:0.6', 'expect:lifecycle:2:Active', 'roster:3>0,6', 'click:11,1', 'click:11,1@North:0.6',
+    'expect:lifecycle:3:Active', 'pause:off', 'advance:900', 'expect:exit-reached:2', 'expect:phase:Running', 'expect:exploration-left:победить отмеченных врагов (1)',
+    'drag:10,1>10,4', 'drag:11,1>10,4', 'waitdead:1:8000', 'expect:phase:Victory', 'ui:game.menu', 'ui:dialog.ok', 'expect:editor:scenario',
+    'ui:scenario.back', 'ui:dev.back', 'expect:screen:menu', 'field:menu.scenario=Вылазка (свой)', 'ui:menu.play', 'expect:screen:play',
+    'expect:phase:Preparing', 'expect:units:1', 'ui:game.menu', 'ui:dialog.ok', 'expect:screen:menu', 'field:menu.scenario=свободная игра на карте'
+) -join ';')
+
+$script:PersistenceScenarioV38 = (@(
+    'ui:menu.dev', 'ui:dev.cat.scenario', 'row:name=Вылазка', 'ui:dev.open', 'expect:editor:scenario', 'expect:scenario-entry:2',
+    'expect:scenario-exit:2', 'expect:scenario-exit-rule:all:1,3', 'expect:scenario-extra:kill_marked', 'expect:scenario-enemy-target:10,4:yes',
+    'expect:scenario-errors:0', 'ui:scenario.back', 'ui:dev.back'
+) -join ';') + ';' + $script:PersistenceScenarioV37
+
 # Splits a regression scenario longer than $Limit characters at the ends of earlier versions' scenarios (v0.30.0+: the
 # scenario passed the 32 767-character command line of Windows). Shorter scenarios stay one launch, as before.
 function Split-Scenario([string]$Text, [int]$Limit = 32000) {
@@ -972,7 +999,8 @@ if ($Run -and $errors.Count -eq 0) {
         $scenario = $null
         $persistence = $null
         if ($regression) {
-            $scenario = if ([version]$Version -ge [version]'0.37.0') { $script:RegressionScenarioV37 }
+            $scenario = if ([version]$Version -ge [version]'0.38.0') { $script:RegressionScenarioV38 }
+                        elseif ([version]$Version -ge [version]'0.37.0') { $script:RegressionScenarioV37 }
                         elseif ([version]$Version -ge [version]'0.36.0') { $script:RegressionScenarioV36 }
                         elseif ([version]$Version -ge [version]'0.35.0') { $script:RegressionScenarioV35 }
                         elseif ([version]$Version -ge [version]'0.34.0') { $script:RegressionScenarioV34 }
@@ -1006,7 +1034,8 @@ if ($Run -and $errors.Count -eq 0) {
                         elseif ([version]$Version -ge [version]'0.8.0') { $script:RegressionScenarioV08 }
                         elseif ([version]$Version -ge [version]'0.7.0') { $script:RegressionScenarioV07 }
                         else { $script:RegressionScenarioV05 }
-            if ([version]$Version -ge [version]'0.37.0') { $persistence = $script:PersistenceScenarioV37 }
+            if ([version]$Version -ge [version]'0.38.0') { $persistence = $script:PersistenceScenarioV38 }
+            elseif ([version]$Version -ge [version]'0.37.0') { $persistence = $script:PersistenceScenarioV37 }
             elseif ([version]$Version -ge [version]'0.36.0') { $persistence = $script:PersistenceScenarioV36 }
             elseif ([version]$Version -ge [version]'0.35.0') { $persistence = $script:PersistenceScenarioV35 }
             elseif ([version]$Version -ge [version]'0.34.0') { $persistence = $script:PersistenceScenarioV34 }
